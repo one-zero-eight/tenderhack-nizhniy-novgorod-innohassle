@@ -1,7 +1,5 @@
-import Button from '@/components/ui/Button'
-import { Link as RouterLink, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link as RouterLink, useLocation } from '@tanstack/react-router'
 import { HiOutlineClipboardDocumentList } from 'react-icons/hi2'
-import { clearUsername } from '@/lib/storage'
 import LeaveButton from './LeaveButton';
 
 function NavLink({ to, children, icon: Icon }: { to: string; children: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) {
