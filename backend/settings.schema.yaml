@@ -18,8 +18,53 @@ $defs:
         title: Db Url
         type: string
         writeOnly: true
+      jwt_secret:
+        format: password
+        minLength: 32
+        title: Jwt Secret
+        type: string
+        writeOnly: true
+      access_token_minutes:
+        default: 120
+        maximum: 1440
+        minimum: 1
+        title: Access Token Minutes
+        type: integer
+      ai_base_url:
+        default: http://127.0.0.1:8002
+        format: uri
+        minLength: 1
+        title: Ai Base Url
+        type: string
+      ai_service_token:
+        anyOf:
+        - format: password
+          type: string
+          writeOnly: true
+        - type: 'null'
+        default: null
+        title: Ai Service Token
+      ai_moderation_timeout:
+        default: 5
+        exclusiveMinimum: 0
+        maximum: 120
+        title: Ai Moderation Timeout
+        type: number
+      ai_answer_timeout:
+        default: 30
+        exclusiveMinimum: 0
+        maximum: 300
+        title: Ai Answer Timeout
+        type: number
+      ai_routing_timeout:
+        default: 5
+        exclusiveMinimum: 0
+        maximum: 120
+        title: Ai Routing Timeout
+        type: number
     required:
     - db_url
+    - jwt_secret
     title: ApiSettings
     type: object
 properties:

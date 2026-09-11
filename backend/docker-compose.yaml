@@ -1,30 +1,56 @@
 services:
   api:
-    build:
+    build: &backend-build
       context: .
       dockerfile: Dockerfile
     depends_on:
       db:
         # Wait for the database to be ready before starting the application
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
     restart: always
     ports:
       - "8000:8001"
-    environment:
+    environment: &backend-environment
       # Settings can be fully configured via environment variables, no settings.yaml needed.
       API_SETTINGS__DB_URL: ${API_SETTINGS__DB_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres}
-      API_SETTINGS__APP_ROOT_PATH: ${API_SETTINGS__APP_ROOT_PATH:-/api}
+      API_SETTINGS__APP_ROOT_PATH: ${API_SETTINGS__APP_ROOT_PATH:-}
       API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX: ${API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX:-.*}
+      API_SETTINGS__JWT_SECRET: ${API_SETTINGS__JWT_SECRET:-}
+      API_SETTINGS__ACCESS_TOKEN_MINUTES: ${API_SETTINGS__ACCESS_TOKEN_MINUTES:-120}
+      API_SETTINGS__AI_BASE_URL: ${API_SETTINGS__AI_BASE_URL:-http://ai-stub:8002}
+      API_SETTINGS__AI_SERVICE_TOKEN: ${API_SETTINGS__AI_SERVICE_TOKEN:-}
+      API_SETTINGS__AI_MODERATION_TIMEOUT: ${API_SETTINGS__AI_MODERATION_TIMEOUT:-5}
+      API_SETTINGS__AI_ANSWER_TIMEOUT: ${API_SETTINGS__AI_ANSWER_TIMEOUT:-30}
+      API_SETTINGS__AI_ROUTING_TIMEOUT: ${API_SETTINGS__AI_ROUTING_TIMEOUT:-5}
     # Optional: mount settings.yaml to override values. Commented out so it is not required.
     # volumes:
     #   - "./settings.yaml:/app/settings.yaml:ro"
+
+  init-db:
+    build: *backend-build
+    environment: *backend-environment
+    command: ["uv", "run", "--no-sync", "python", "-m", "src.db.init"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # Development contract stub only; normal deployments supply API_SETTINGS__AI_BASE_URL.
+  ai-stub:
+    profiles: ["demo"]
+    build: *backend-build
+    command: ["uv", "run", "--no-sync", "uvicorn", "scripts.ai_stub:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      API_SETTINGS__AI_SERVICE_TOKEN: ${API_SETTINGS__AI_SERVICE_TOKEN:-}
+    ports:
+      - "127.0.0.1:8002:8002"
 
   db:
     # See more: https://hub.docker.com/_/postgres
     image: "postgres:17.1"
     restart: always
-    # The commits were slow on our servers, so we turned off the synchronous_commit
-    command: postgres -c synchronous_commit=off
     volumes:
       - "postgres:/var/lib/postgresql/data"
     ports:

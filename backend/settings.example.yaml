@@ -11,3 +11,13 @@
 $schema: "./settings.schema.yaml"
 api_settings:
   db_url: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres"
+  # Generate with: uv run python -c 'import secrets; print(secrets.token_hex(32))'
+  jwt_secret: ""
+  access_token_minutes: 120
+  # Empty for direct access to the API; set /api only behind a proxy that strips it.
+  app_root_path: ""
+  ai_base_url: "http://127.0.0.1:8002"
+  ai_service_token: null
+  ai_moderation_timeout: 5
+  ai_answer_timeout: 30
+  ai_routing_timeout: 5
