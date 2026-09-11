@@ -1,0 +1,35 @@
+# Development compose file.
+# Imports the production base and overrides frontend/api with local `build:` directives
+# plus hot-reload via `watch`.
+#
+#   docker compose up --build --watch
+include:
+  - compose.prod.yaml
+
+services:
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile.dev
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/vite.config.ts
+          target: /app/vite.config.ts
+        - action: rebuild
+          path: ./frontend/package.json
+
+  # api:
+  #   build:
+  #     context: backend
+  #     dockerfile: Dockerfile
+  #   develop:
+  #     watch:
+  #       - action: sync
+  #         path: ./backend/src
+  #         target: /app/src
+  #       - action: rebuild
+  #         path: ./backend/pyproject.toml

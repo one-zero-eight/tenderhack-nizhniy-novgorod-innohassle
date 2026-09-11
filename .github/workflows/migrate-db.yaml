@@ -1,0 +1,21 @@
+name: Migrate databases via SSH
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute deploy commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.PROJECT_PATH }}
+            docker-compose -f compose.prod.yaml --env-file .env down -v
+            docker-compose -f compose.prod.yaml --env-file .env up -d --force-recreate

@@ -1,0 +1,35 @@
+@theme {
+  /* Base themed colors */
+  --color-main-blue: var(--main-blue);
+  --color-gray-blue: var(--gray-blue);
+  --color-pale-blue: var(--pale-blue);
+  --color-red: var(--red);
+  --color-black: var(--black);
+  --color-pale-black: var(--pale-black);
+
+  --color-green: var(--green);
+  --color-sea-dark: var(--sea-dark);
+  --color-sea-clear: var(--sea-clear);
+  --color-orange: var(--orange);
+  --color-gray: var(--gray);
+  --color-light-gray: var(--light-gray);
+}
+
+:root {
+  color-scheme: light;
+
+  /* Core brand colors */
+  --main-blue: #264b82;
+  --gray-blue: #d4dbe6;
+  --pale-blue: #e7eef7;
+  --red: #db2b21;
+  --black: #1a1a1a;
+  --pale-black: #8c8c8c;
+
+  --green: #0d9b68;
+  --sea-dark: #167c85;
+  --sea-clear: #48b8c2;
+  --orange: #f67319;
+  --gray: #7f8792;
+  --light-gray: #c9d1df;
+}
