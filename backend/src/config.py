@@ -1,8 +1,12 @@
-import os
-from pathlib import Path
+from pydantic import ValidationError
 
 from src.config_schema import ApiSettings, Settings
 
-settings_path = os.getenv("SETTINGS_PATH", "settings.yaml")
-settings: Settings = Settings.from_yaml(Path(settings_path))
+try:
+    settings: Settings = Settings()  # type: ignore[call-arg]
+except ValidationError as e:  # pragma: no cover
+    raise RuntimeError(
+        "❌ Invalid settings. Provide them via `settings.yaml` or environment variables (e.g. `API_SETTINGS__DB_URL`)."
+    ) from e
+
 api_settings: ApiSettings = settings.api_settings

@@ -10,8 +10,14 @@ services:
     restart: always
     ports:
       - "8000:8001"
-    volumes:
-      - "./settings.yaml:/app/settings.yaml:ro" # Read-only settings file
+    environment:
+      # Settings can be fully configured via environment variables, no settings.yaml needed.
+      API_SETTINGS__DB_URL: ${API_SETTINGS__DB_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres}
+      API_SETTINGS__APP_ROOT_PATH: ${API_SETTINGS__APP_ROOT_PATH:-/api}
+      API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX: ${API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX:-.*}
+    # Optional: mount settings.yaml to override values. Commented out so it is not required.
+    # volumes:
+    #   - "./settings.yaml:/app/settings.yaml:ro"
 
   db:
     # See more: https://hub.docker.com/_/postgres

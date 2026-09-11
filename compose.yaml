@@ -1,17 +1,11 @@
-# Base compose file. Production services reference pre-built images.
-# For local development, frontend/api can be overridden with `build:` directives.
-#
-#   docker compose up -d                    # production (pulled images)
-#   docker compose up --build --watch       # development (hot-reload)
-
 services:
   caddy:
     image: caddy:2.9-alpine
     container_name: caddy
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
+      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -22,19 +16,35 @@ services:
       - frontend
       - api
 
-  frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-user}/frontend:latest
+  api:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    environment:
+      API_SETTINGS__DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/postgres
+      API_SETTINGS__APP_ROOT_PATH: "/api"
+      API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX: ".*"
     networks:
       - app_network
 
-  api:
-    image: ghcr.io/${GITHUB_REPOSITORY:-user}/backend:latest
-    restart: unless-stopped
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile.dev
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/vite.config.ts
+          target: /app/vite.config.ts
+        - action: rebuild
+          path: ./frontend/package.json
     networks:
       - app_network
 
   db:
-    # See more: https://hub.docker.com/_/postgres
     image: "postgres:17.1"
     restart: always
     # The commits were slow on our servers, so we turned off the synchronous_commit
@@ -49,14 +59,14 @@ services:
       timeout: 5s
       retries: 5
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
     networks:
       - app_network
 
 volumes:
-  frontend_node_modules:
   postgres:
-  elasticsearch:
   caddy_data:
   caddy_config:
 

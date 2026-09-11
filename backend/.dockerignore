@@ -1,0 +1,23 @@
+### IDE ###
+.idea
+.vscode
+
+### Cache ###
+__pycache__
+.ruff_cache
+*.py[cod]
+
+### Environment ###
+.venv
+venv
+.env
+settings.yaml
+private.pem
+public.pem
+
+### OS ###
+.DS_Store
+
+### Docker ###
+Dockerfile
+docker-compose.yaml

@@ -23,26 +23,5 @@ export default function Navbar() {
   const { data: stats } = $api.useQuery('get', '/stats')
   const dataPresent = (stats?.cte_count ?? 0) > 0 && (stats?.history_contract_count ?? 0) > 0
 
-  return (
-    <nav className="border-gray-blue flex w-full items-center justify-between gap-4 border-b bg-white px-4 py-3">
-      <div className="flex items-center gap-1">
-        <RouterLink to="/" className="text-main-blue hover:text-main-blue/80 mr-4 text-lg font-bold no-underline">
-          Обоснование цены
-        </RouterLink>
-        <NavLink to="/" icon={HiOutlineClipboardDocumentList}>
-          Контракты
-        </NavLink>
-      </div>
-      <div className="flex items-center gap-5">
-        <span className={`flex items-center gap-1.5 text-sm ${dataPresent ? 'text-green-600' : 'text-red-600'}`}>
-          <span className={`size-2 shrink-0 rounded-full ${dataPresent ? 'bg-green-600' : 'bg-red-600'}`} />
-          {dataPresent ? `${(stats?.cte_count ?? 0).toLocaleString('ru-RU')} СТЕ, ${(stats?.history_contract_count ?? 0).toLocaleString('ru-RU')} контрактов` : 'Нет данных'}
-        </span>
-        <Button variant="primary" size="sm" className="flex items-center gap-2" onClick={() => navigate({ to: '/upload' })}>
-          <MdOutlineUploadFile className="size-5" />
-          Загрузка
-        </Button>
-      </div>
-    </nav>
-  )
+  return <nav className="border-gray-blue flex w-full items-center justify-between gap-4 border-b bg-white px-4 py-3"></nav>
 }

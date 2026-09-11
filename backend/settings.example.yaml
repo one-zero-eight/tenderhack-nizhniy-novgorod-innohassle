@@ -1,4 +1,13 @@
 # yaml-language-server: $schema=settings.schema.yaml
+#
+# This file is OPTIONAL. Every value below can be provided via environment variables
+# instead, using the `API_SETTINGS__<FIELD_NAME>` convention, e.g.:
+#
+#   API_SETTINGS__DB_URL=postgresql+asyncpg://postgres:postgres@db:5432/postgres
+#   API_SETTINGS__APP_ROOT_PATH=/api
+#   API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX=".*"
+#
+# Priority (highest first): environment variables > this file > model defaults.
 $schema: "./settings.schema.yaml"
 api_settings:
   db_url: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres"
