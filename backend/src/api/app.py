@@ -5,6 +5,7 @@ from fastapi_swagger import patch_fastapi
 
 import src.api.logging_  # noqa: F401
 from src.api.lifespan import lifespan
+from src.api.repositories.ping import router as ping_router
 from src.config import api_settings
 
 app = FastAPI(
@@ -13,6 +14,8 @@ app = FastAPI(
 app.router.route_class = AutoDeriveResponsesAPIRoute
 
 patch_fastapi(app)
+
+app.include_router(ping_router)
 
 app.add_middleware(
     CORSMiddleware,
