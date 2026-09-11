@@ -1,5 +1,5 @@
 import { Link as RouterLink, useLocation } from '@tanstack/react-router'
-import { HiOutlineClipboardDocumentList } from 'react-icons/hi2'
+import { FaHeadset } from 'react-icons/fa6'
 import LeaveButton from './LeaveButton';
 
 function NavLink({ to, children, icon: Icon }: { to: string; children: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) {
@@ -24,7 +24,7 @@ export default function Navbar() {
         <RouterLink to="/" className="text-main-blue hover:text-main-blue/80 mr-4 text-lg font-bold no-underline">
           Портал Поставщиков
         </RouterLink>
-        <NavLink to="/support" icon={HiOutlineClipboardDocumentList}>
+        <NavLink to="/support" icon={FaHeadset}>
           Поддержка
         </NavLink>
       </div>
