@@ -1,4 +1,3 @@
-import Breadcrumbs from '@/components/shared/Breadcrumbs'
 import Navbar from '@/components/shared/Navbar'
 import Button from '@/components/ui/Button'
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
@@ -6,7 +5,6 @@ import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 const RootLayout = () => (
   <div className="bg-pale-blue/30 flex h-full min-h-screen flex-col">
     <Navbar />
-    <Breadcrumbs />
     <Outlet />
   </div>
 )
