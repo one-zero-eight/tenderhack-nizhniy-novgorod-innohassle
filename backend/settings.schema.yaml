@@ -1,0 +1,31 @@
+$schema: https://json-schema.org/draft-07/schema
+$defs:
+  ApiSettings:
+    properties:
+      app_root_path:
+        default: /api
+        title: App Root Path
+        type: string
+      cors_allow_origin_regex:
+        default: .*
+        title: Cors Allow Origin Regex
+        type: string
+      db_url:
+        examples:
+        - postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+        - postgresql+asyncpg://postgres:postgres@db:5432/postgres
+        format: password
+        title: Db Url
+        type: string
+        writeOnly: true
+    required:
+    - db_url
+    title: ApiSettings
+    type: object
+properties:
+  api_settings:
+    $ref: '#/$defs/ApiSettings'
+required:
+- api_settings
+title: Settings
+type: object

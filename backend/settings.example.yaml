@@ -1,0 +1,4 @@
+# yaml-language-server: $schema=settings.schema.yaml
+$schema: "./settings.schema.yaml"
+api_settings:
+  db_url: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres"
