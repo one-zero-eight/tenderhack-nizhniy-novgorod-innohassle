@@ -29,7 +29,7 @@ function HistoryPage() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-pale-black text-2xl font-bold">История обращений</h1>
+        <h1 className="text-black text-2xl font-bold">История обращений</h1>
         {!isLoading && <span className="text-gray text-sm">Всего: {total}</span>}
       </div>
 

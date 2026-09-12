@@ -17,8 +17,8 @@ export const Route = createFileRoute('/profile/')({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="border-gray-blue flex flex-col gap-0.5 border-b py-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4">
-      <dt className="text-gray w-56 shrink-0 text-xs font-medium tracking-wide uppercase">{label}</dt>
-      <dd className="text-pale-black text-sm break-words">{children}</dd>
+      <dt className="text-main-blue w-56 shrink-0 text-xs font-semibold tracking-wide uppercase">{label}</dt>
+      <dd className="text-black text-sm break-words">{children}</dd>
     </div>
   )
 }
@@ -27,7 +27,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-pale-black text-base font-bold">{title}</h2>
+      <h2 className="text-black text-base font-bold">{title}</h2>
       {children}
     </section>
   )
@@ -53,7 +53,7 @@ function DocumentList({ documents }: { documents?: SchemaDocumentOut[] }) {
     <ul className="border-gray-blue flex flex-col border">
       {items.map((doc) => (
         <li key={doc.id} className="border-gray-blue flex items-center justify-between gap-3 border-b px-3 py-2 text-sm last:border-b-0">
-          <span className="text-pale-black truncate" title={doc.title}>
+          <span className="text-black truncate" title={doc.title}>
             {doc.title}
           </span>
           <span className="text-gray shrink-0 text-xs">
@@ -90,7 +90,7 @@ function ProfilePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8">
-      <h1 className="text-pale-black text-2xl font-bold">Профиль</h1>
+      <h1 className="text-black text-2xl font-bold">Профиль</h1>
 
       {/* Account ------------------------------------------------------------------ */}
       <Section title="Учётная запись">
@@ -158,16 +158,18 @@ function ProfilePage() {
             {profile.procurements.map((procurement) => (
               <li key={procurement.id} className={cn('border-gray-blue flex flex-col gap-2 border p-3')}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-pale-black font-medium">{procurement.title}</span>
+                  <span className="text-black font-medium">{procurement.title}</span>
                   <span className="bg-pale-blue text-main-blue px-2 py-0.5 text-xs font-medium">{procurement.status}</span>
                 </div>
-                <div className="text-gray grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-                  <span>Номер: {procurement.number}</span>
-                  <span>Заказчик: {procurement.customer_name} (ИНН {procurement.customer_inn})</span>
-                  <span>Начальная цена: {formatMoney(procurement.initial_price, procurement.currency)}</span>
-                  <span>Предложений: {procurement.offers_count}</span>
-                  <span>Опубликовано: {formatDateTime(procurement.published_at)}</span>
-                  <span>Приём заявок до: {formatDateTime(procurement.submission_deadline)}</span>
+                <div className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+                  <span className="text-black">Номер: {procurement.number}</span>
+                  <span className="text-black">
+                    Заказчик: {procurement.customer_name} (ИНН {procurement.customer_inn})
+                  </span>
+                  <span className="text-black">Начальная цена: {formatMoney(procurement.initial_price, procurement.currency)}</span>
+                  <span className="text-black">Предложений: {procurement.offers_count}</span>
+                  <span className="text-gray">Опубликовано: {formatDateTime(procurement.published_at)}</span>
+                  <span className="text-gray">Приём заявок до: {formatDateTime(procurement.submission_deadline)}</span>
                 </div>
                 {(procurement.documents ?? []).length > 0 && <DocumentList documents={procurement.documents} />}
               </li>
@@ -185,18 +187,18 @@ function ProfilePage() {
             {profile.offers.map((offer) => (
               <li key={offer.id} className="border-gray-blue flex flex-col gap-2 border p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-pale-black font-medium">{offer.procurement_title}</span>
+                  <span className="text-black font-medium">{offer.procurement_title}</span>
                   <span className="flex items-center gap-2">
                     {offer.is_winner && <span className="bg-green/10 text-green px-2 py-0.5 text-xs font-semibold">Победитель</span>}
                     <span className="bg-pale-blue text-main-blue px-2 py-0.5 text-xs font-medium">{offer.status}</span>
                   </span>
                 </div>
-                <div className="text-gray grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-                  <span>Поставщик: {offer.supplier_name} (ИНН {offer.supplier_inn})</span>
-                  <span>Цена: {formatMoney(offer.price)}</span>
-                  <span>Подано: {formatDateTime(offer.submitted_at)}</span>
+                <div className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+                  <span className="text-black">Поставщик: {offer.supplier_name} (ИНН {offer.supplier_inn})</span>
+                  <span className="text-black">Цена: {formatMoney(offer.price)}</span>
+                  <span className="text-gray">Подано: {formatDateTime(offer.submitted_at)}</span>
                 </div>
-                {offer.details && <p className="text-pale-black text-sm">{offer.details}</p>}
+                {offer.details && <p className="text-black text-sm">{offer.details}</p>}
                 {(offer.documents ?? []).length > 0 && <DocumentList documents={offer.documents} />}
               </li>
             ))}
@@ -213,16 +215,16 @@ function ProfilePage() {
             {profile.contracts.map((contract) => (
               <li key={contract.id} className="border-gray-blue flex flex-col gap-2 border p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-pale-black font-medium">{contract.title}</span>
+                  <span className="text-black font-medium">{contract.title}</span>
                   <span className="bg-pale-blue text-main-blue px-2 py-0.5 text-xs font-medium">{contract.status}</span>
                 </div>
-                <div className="text-gray grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-                  <span>Предмет: {contract.subject}</span>
-                  <span>Цена: {formatMoney(contract.price, contract.currency)}</span>
-                  <span>Срок исполнения: {contract.execution_period}</span>
-                  <span>Ответственный: {contract.responsible_person}</span>
-                  <span>Этап: {contract.execution_stage}</span>
-                  <span>
+                <div className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+                  <span className="text-black">Предмет: {contract.subject}</span>
+                  <span className="text-black">Цена: {formatMoney(contract.price, contract.currency)}</span>
+                  <span className="text-black">Срок исполнения: {contract.execution_period}</span>
+                  <span className="text-black">Ответственный: {contract.responsible_person}</span>
+                  <span className="text-black">Этап: {contract.execution_stage}</span>
+                  <span className="text-black">
                     Стороны: {contract.parties.customer.company_name} → {contract.parties.supplier.company_name}
                   </span>
                 </div>
