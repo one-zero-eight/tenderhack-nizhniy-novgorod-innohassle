@@ -74,7 +74,8 @@ $defs:
         title: Moderation Timeout
         type: number
       ai_answer_timeout:
-        default: 30
+        default: 300
+        description: Total deadline in seconds for an ML answer stream.
         exclusiveMinimum: 0
         maximum: 300
         title: Ai Answer Timeout

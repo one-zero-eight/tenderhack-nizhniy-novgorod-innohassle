@@ -83,6 +83,58 @@ async def test_total_deadline_bounds_http_call():
             await client.send_message("chat-1", "message")
 
 
+async def test_generation_disables_only_the_request_read_timeout():
+    client_timeout = httpx.Timeout(connect=1, read=0.01, write=2, pool=3)
+
+    async def respond(request: httpx.Request):
+        # MockTransport does not enforce HTTPX timeouts; inspect the settings
+        # passed to the transport to guard against inheriting its short read limit.
+        assert request.extensions["timeout"] == {"connect": 1, "read": None, "write": 2, "pool": 3}
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text='event: done\ndata: {"message_id": "m1", "content": "Answer"}\n\n',
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://ai/", transport=httpx.MockTransport(respond), timeout=client_timeout
+    ) as http:
+        client = AIClient(http, settings())
+        answer = await client.send_message("chat-1", "message")
+        assert answer.content == "Answer"
+        assert http.timeout == client_timeout
+
+
+@pytest.mark.parametrize("keep_sending", [False, True], ids=["silent-stream", "active-stream"])
+async def test_total_deadline_bounds_stream_and_closes_response(keep_sending):
+    class SlowStream(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            yield b'event: start\ndata: {"message_id": "m1"}\n\n'
+            while True:
+                if keep_sending:
+                    await asyncio.sleep(0)
+                    yield b'event: token\ndata: {"delta": "a"}\n\n'
+                else:
+                    await asyncio.sleep(10)
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = SlowStream()
+
+    async def respond(request: httpx.Request):
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings(ai_answer_timeout=0.02))
+        with pytest.raises(AIUnavailable) as caught:
+            await client.send_message("chat-1", "message")
+        assert isinstance(caught.value.__cause__, TimeoutError)
+        assert stream.closed
+
+
 async def test_routing_stub_returns_none():
     async with httpx.AsyncClient(base_url="http://ai/") as http:
         client = AIClient(http, settings())

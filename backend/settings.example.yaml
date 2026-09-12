@@ -22,5 +22,6 @@ api_settings:
   moderation_threshold: 0.8
   moderation_block_labels: [obscenity, insult]
   moderation_timeout: 5
-  ai_answer_timeout: 30
+  # Total generation deadline, including pauses between SSE events (seconds).
+  ai_answer_timeout: 300
   ai_routing_timeout: 5

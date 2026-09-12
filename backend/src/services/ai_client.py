@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from time import monotonic
 
 import httpx
 from httpx_sse import SSEError, aconnect_sse
@@ -67,10 +68,15 @@ class AIClient:
     async def stream_message(self, ml_chat_id: str, message: str):
         """Stream SSE events from ML service (POST /ml-api/chat/{chat_id}/message)."""
         endpoint = f"ml-api/chat/{ml_chat_id}/message"
+        # Generation and tool calls may be silent for longer than HTTPX's read
+        # timeout. Bound the whole answer below while keeping other I/O limits.
+        timeout = httpx.Timeout(self.http.timeout)
+        timeout.read = None
+        started = monotonic()
         try:
             async with asyncio.timeout(self.settings.ai_answer_timeout):
                 async with aconnect_sse(
-                    self.http, "POST", endpoint, json={"message": message}
+                    self.http, "POST", endpoint, json={"message": message}, timeout=timeout
                 ) as event_source:
                     async for sse in event_source.aiter_sse():
                         event_name = sse.event or "message"
@@ -80,7 +86,10 @@ class AIClient:
                             data = {"raw": sse.data}
                         yield event_name, data
         except (httpx.HTTPError, TimeoutError, SSEError) as exc:
-            logger.warning("AI service unavailable during send_message (%s): %s (%s)", endpoint, exc, type(exc).__name__)
+            logger.warning(
+                "AI service unavailable during send_message (%s) after %.1fs (answer deadline %.1fs): %s (%s)",
+                endpoint, monotonic() - started, self.settings.ai_answer_timeout, exc, type(exc).__name__,
+            )
             raise AIUnavailable(endpoint) from exc
 
     async def send_message(self, ml_chat_id: str, message: str) -> MLAnswer:
@@ -161,4 +170,3 @@ class AIClient:
         except (httpx.HTTPError, TimeoutError, ValueError) as exc:
             logger.warning("AI service health check failed: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("health") from exc
-

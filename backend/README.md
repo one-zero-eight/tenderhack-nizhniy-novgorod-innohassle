@@ -100,6 +100,13 @@ uv run -m src.api --host 127.0.0.1 --port 8000
 
 Password for all pre-seeded accounts is the value of `DEMO_PASSWORD` passed during seeding.
 
+AI generation has a total deadline of 300 seconds, including pauses during model
+generation and tool calls. Configure it with `API_SETTINGS__AI_ANSWER_TIMEOUT`
+or `api_settings.ai_answer_timeout` in `settings.yaml` (maximum: 300 seconds).
+Existing explicit values, such as 30 seconds, still override the new default.
+The generation stream has no separate read timeout; connection, write, and pool
+timeouts remain in effect. This applies to both SSE and JSON message endpoints.
+
 ---
 
 ## 3. End-to-End Application Flows
