@@ -1,18 +1,14 @@
 from datetime import datetime
-from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.db.models import Role
+
 
 class Schema(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
-
-
-class UserType(StrEnum):
-    SELLER = "seller"  # Поставщик
-    BUYER = "buyer"    # Заказчик
 
 
 class DocumentOut(Schema):
@@ -93,7 +89,7 @@ class CompanyProfileOut(Schema):
     phone: str
     email: str
     website: str | None = None
-    role: UserType
+    role: Role
     role_label: str  # "Поставщик" или "Заказчик"
     documents: list[DocumentOut] = Field(default_factory=list)
 
@@ -101,8 +97,7 @@ class CompanyProfileOut(Schema):
 class ProfileViewOut(Schema):
     user_id: UUID | str
     display_name: str
-    role: UserType
-    user_type: UserType
+    role: Role
     type_label: str  # "Поставщик" | "Заказчик"
     company: CompanyProfileOut
     procurements: list[ProcurementOut]
@@ -111,9 +106,8 @@ class ProfileViewOut(Schema):
     documents: list[DocumentOut]
 
 
-class UpdateUserTypeIn(Schema):
-    role: UserType | None = None
-    user_type: UserType | None = None
+class UpdateRoleIn(Schema):
+    role: Role = Role.BUYER
 
 
 class DocumentCreateIn(Schema):

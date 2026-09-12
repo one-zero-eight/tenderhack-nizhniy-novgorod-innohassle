@@ -12,8 +12,7 @@ from src.schemas.profile import (
     ProcurementCreateIn,
     ProcurementOut,
     ProfileViewOut,
-    UpdateUserTypeIn,
-    UserType,
+    UpdateRoleIn,
 )
 from src.services.errors import fail
 from src.services.profile import (
@@ -31,11 +30,7 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 @router.get("", response_model=ProfileViewOut)
 async def get_my_profile(
     user: CurrentUser,
-    user_type: UserType | None = Query(
-        default=None,
-        description="Переопределить представление: seller (поставщик) или buyer (заказчик)",
-    ),
-    role: UserType | None = Query(
+    role: Role | None = Query(
         default=None,
         description="Переопределить роль: seller (поставщик) или buyer (заказчик)",
     ),
@@ -43,24 +38,16 @@ async def get_my_profile(
     """
     Возвращает профиль текущего пользователя.
     По умолчанию роль определяется из учётной записи пользователя (поставщик/заказчик),
-    либо может быть явно переопределена параметром role или user_type.
+    либо может быть явно переопределена параметром role.
     """
-    selected_type = (
-        role
-        or user_type
-        or (UserType.SELLER if (user.role == Role.SELLER or user.user_type == "seller") else UserType.BUYER)
-    )
-    return get_profile_data(selected_type, user=user)
+    selected_role = role or (user.role if user.role in (Role.SELLER, Role.BUYER) else Role.BUYER)
+    return get_profile_data(selected_role, user=user)
 
 
 @router.get("/sample", response_model=ProfileViewOut)
 async def get_sample_profile(
-    user_type: UserType | None = Query(
-        default=None,
-        description="Тип профиля: seller (поставщик) или buyer (заказчик)",
-    ),
-    role: UserType | None = Query(
-        default=None,
+    role: Role = Query(
+        default=Role.SELLER,
         description="Роль профиля: seller (поставщик) или buyer (заказчик)",
     ),
 ) -> ProfileViewOut:
@@ -68,26 +55,24 @@ async def get_sample_profile(
     Демонстрационный профиль без авторизации.
     Демонстрирует цепочку: Компания -> Закупка -> Предложения -> Контракт -> Документы.
     """
-    selected = role or user_type or UserType.SELLER
-    return get_profile_data(selected)
+    return get_profile_data(role)
 
 
-@router.patch("/type", response_model=ProfileViewOut)
 @router.patch("/role", response_model=ProfileViewOut)
-async def update_user_type(
-    payload: UpdateUserTypeIn,
+async def update_user_role(
+    payload: UpdateRoleIn,
     user: CurrentUser,
     storage: Storage,
 ) -> ProfileViewOut:
     """
     Переключение роли пользователя между Поставщиком (seller) и Заказчиком (buyer).
     """
-    target = payload.role or payload.user_type or UserType.BUYER
+    if payload.role not in (Role.SELLER, Role.BUYER):
+        fail(400, "INVALID_ROLE", "Role must be seller or buyer")
     async with storage.create_session() as session, session.begin():
-        user.role = Role.SELLER if target == UserType.SELLER else Role.BUYER
-        user.user_type = target.value
+        user.role = payload.role
         session.add(user)
-    return get_profile_data(target, user=user)
+    return get_profile_data(payload.role, user=user)
 
 
 @router.post("/procurements", response_model=ProcurementOut, status_code=201)

@@ -67,7 +67,7 @@ async def test_auth_and_permissions(case):
     dup = await case.client.post("/auth/register", json={"login": "newuser", "password": "newpassword123"})
     assert dup.status_code == 409
     assert (await case.request("GET", "/admin/stats")).status_code == 403
-    assert (await case.request("GET", "/operator/chats")).status_code == 403
+    assert (await case.request("GET", "/support/chats")).status_code == 403
     assert (await case.request("POST", "/chats", login="admin")).status_code == 403
     expired = jwt.encode(
         {
@@ -212,10 +212,10 @@ async def test_operator_handoff_moderation_and_identity(case):
     accepted = await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     assert accepted.json()["recipient"]["kind"] == "support_queue"
     assert (await case.request("GET", f"/chats/{chat}/messages", login="operator2")).status_code == 404
-    assert (await case.request("GET", "/operator/chats", login="operator1")).json()["total"] == 0
-    assert (await case.request("GET", "/operator/chats", login="operator2")).json()["total"] == 1
-    assert (await case.request("POST", f"/operator/chats/{chat}/claim", login="operator1")).status_code == 403
-    claimed = await case.request("POST", f"/operator/chats/{chat}/claim", login="operator2")
+    assert (await case.request("GET", "/support/chats", login="operator1")).json()["total"] == 0
+    assert (await case.request("GET", "/support/chats", login="operator2")).json()["total"] == 1
+    assert (await case.request("POST", f"/support/chats/{chat}/claim", login="operator1")).status_code == 403
+    claimed = await case.request("POST", f"/support/chats/{chat}/claim", login="operator2")
     assert claimed.json()["recipient"]["operator"]["id"] == str(case.users["operator2"].id)
     calls = len(case.ai.calls)
     human = await case.send(chat, "An operator's answer", login="operator2")
@@ -244,7 +244,7 @@ async def test_claim_is_atomic(case):
     chat = await case.chat()
     await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     responses = await asyncio.gather(
-        *[case.request("POST", f"/operator/chats/{chat}/claim", login=login) for login in ("operator2", "operator3")]
+        *[case.request("POST", f"/support/chats/{chat}/claim", login=login) for login in ("operator2", "operator3")]
     )
     assert sorted(response.status_code for response in responses) == [200, 409]
     winner = responses[0].json() if responses[0].status_code == 200 else responses[1].json()
@@ -342,7 +342,7 @@ async def test_routing_outage_and_human_rating_attribution(case, caplog):
     assert result.status_code == 200
     assert "AI service unavailable for chat" in caplog.text
     await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
-    await case.request("POST", f"/operator/chats/{chat}/claim", login="operator2")
+    await case.request("POST", f"/support/chats/{chat}/claim", login="operator2")
     await case.send(chat, "Human reply", login="operator2")
     assert (
         await case.request("POST", f"/chats/{chat}/close", login="operator2", json={"reason": "user_cancelled"})
@@ -450,12 +450,12 @@ async def test_chat_rating_returned_in_all_endpoints(case):
     assert req_op["status"] == "waiting_operator"
     assert req_op["rating"]["stars"] == 5
 
-    # 6. GET /operator/chats returns rating
-    op_chats = (await case.request("GET", "/operator/chats", login="operator1")).json()
+    # 6. GET /support/chats returns rating
+    op_chats = (await case.request("GET", "/support/chats", login="operator1")).json()
     assert op_chats["items"][0]["rating"]["stars"] == 5
 
-    # 7. POST /operator/chats/{chat_id}/claim returns rating
-    claimed = (await case.request("POST", f"/operator/chats/{chat}/claim", login="operator1")).json()
+    # 7. POST /support/chats/{chat_id}/claim returns rating
+    claimed = (await case.request("POST", f"/support/chats/{chat}/claim", login="operator1")).json()
     assert claimed["status"] == "operator"
     assert claimed["rating"]["stars"] == 5
 

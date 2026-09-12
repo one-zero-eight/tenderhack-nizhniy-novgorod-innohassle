@@ -15,7 +15,6 @@ from src.schemas.profile import (
     ProcurementCreateIn,
     ProcurementOut,
     ProfileViewOut,
-    UserType,
 )
 from src.services.errors import fail
 
@@ -37,7 +36,7 @@ BUYER_COMPANY = CompanyProfileOut(
     phone="+7 (495) 710-20-30",
     email="procurement@gbu-cit.ru",
     website="https://cit.moscow.ru",
-    role=UserType.BUYER,
+    role=Role.BUYER,
     role_label="Заказчик",
     documents=[
         DocumentOut(
@@ -71,7 +70,7 @@ SELLER_COMPANY = CompanyProfileOut(
     phone="+7 (495) 980-45-60",
     email="tenders@technosfera.ru",
     website="https://technosfera-eng.ru",
-    role=UserType.SELLER,
+    role=Role.SELLER,
     role_label="Поставщик",
     documents=[
         DocumentOut(
@@ -105,7 +104,7 @@ SELLER_COMPANY_2 = CompanyProfileOut(
     phone="+7 (812) 450-12-88",
     email="info@infosys-nw.ru",
     website="https://infosys-nw.ru",
-    role=UserType.SELLER,
+    role=Role.SELLER,
     role_label="Поставщик",
     documents=[],
 )
@@ -393,14 +392,14 @@ STORE = ProfileStore()
 
 
 def get_profile_data(
-    user_type: UserType,
+    role: Role = Role.SELLER,
     user: User | None = None,
 ) -> ProfileViewOut:
     data = STORE.get_data()
     user_id = str(user.id) if user else "sample-user"
-    display_name = user.display_name if user else ("Иван Поставщиков" if user_type == UserType.SELLER else "Анна Заказчикова")
+    display_name = user.display_name if user else ("Иван Поставщиков" if role == Role.SELLER else "Анна Заказчикова")
 
-    if user_type == UserType.SELLER:
+    if role == Role.SELLER:
         company = SELLER_COMPANY
         procurements = data["procurements"]
         offers = [off for off in data["offers_all"] if off.supplier_inn == SELLER_COMPANY.inn]
@@ -414,8 +413,7 @@ def get_profile_data(
         return ProfileViewOut(
             user_id=user_id,
             display_name=display_name,
-            role=UserType.SELLER,
-            user_type=UserType.SELLER,
+            role=Role.SELLER,
             type_label="Поставщик",
             company=company,
             procurements=procurements,
@@ -437,8 +435,7 @@ def get_profile_data(
         return ProfileViewOut(
             user_id=user_id,
             display_name=display_name,
-            role=UserType.BUYER,
-            user_type=UserType.BUYER,
+            role=Role.BUYER,
             type_label="Заказчик",
             company=company,
             procurements=procurements,
@@ -457,7 +454,7 @@ def get_contract_by_id(contract_id: str) -> ContractOut | None:
 
 
 def create_procurement(payload: ProcurementCreateIn, user: User | None = None) -> ProcurementOut:
-    customer_name = user.display_name if user and (user.role == Role.BUYER or user.user_type == "buyer") else BUYER_COMPANY.name
+    customer_name = user.display_name if user and user.role == Role.BUYER else BUYER_COMPANY.name
     proc_id = f"proc-{len(STORE.procurements) + 1:03d}"
     number = payload.number or f"0173200001426000{len(STORE.procurements) + 10:03d}"
     docs = [
@@ -494,7 +491,7 @@ def create_offer(payload: OfferCreateIn, user: User | None = None) -> OfferOut:
     if proc is None:
         fail(404, "PROCUREMENT_NOT_FOUND", f"Procurement with id '{payload.procurement_id}' not found")
 
-    supplier_name = user.display_name if user and (user.role == Role.SELLER or user.user_type == "seller") else SELLER_COMPANY.name
+    supplier_name = user.display_name if user and user.role == Role.SELLER else SELLER_COMPANY.name
     offer_id = f"off-{len(STORE.offers) + 1:03d}"
     docs = [
         DocumentOut(

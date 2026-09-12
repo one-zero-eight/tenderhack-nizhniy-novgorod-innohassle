@@ -1,17 +1,16 @@
 from fastapi import APIRouter
 
 from src.api.repositories.chats import Limit, Offset
-from src.api.repositories.dependencies import Chats, CurrentUser
+from src.api.repositories.dependencies import Chats, Support
 from src.db.models import ChatStatus
 from src.schemas.chat import ChatOut, ChatPage
 
-router = APIRouter(tags=["support"])
+router = APIRouter(prefix="/support", tags=["support"])
 
 
-@router.get("/support/chats", response_model=ChatPage)
-@router.get("/operator/chats", response_model=ChatPage)
-async def operator_chats(
-    user: CurrentUser,
+@router.get("/chats", response_model=ChatPage)
+async def support_chats(
+    user: Support,
     service: Chats,
     status: ChatStatus | None = None,
     topic: str | None = None,
@@ -24,8 +23,7 @@ async def operator_chats(
     )
 
 
-@router.post("/support/chats/{chat_id}/claim", response_model=ChatOut)
-@router.post("/operator/chats/{chat_id}/claim", response_model=ChatOut)
-async def claim(chat_id: str, user: CurrentUser, service: Chats) -> ChatOut:
+@router.post("/chats/{chat_id}/claim", response_model=ChatOut)
+async def claim(chat_id: str, user: Support, service: Chats) -> ChatOut:
     return await service.claim(chat_id, user)
 

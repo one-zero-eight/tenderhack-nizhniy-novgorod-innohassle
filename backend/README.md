@@ -178,9 +178,9 @@ sequenceDiagram
     Backend->>Backend: 1. Update Chat status to 'waiting_operator'<br/>2. Assign support_line_id = 1<br/>3. Append System Notice to PostgreSQL
     Backend-->>User: SSE stream closes (or JSON SendResult with updated recipient)
 
-    Note over Operator, Backend: Operator takes over chat
-    Operator->>Backend: GET /operator/chats (filter by line 1)
-    Operator->>Backend: POST /operator/chats/{id}/claim
+    Note over Operator, Backend: Support specialist takes over chat
+    Operator->>Backend: GET /support/chats (filter by line 1)
+    Operator->>Backend: POST /support/chats/{id}/claim
     Backend-->>Operator: Chat claimed (status: 'operator')
 ```
 
@@ -208,10 +208,10 @@ sequenceDiagram
     User->>Backend: POST /chats/{id}/request-operator {"support_line_id": 2}
     Backend-->>User: 200 OK {status: "waiting_operator", recipient: {kind: "support_queue", ...}}
 
-    Operator->>Backend: GET /operator/chats?status=waiting_operator
+    Operator->>Backend: GET /support/chats?status=waiting_operator
     Backend-->>Operator: 200 OK {items: [{id: "{id}", status: "waiting_operator", ...}]}
 
-    Operator->>Backend: POST /operator/chats/{id}/claim
+    Operator->>Backend: POST /support/chats/{id}/claim
     Backend-->>Operator: 200 OK {status: "operator", operator: {id: "operator-uuid", display_name: "Оператор"}}
 
     Operator->>Backend: POST /chats/{id}/messages {"text": "Здравствуйте! Чем могу помочь?", "client_message_id": "uuid-2"}
@@ -224,7 +224,7 @@ sequenceDiagram
 ```
 
 1. **Request Operator**: `POST /chats/{chat_id}/request-operator` transitions the chat from `ai` to `waiting_operator`.
-2. **Claiming**: Only operators assigned to the matching `support_line_id` can claim the chat (`POST /operator/chats/{chat_id}/claim`).
+2. **Claiming**: Only support staff assigned to the matching `support_line_id` can claim the chat (`POST /support/chats/{chat_id}/claim`).
 3. **Transcript Merging**: The backend merges AI turns from SQLite with human messages from PostgreSQL so both participants see the full conversational context.
 
 ---
@@ -300,8 +300,8 @@ sequenceDiagram
   "login": "supplier_ivan",
   "password": "strongpassword123",
   "display_name": "Иван Петров",
-  "role": "seller",                // "seller" | "buyer" | "support" | "admin" (legacy: "user" | "operator")
-  "support_line_id": null          // Required if role == "support" (or "operator") (1, 2, or 3)
+  "role": "seller",                // "seller" | "buyer" | "support" | "admin"
+  "support_line_id": null          // Required if role == "support" (1, 2, or 3)
 }
 
 // POST /auth/login
@@ -324,9 +324,9 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/profile` | Authenticated | Query (`role` / `user_type`) | `ProfileViewOut` | Get current user's profile view (seller or buyer data model). |
-| `GET` | `/profile/sample` | Public | Query (`role` / `user_type`) | `ProfileViewOut` | Sample demonstration profile with related procurements, offers, and contracts. |
-| `PATCH` | `/profile/role` | Authenticated | `UpdateUserTypeIn` | `ProfileViewOut` | Switch active role / profile view between `seller` and `buyer`. |
+| `GET` | `/profile` | Authenticated | Query (`role`) | `ProfileViewOut` | Get current user's profile view (seller or buyer data model). |
+| `GET` | `/profile/sample` | Public | Query (`role`) | `ProfileViewOut` | Sample demonstration profile with related procurements, offers, and contracts. |
+| `PATCH` | `/profile/role` | Authenticated | `UpdateRoleIn` | `ProfileViewOut` | Switch active role / profile view between `seller` and `buyer`. |
 | `POST` | `/profile/procurements` | Authenticated | `ProcurementCreateIn` | `ProcurementOut` | Create a new procurement. |
 | `POST` | `/profile/offers` | Authenticated | `OfferCreateIn` | `OfferOut` | Submit an offer for a procurement. |
 | `POST` | `/profile/contracts` | Authenticated | `ContractCreateIn` | `ContractOut` | Create a contract. |
@@ -346,7 +346,7 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/chats` | `seller` / `buyer` / `user` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
+| `POST` | `/chats` | `seller` / `buyer` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
 | `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `topic`, `subtopic`, `offset`, `limit`). |
 | `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Support | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
 | `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Support | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
@@ -394,12 +394,12 @@ sequenceDiagram
 
 ---
 
-### Support Desk (`/support` & `/operator`)
+### Support Desk (`/support`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/support/chats` (or `/operator/chats`) | `support` / `operator` | Query params | `ChatPage` | View active and waiting chats routed to specialist's support line. |
-| `POST` | `/support/chats/{chat_id}/claim` (or `/operator/chats/{chat_id}/claim`) | `support` / `operator` | None | `ChatOut` | Assign waiting chat to current support specialist (`status: operator`). |
+| `GET` | `/support/chats` | `support` | Query params | `ChatPage` | View active and waiting chats routed to specialist's support line. |
+| `POST` | `/support/chats/{chat_id}/claim` | `support` | None | `ChatOut` | Assign waiting chat to current support specialist (`status: operator`). |
 
 ---
 
