@@ -487,7 +487,7 @@ async def send_message(request: Request, chat_id: str, message: str = Form(...))
         return HTMLResponse("", status_code=204)
 
     _set_active(chat_id)
-    _user_msg, assistant_msg, _updated = chat_service.prepare_turn(chat_id, text)
+    _user_msg, assistant_msg, _updated = await chat_service.prepare_turn(chat_id, text)
 
     def to_sse(event: str, payload: str) -> str:
         return _turn_event_to_sse(event, payload)

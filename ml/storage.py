@@ -17,6 +17,10 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = HERE / "chats.sqlite3"
 
+# Заголовок нового чата. Пока он такой, при первом сообщении его заменит
+# сгенерированное моделью название (см. chat.prepare_turn).
+DEFAULT_CHAT_TITLE = "Новый чат"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
     id            TEXT PRIMARY KEY,
@@ -150,7 +154,7 @@ class ChatStorage:
 
     # ------------------------------------------------------------------ chats
 
-    def create_chat(self, title: str = "Новый чат", system_prompt: str | None = None) -> ChatRecord:
+    def create_chat(self, title: str = DEFAULT_CHAT_TITLE, system_prompt: str | None = None) -> ChatRecord:
         now = _now()
         chat_id = _new_id()
         self._conn.execute(
@@ -195,15 +199,11 @@ class ChatStorage:
         return None if row is None else self._row_to_chat(row, with_messages=True)
 
     def list_chats(self, limit: int = 200) -> list[ChatRecord]:
-        rows = self._conn.execute(
-            "SELECT * FROM chats ORDER BY updated_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM chats ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
         return [self._row_to_chat(row, with_messages=False) for row in rows]
 
     def rename_chat(self, chat_id: str, title: str) -> None:
-        self._conn.execute(
-            "UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", (title, _now(), chat_id)
-        )
+        self._conn.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", (title, _now(), chat_id))
         self._conn.commit()
 
     def touch_chat(self, chat_id: str) -> None:
@@ -220,9 +220,7 @@ class ChatStorage:
         rows = self._conn.execute(
             "SELECT * FROM messages WHERE chat_id = ? ORDER BY position ASC", (chat_id,)
         ).fetchall()
-        messages = [
-            MessageRecord(id=row["id"], role=row["role"], content=row["content"]) for row in rows
-        ]
+        messages = [MessageRecord(id=row["id"], role=row["role"], content=row["content"]) for row in rows]
         if not messages:
             return messages
         tools = self._list_tools([message.id for message in messages])
@@ -302,9 +300,7 @@ class ChatStorage:
         ).fetchone()
         return int(row["pos"])
 
-    def add_tool_call(
-        self, message_id: str, tool_id: str, name: str, kwargs: dict[str, Any]
-    ) -> ToolCallRecord:
+    def add_tool_call(self, message_id: str, tool_id: str, name: str, kwargs: dict[str, Any]) -> ToolCallRecord:
         record = ToolCallRecord(id=tool_id or _new_id(), name=name, kwargs=kwargs)
         self._conn.execute(
             """INSERT OR REPLACE INTO tool_calls

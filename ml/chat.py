@@ -19,7 +19,7 @@ from llama_index.core.base.llms.types import MessageRole
 from llama_index.core.workflow import Context
 
 from rag import build_agent, langfuse, propagate_attributes
-from storage import ChatRecord, ChatStorage, MessageRecord, get_storage
+from storage import DEFAULT_CHAT_TITLE, ChatRecord, ChatStorage, MessageRecord, get_storage
 from support import SupportSession
 
 _CHAT_LOCKS: dict[str, asyncio.Lock] = {}
@@ -51,9 +51,8 @@ TITLE_SYSTEM_PROMPT = (
     "Не пиши «вопрос», «тема», «помощь» и подобное. Не отвечай на вопрос — только назови его."
 )
 
-# Ограничения на длину названия чата в БД и в интерфейсе.
+# Ограничение на длину названия чата в списке и в интерфейсе.
 TITLE_MAX_LEN = 64
-TITLE_FALLBACK_LEN = 48
 
 
 def _clean_title(raw: str) -> str:
@@ -74,7 +73,7 @@ async def generate_title(text: str) -> str:
     """
     question = " ".join((text or "").split()).strip()
     if not question:
-        return "Новый чат"
+        return DEFAULT_CHAT_TITLE
 
     fallback = _title_from(question)
     try:
@@ -159,18 +158,23 @@ class ChatClosedError(RuntimeError):
         super().__init__("Чат закрыт: обращение переведено на линию поддержки")
 
 
-def prepare_turn(
+async def prepare_turn(
     chat_id: str, text: str, storage: ChatStorage | None = None
 ) -> tuple[MessageRecord, MessageRecord, ChatRecord]:
-    """Записывает пару user/assistant в БД, попутно задавая заголовок чата."""
+    """Записывает пару user/assistant в БД, попутно задавая заголовок чата.
+
+    Заголовок генерируется моделью из первого вопроса в чате — синхронно, до создания
+    сообщений, чтобы название успело попасть в ответ и в список чатов.
+    """
     store = storage or get_storage()
     chat = store.get_chat(chat_id)
     if chat is None:
         raise KeyError(chat_id)
     if chat.is_closed:
         raise ChatClosedError(chat.redirect_line)
-    if chat.title == "Новый чат" and text:
-        store.rename_chat(chat_id, _title_from(text))
+    # Первое сообщение в чате — самое время дать ему осмысленное название.
+    if chat.title == DEFAULT_CHAT_TITLE and text:
+        store.rename_chat(chat_id, await generate_title(text))
     user_message = store.add_message(chat_id, "user", text)
     assistant_message = store.add_message(chat_id, "assistant", "")
     updated = store.get_chat(chat_id)
@@ -261,7 +265,7 @@ async def stream_answer(
 async def run_turn(chat_id: str, user_text: str, *, storage: ChatStorage | None = None) -> AsyncIterator[str]:
     """Полный ход: запись сообщений в БД + стрим ответа (для REST API)."""
     store = storage or get_storage()
-    _user_message, assistant_message, _chat = prepare_turn(chat_id, user_text, store)
+    _user_message, assistant_message, _chat = await prepare_turn(chat_id, user_text, store)
     message_id = assistant_message.id
     yield sse("start", {"message_id": message_id})
 
