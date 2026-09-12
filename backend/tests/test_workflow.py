@@ -21,6 +21,22 @@ async def test_auth_and_permissions(case):
     me = await case.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.json()["role"] == "user"
     assert "password_hash" not in me.json()
+
+    # Public registration
+    reg = await case.client.post(
+        "/auth/register",
+        json={"login": "newuser", "password": "newpassword123", "display_name": "Новый Пользователь"},
+    )
+    assert reg.status_code == 201
+    new_token = reg.json()["access_token"]
+    new_me = await case.client.get("/auth/me", headers={"Authorization": f"Bearer {new_token}"})
+    assert new_me.json()["login"] == "newuser"
+    assert new_me.json()["display_name"] == "Новый Пользователь"
+    assert new_me.json()["role"] == "user"
+
+    # Duplicate registration conflict
+    dup = await case.client.post("/auth/register", json={"login": "newuser", "password": "newpassword123"})
+    assert dup.status_code == 409
     assert (await case.request("GET", "/admin/stats")).status_code == 403
     assert (await case.request("GET", "/operator/chats")).status_code == 403
     assert (await case.request("POST", "/chats", login="admin")).status_code == 403

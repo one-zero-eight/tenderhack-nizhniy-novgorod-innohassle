@@ -16,6 +16,14 @@ class LoginIn(Schema):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class RegisterIn(Schema):
+    login: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    password: str = Field(min_length=1, max_length=1024)
+    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+    role: Role = Role.USER
+    support_line_id: int | None = Field(default=None, ge=1, le=3)
+
+
 class TokenOut(Schema):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
