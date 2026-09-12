@@ -13,6 +13,9 @@ import { Route as RegisterRouteImport } from './routes/register';
 import { Route as AuthRouteImport } from './routes/auth';
 import { Route as IndexRouteImport } from './routes/index';
 import { Route as SupportIndexRouteImport } from './routes/support.index';
+import { Route as KnowledgeIndexRouteImport } from './routes/knowledge.index';
+import { Route as IssuesIndexRouteImport } from './routes/issues.index';
+import { Route as HistoryIndexRouteImport } from './routes/history.index';
 import { Route as SupportChatIdRouteImport } from './routes/support.$chatId';
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -35,6 +38,21 @@ const SupportIndexRoute = SupportIndexRouteImport.update({
   path: '/support/',
   getParentRoute: () => rootRouteImport,
 } as any);
+const KnowledgeIndexRoute = KnowledgeIndexRouteImport.update({
+  id: '/knowledge/',
+  path: '/knowledge/',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const IssuesIndexRoute = IssuesIndexRouteImport.update({
+  id: '/issues/',
+  path: '/issues/',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const HistoryIndexRoute = HistoryIndexRouteImport.update({
+  id: '/history/',
+  path: '/history/',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SupportChatIdRoute = SupportChatIdRouteImport.update({
   id: '/support/$chatId',
   path: '/support/$chatId',
@@ -46,6 +64,9 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
+  '/history': typeof HistoryIndexRoute;
+  '/issues': typeof IssuesIndexRoute;
+  '/knowledge': typeof KnowledgeIndexRoute;
   '/support': typeof SupportIndexRoute;
 }
 export interface FileRoutesByTo {
@@ -53,6 +74,9 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
+  '/history': typeof HistoryIndexRoute;
+  '/issues': typeof IssuesIndexRoute;
+  '/knowledge': typeof KnowledgeIndexRoute;
   '/support': typeof SupportIndexRoute;
 }
 export interface FileRoutesById {
@@ -61,19 +85,41 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
+  '/history/': typeof HistoryIndexRoute;
+  '/issues/': typeof IssuesIndexRoute;
+  '/knowledge/': typeof KnowledgeIndexRoute;
   '/support/': typeof SupportIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/auth' | '/register' | '/support/$chatId' | '/support';
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/register'
+    | '/support/$chatId'
+    | '/history'
+    | '/issues'
+    | '/knowledge'
+    | '/support';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/' | '/auth' | '/register' | '/support/$chatId' | '/support';
+  to:
+    | '/'
+    | '/auth'
+    | '/register'
+    | '/support/$chatId'
+    | '/history'
+    | '/issues'
+    | '/knowledge'
+    | '/support';
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/register'
     | '/support/$chatId'
+    | '/history/'
+    | '/issues/'
+    | '/knowledge/'
     | '/support/';
   fileRoutesById: FileRoutesById;
 }
@@ -82,6 +128,9 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute;
   RegisterRoute: typeof RegisterRoute;
   SupportChatIdRoute: typeof SupportChatIdRoute;
+  HistoryIndexRoute: typeof HistoryIndexRoute;
+  IssuesIndexRoute: typeof IssuesIndexRoute;
+  KnowledgeIndexRoute: typeof KnowledgeIndexRoute;
   SupportIndexRoute: typeof SupportIndexRoute;
 }
 
@@ -115,6 +164,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/knowledge/': {
+      id: '/knowledge/';
+      path: '/knowledge';
+      fullPath: '/knowledge';
+      preLoaderRoute: typeof KnowledgeIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/issues/': {
+      id: '/issues/';
+      path: '/issues';
+      fullPath: '/issues';
+      preLoaderRoute: typeof IssuesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/history/': {
+      id: '/history/';
+      path: '/history';
+      fullPath: '/history';
+      preLoaderRoute: typeof HistoryIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/support/$chatId': {
       id: '/support/$chatId';
       path: '/support/$chatId';
@@ -130,6 +200,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   RegisterRoute: RegisterRoute,
   SupportChatIdRoute: SupportChatIdRoute,
+  HistoryIndexRoute: HistoryIndexRoute,
+  IssuesIndexRoute: IssuesIndexRoute,
+  KnowledgeIndexRoute: KnowledgeIndexRoute,
   SupportIndexRoute: SupportIndexRoute,
 };
 export const routeTree = rootRouteImport
