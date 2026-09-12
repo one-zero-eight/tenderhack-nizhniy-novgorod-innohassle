@@ -88,7 +88,11 @@ class AIClient:
         except (httpx.HTTPError, TimeoutError, SSEError) as exc:
             logger.warning(
                 "AI service unavailable during send_message (%s) after %.1fs (answer deadline %.1fs): %s (%s)",
-                endpoint, monotonic() - started, self.settings.ai_answer_timeout, exc, type(exc).__name__,
+                endpoint,
+                monotonic() - started,
+                self.settings.ai_answer_timeout,
+                exc,
+                type(exc).__name__,
             )
             raise AIUnavailable(endpoint) from exc
 
@@ -139,10 +143,14 @@ class AIClient:
             )
         except (ValueError, AIUnavailable) as exc:
             if not isinstance(exc, AIUnavailable):
-                logger.warning("AI service unavailable during send_message (%s): %s (%s)", f"ml-api/chat/{ml_chat_id}/message", exc, type(exc).__name__)
+                logger.warning(
+                    "AI service unavailable during send_message (%s): %s (%s)",
+                    f"ml-api/chat/{ml_chat_id}/message",
+                    exc,
+                    type(exc).__name__,
+                )
                 raise AIUnavailable(f"ml-api/chat/{ml_chat_id}/message") from exc
             raise
-
 
     async def delete_chat(self, ml_chat_id: str) -> None:
         """Delete chat in ML service (DELETE /ml-api/chat/{chat_id})."""
@@ -291,4 +299,3 @@ class AIClient:
         except (httpx.HTTPError, TimeoutError, ValueError) as exc:
             logger.warning("AI service health check failed: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("health") from exc
-

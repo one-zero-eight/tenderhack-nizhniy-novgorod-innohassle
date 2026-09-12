@@ -33,7 +33,9 @@ class ApiSettings(BaseSettings):
     moderation_threshold: float = Field(0.8, gt=0, lt=1)
     moderation_block_labels: list[Literal["obscenity", "insult"]] = Field(default=["obscenity", "insult"], min_length=1)
     moderation_timeout: float = Field(5, gt=0, le=120)
-    ai_answer_timeout: float = Field(300, gt=0, le=300, description="Total deadline in seconds for an ML answer stream.")
+    ai_answer_timeout: float = Field(
+        300, gt=0, le=300, description="Total deadline in seconds for an ML answer stream."
+    )
     ai_routing_timeout: float = Field(5, gt=0, le=120)
 
 

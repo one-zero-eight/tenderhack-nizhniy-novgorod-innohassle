@@ -50,11 +50,13 @@ class SQLAlchemyStorage(AbstractSQLAlchemyStorage):
             # Preserve any names and descriptions configured in an existing database.
             await conn.execute(
                 insert(SupportLine)
-                .values([
-                    {"id": 1, "name": "Линия 1", "description": "Техническая поддержка."},
-                    {"id": 2, "name": "Линия 2", "description": "Закупки и котировочные сессии."},
-                    {"id": 3, "name": "Линия 3", "description": "Аккредитация организаций и ЕРУЗ."},
-                ])
+                .values(
+                    [
+                        {"id": 1, "name": "Линия 1", "description": "Техническая поддержка."},
+                        {"id": 2, "name": "Линия 2", "description": "Закупки и котировочные сессии."},
+                        {"id": 3, "name": "Линия 3", "description": "Аккредитация организаций и ЕРУЗ."},
+                    ]
+                )
                 .on_conflict_do_nothing(index_elements=[SupportLine.id])
             )
 

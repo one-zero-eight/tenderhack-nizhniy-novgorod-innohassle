@@ -179,9 +179,7 @@ class ChatService:
             rows = list(
                 await session.scalars(select(Chat).where(*filters).order_by(*order).offset(offset).limit(limit))
             )
-            return ChatPage(
-                items=await chat_views(session, rows), total=total, offset=offset, limit=limit
-            )
+            return ChatPage(items=await chat_views(session, rows), total=total, offset=offset, limit=limit)
 
     async def messages(self, chat_id: str, user: User, after_sequence: int = 0, limit: int = 50) -> MessagePage:
         async with self.storage.create_session() as session, session.begin():
@@ -200,11 +198,7 @@ class ChatService:
                     name = user.display_name if sender_type == SenderType.USER else "ИИ-помощник"
                     sender_id = user.id if sender_type == SenderType.USER else None
                     raw_att = m.get("attachments", [])
-                    attachments = (
-                        [ChatFileOut.model_validate(a) for a in raw_att]
-                        if isinstance(raw_att, list)
-                        else []
-                    )
+                    attachments = [ChatFileOut.model_validate(a) for a in raw_att] if isinstance(raw_att, list) else []
                     ai_messages.append(
                         MessageOut(
                             id=m["id"],
@@ -226,11 +220,7 @@ class ChatService:
 
             # 2. Load operator / system messages from Postgres
             pg_messages = list(
-                await session.scalars(
-                    select(Message)
-                    .where(Message.chat_id == chat_id)
-                    .order_by(Message.sequence)
-                )
+                await session.scalars(select(Message).where(Message.chat_id == chat_id).order_by(Message.sequence))
             )
 
             # Assign sequences to PG messages so they cleanly follow AI messages
@@ -284,7 +274,10 @@ class ChatService:
                 close_chat(session, chat, CloseReason.MODERATION, reply_to=msg.id)
             err_data = json.dumps({"message": "Message blocked by moderation"}, ensure_ascii=False)
             yield f"event: error\ndata: {err_data}\n\n"
-            done_data = json.dumps({"message_id": "blocked", "content": "[Сообщение удалено из-за нецензурной лексики]"}, ensure_ascii=False)
+            done_data = json.dumps(
+                {"message_id": "blocked", "content": "[Сообщение удалено из-за нецензурной лексики]"},
+                ensure_ascii=False,
+            )
             yield f"event: done\ndata: {done_data}\n\n"
             return
 
@@ -443,9 +436,7 @@ class ChatService:
 
                     user_att_raw = msgs[-2].get("attachments", []) if len(msgs) >= 2 else []
                     user_attachments = (
-                        [ChatFileOut.model_validate(a) for a in user_att_raw]
-                        if isinstance(user_att_raw, list)
-                        else []
+                        [ChatFileOut.model_validate(a) for a in user_att_raw] if isinstance(user_att_raw, list) else []
                     )
                     user_msg = MessageOut(
                         id=user_msg_id,
@@ -595,9 +586,7 @@ class ChatService:
                 sender_name = "ИИ-помощник"
                 support_line_id = chat.support_line_id
 
-            rating = await session.scalar(
-                select(Rating).where(Rating.chat_id == chat.id)
-            )
+            rating = await session.scalar(select(Rating).where(Rating.chat_id == chat.id))
             if rating is None:
                 rating = Rating(
                     chat_id=chat.id,
@@ -698,4 +687,3 @@ class ChatService:
             fail(404, "FILE_NOT_FOUND", "File not found")
         except AIUnavailable:
             fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
-

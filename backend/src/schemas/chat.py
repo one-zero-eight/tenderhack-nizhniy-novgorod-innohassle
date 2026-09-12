@@ -137,7 +137,6 @@ class MessageOut(Schema):
     created_at: datetime
 
 
-
 class MessagePage(Schema):
     items: list[MessageOut]
     next_sequence: int

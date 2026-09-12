@@ -100,10 +100,15 @@ async def chat_view(
     if chat.status == ChatStatus.CLOSED:
         recipient = RecipientOut(kind="none", display_name="Обращение закрыто")
     elif chat.status == ChatStatus.WAITING_OPERATOR:
-        recipient = RecipientOut(kind="support_queue", display_name=f"Ожидание: {line.name if line else ''}", support_line=line_out)
+        recipient = RecipientOut(
+            kind="support_queue", display_name=f"Ожидание: {line.name if line else ''}", support_line=line_out
+        )
     elif chat.status == ChatStatus.OPERATOR:
         recipient = RecipientOut(
-            kind="operator", display_name=operator.display_name if operator else "", support_line=line_out, operator=operator_out
+            kind="operator",
+            display_name=operator.display_name if operator else "",
+            support_line=line_out,
+            operator=operator_out,
         )
     else:
         recipient = RecipientOut(kind="ai", display_name="ИИ-помощник")
@@ -190,4 +195,3 @@ async def latest_question(session: AsyncSession, chat_id: str) -> Message | None
         .order_by(Message.sequence.desc())
         .limit(1)
     )
-

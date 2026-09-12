@@ -39,7 +39,9 @@ async def test_auth_and_permissions(case):
         json={"login": "newseller", "password": "password123", "role": "seller"},
     )
     assert reg_seller.status_code == 201
-    seller_me = (await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_seller.json()['access_token']}"})).json()
+    seller_me = (
+        await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_seller.json()['access_token']}"})
+    ).json()
     assert seller_me["role"] == "seller"
 
     # Register as support
@@ -54,12 +56,16 @@ async def test_auth_and_permissions(case):
         json={"login": "newsupport", "password": "password123", "role": "support", "support_line_id": 2},
     )
     assert reg_support.status_code == 201
-    support_me = (await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"})).json()
+    support_me = (
+        await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"})
+    ).json()
     assert support_me["role"] == "support"
     assert support_me["support_line_id"] == 2
 
     # Verify /support/chats works
-    support_chats = await case.client.get("/support/chats", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"})
+    support_chats = await case.client.get(
+        "/support/chats", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"}
+    )
     assert support_chats.status_code == 200
 
     # Duplicate registration conflict
@@ -325,7 +331,6 @@ async def test_admin_get_all_chats(case):
     assert chat2 not in [c["id"] for c in user1_chats["items"]]
 
 
-
 async def test_concurrent_duplicate_submission_creates_one_answer(case):
     chat, client_id = await case.chat(), str(uuid4())
     replies = await asyncio.gather(case.send(chat, client_id=client_id), case.send(chat, client_id=client_id))
@@ -504,7 +509,9 @@ async def test_chat_topic_and_subtopic_sync_and_filtering(case):
     assert sub_unmatched["total"] == 0
 
     # 6. Filter GET /admin/chats by topic
-    admin_matched = (await case.request("GET", "/admin/chats?topic=Закупки и котировочные сессии", login="admin")).json()
+    admin_matched = (
+        await case.request("GET", "/admin/chats?topic=Закупки и котировочные сессии", login="admin")
+    ).json()
     assert admin_matched["total"] == 1
     admin_unmatched = (await case.request("GET", "/admin/chats?topic=Другое", login="admin")).json()
     assert admin_unmatched["total"] == 0

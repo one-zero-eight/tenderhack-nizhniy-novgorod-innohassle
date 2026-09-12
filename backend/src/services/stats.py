@@ -108,18 +108,14 @@ class StatsService:
                     )
                 ).all()
             )
-            ai_activity = (
-                await session.scalar(
-                    select(func.coalesce(func.sum(Chat.ai_messages_count), 0)).where(*chat_filters)
-                )
+            ai_activity = await session.scalar(
+                select(func.coalesce(func.sum(Chat.ai_messages_count), 0)).where(*chat_filters)
             )
-            operator_activity = (
-                await session.scalar(
-                    select(func.count(Message.id)).where(
-                        *activity_filters,
-                        Message.sender_type == SenderType.OPERATOR,
-                        Message.is_redacted.is_(False),
-                    )
+            operator_activity = await session.scalar(
+                select(func.count(Message.id)).where(
+                    *activity_filters,
+                    Message.sender_type == SenderType.OPERATOR,
+                    Message.is_redacted.is_(False),
                 )
             )
             activity = {"ai": int(ai_activity or 0), "operator": int(operator_activity or 0)}

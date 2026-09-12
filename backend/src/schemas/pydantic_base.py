@@ -1,4 +1,4 @@
-__all__ = ['BaseSchema']
+__all__ = ["BaseSchema"]
 
 from pydantic import BaseModel, ConfigDict
 

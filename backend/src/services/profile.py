@@ -540,7 +540,9 @@ def create_contract(payload: ContractCreateIn, user: User | None = None) -> Cont
     title = payload.title or f"Контракт № {contract_id} на основании закупки {proc.number}"
     subject = payload.subject or proc.title
     execution_period = payload.execution_period or "в течение 60 календарных дней с даты подписания"
-    responsible_person = payload.responsible_person or (user.display_name if user else "Иванов И.И., ведущий специалист")
+    responsible_person = payload.responsible_person or (
+        user.display_name if user else "Иванов И.И., ведущий специалист"
+    )
     execution_stage = payload.execution_stage or "Этап 1: Подписание контракта и утверждение спецификации"
 
     docs = [

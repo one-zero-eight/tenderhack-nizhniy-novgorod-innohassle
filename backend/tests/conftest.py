@@ -87,9 +87,9 @@ class FakeAI:
                     filename = content.split(b'filename="')[1].split(b'"')[0].decode()
                 except Exception:
                     pass
-            if b'Content-Type: ' in content:
+            if b"Content-Type: " in content:
                 try:
-                    content_type = content.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode()
+                    content_type = content.split(b"Content-Type: ")[1].split(b"\r\n")[0].decode()
                 except Exception:
                     pass
 
@@ -117,7 +117,12 @@ class FakeAI:
             return httpx.Response(201, json={k: v for k, v in record.items() if k != "_data"})
 
         # File content
-        if request.method == "GET" and "/ml-api/chat/" in endpoint and "/files/" in endpoint and endpoint.endswith("/content"):
+        if (
+            request.method == "GET"
+            and "/ml-api/chat/" in endpoint
+            and "/files/" in endpoint
+            and endpoint.endswith("/content")
+        ):
             parts = endpoint.split("/")
             chat_id = parts[3]
             file_id = parts[5]
@@ -154,10 +159,14 @@ class FakeAI:
             chat_id = parts[3]
             if chat_id not in self.chats:
                 return httpx.Response(404, json={"detail": "Чат не найден"})
-            return httpx.Response(200, json=[{k: v for k, v in f.items() if k != "_data"} for f in self.chat_files.get(chat_id, [])])
+            return httpx.Response(
+                200, json=[{k: v for k, v in f.items() if k != "_data"} for f in self.chat_files.get(chat_id, [])]
+            )
 
         # Attachment download
-        if request.method == "GET" and (endpoint.startswith("/attachments/") or endpoint.startswith("/ml-assets/attachments/")):
+        if request.method == "GET" and (
+            endpoint.startswith("/attachments/") or endpoint.startswith("/ml-assets/attachments/")
+        ):
             file_id = endpoint.split("/")[-1]
             if file_id in self.attachments:
                 rec = self.attachments[file_id]
@@ -178,23 +187,27 @@ class FakeAI:
             user_att = [{k: v for k, v in f.items() if k != "_data"} for f in pending]
 
             if chat_id in self.chats:
-                self.chats[chat_id]["messages"].append({
-                    "id": f"msg-user-{len(self.chats[chat_id]['messages']) + 1}",
-                    "role": "user",
-                    "content": body.get("message", ""),
-                    "tools": [],
-                    "attachments": user_att,
-                })
-                self.chats[chat_id]["messages"].append({
-                    "id": msg_id,
-                    "role": "assistant",
-                    "content": "A supported answer",
-                    "tools": [],
-                    "attachments": [],
-                })
+                self.chats[chat_id]["messages"].append(
+                    {
+                        "id": f"msg-user-{len(self.chats[chat_id]['messages']) + 1}",
+                        "role": "user",
+                        "content": body.get("message", ""),
+                        "tools": [],
+                        "attachments": user_att,
+                    }
+                )
+                self.chats[chat_id]["messages"].append(
+                    {
+                        "id": msg_id,
+                        "role": "assistant",
+                        "content": "A supported answer",
+                        "tools": [],
+                        "attachments": [],
+                    }
+                )
             sse_text = (
-                f"event: start\ndata: {{\"message_id\": \"{msg_id}\"}}\n\n"
-                f"event: done\ndata: {{\"message_id\": \"{msg_id}\", \"content\": \"A supported answer\"}}\n\n"
+                f'event: start\ndata: {{"message_id": "{msg_id}"}}\n\n'
+                f'event: done\ndata: {{"message_id": "{msg_id}", "content": "A supported answer"}}\n\n'
             )
             return httpx.Response(
                 200,
@@ -214,7 +227,6 @@ class FakeAI:
             return httpx.Response(204)
 
         if endpoint == "/ml-api/knowledge-base":
-
             return httpx.Response(
                 200,
                 json=[
@@ -269,10 +281,7 @@ class FakeAI:
         if request.method == "GET" and endpoint == "/ml-api/handrules/search":
             q = request.url.params.get("q", "").lower()
             k = int(request.url.params.get("k", 3))
-            matches = [
-                r for r in self.handrules.values()
-                if any(w in r["user_message"].lower() for w in q.split())
-            ]
+            matches = [r for r in self.handrules.values() if any(w in r["user_message"].lower() for w in q.split())]
             if not matches:
                 matches = list(self.handrules.values())
             return httpx.Response(200, json=matches[:k])

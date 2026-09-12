@@ -40,4 +40,3 @@ async def get_attachment(file_id: str, request: Request) -> Response:
         )
     except httpx.HTTPError:
         raise HTTPException(status_code=503, detail="AI service unavailable")
-

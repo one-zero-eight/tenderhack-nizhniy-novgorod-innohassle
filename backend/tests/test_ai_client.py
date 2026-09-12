@@ -27,14 +27,13 @@ async def test_create_chat_success():
         assert title == "Новый чат"
 
 
-
 async def test_send_message_sse_success():
     async def respond(request: httpx.Request):
         assert request.url.path == "/ml-api/chat/chat-1/message"
         sse_data = (
-            "event: start\ndata: {\"message_id\": \"m1\"}\n\n"
-            "event: token\ndata: {\"delta\": \"Hi\", \"content\": \"Hi\"}\n\n"
-            "event: done\ndata: {\"message_id\": \"m1\", \"content\": \"Hi there!\"}\n\n"
+            'event: start\ndata: {"message_id": "m1"}\n\n'
+            'event: token\ndata: {"delta": "Hi", "content": "Hi"}\n\n'
+            'event: done\ndata: {"message_id": "m1", "content": "Hi there!"}\n\n'
         )
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
 
@@ -48,6 +47,7 @@ async def test_send_message_sse_success():
 async def test_send_message_sse_error_event(caplog):
     caplog.set_level(logging.WARNING)
     logging.getLogger("src").addHandler(caplog.handler)
+
     async def respond(request: httpx.Request):
         sse_data = 'event: error\ndata: {"message": "Model overloaded"}\n\n'
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
@@ -62,6 +62,7 @@ async def test_send_message_sse_error_event(caplog):
 async def test_send_message_http_error(caplog):
     caplog.set_level(logging.WARNING)
     logging.getLogger("src").addHandler(caplog.handler)
+
     async def respond(request: httpx.Request):
         return httpx.Response(500, text="Internal server error")
 
@@ -161,7 +162,6 @@ async def test_stub_requires_configured_internal_token(monkeypatch):
         http.headers["Authorization"] = "Bearer stub-service-token"
         chat_id, _ = await client.create_chat()
         assert chat_id.startswith("stub-chat-")
-
 
 
 async def test_send_message_sse_tool_call_and_redirect():
@@ -307,4 +307,3 @@ async def test_development_stub_file_operations(monkeypatch):
         user_msg = chat_history["messages"][0]
         assert len(user_msg["attachments"]) == 1
         assert user_msg["attachments"][0]["id"] == file_id
-

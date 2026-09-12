@@ -26,4 +26,3 @@ async def support_chats(
 @router.post("/chats/{chat_id}/claim", response_model=ChatOut)
 async def claim(chat_id: str, user: Support, service: Chats) -> ChatOut:
     return await service.claim(chat_id, user)
-

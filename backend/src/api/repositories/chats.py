@@ -67,9 +67,7 @@ async def get_messages(
 
 
 @router.post("/chats/{chat_id}/messages", response_model=SendResult)
-async def send_message(
-    chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats, request: Request
-):
+async def send_message(chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats, request: Request):
     accept = request.headers.get("accept", "")
     if "text/event-stream" in accept:
         return StreamingResponse(
@@ -81,9 +79,7 @@ async def send_message(
 
 
 @router.post("/chats/{chat_id}/stream")
-async def stream_message(
-    chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats
-) -> StreamingResponse:
+async def stream_message(chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats) -> StreamingResponse:
     return StreamingResponse(
         service.send_stream(chat_id, user, payload),
         media_type=SSE_MEDIA_TYPE,
@@ -99,9 +95,7 @@ async def upload_file(
     service: Chats,
 ) -> ChatFileOut:
     data = await file.read(10 * 1024 * 1024 + 1)
-    return await service.upload_file(
-        chat_id, user, file.filename or "file", data, file.content_type
-    )
+    return await service.upload_file(chat_id, user, file.filename or "file", data, file.content_type)
 
 
 @router.get("/chats/{chat_id}/files", response_model=list[ChatFileOut])
@@ -150,4 +144,3 @@ async def get_file_content(
 @router.put("/chats/{chat_id}/rating", response_model=RatingOut, tags=["ratings"])
 async def rate_chat(chat_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
     return await service.rate(chat_id, user, payload)
-

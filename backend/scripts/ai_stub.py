@@ -167,9 +167,11 @@ async def send_message(chat_id: str, payload: MessageIn):
         await asyncio.sleep(60)
 
     if "[answer-error]" in payload.message:
+
         async def error_generator():
             err_data = json.dumps({"message": "Simulated answer outage"})
             yield f"event: error\ndata: {err_data}\n\n"
+
         return StreamingResponse(error_generator(), media_type="text/event-stream")
 
     msg_id = f"msg-{uuid4().hex[:8]}"
@@ -180,20 +182,24 @@ async def send_message(chat_id: str, payload: MessageIn):
     user_attachments = [{k: v for k, v in f.items() if k != "_data"} for f in pending]
 
     if chat_id in _CHATS:
-        _CHATS[chat_id]["messages"].append({
-            "id": f"msg-user-{len(_CHATS[chat_id]['messages']) + 1}",
-            "role": "user",
-            "content": payload.message,
-            "tools": [],
-            "attachments": user_attachments,
-        })
-        _CHATS[chat_id]["messages"].append({
-            "id": msg_id,
-            "role": "assistant",
-            "content": content,
-            "tools": [],
-            "attachments": [],
-        })
+        _CHATS[chat_id]["messages"].append(
+            {
+                "id": f"msg-user-{len(_CHATS[chat_id]['messages']) + 1}",
+                "role": "user",
+                "content": payload.message,
+                "tools": [],
+                "attachments": user_attachments,
+            }
+        )
+        _CHATS[chat_id]["messages"].append(
+            {
+                "id": msg_id,
+                "role": "assistant",
+                "content": content,
+                "tools": [],
+                "attachments": [],
+            }
+        )
 
     async def sse_generator():
         start_data = json.dumps({"message_id": msg_id})
@@ -215,7 +221,6 @@ async def delete_chat(chat_id: str):
     for f in files:
         _ATTACHMENTS.pop(f["id"], None)
     return None
-
 
 
 @app.get("/ml-api/knowledge-base")
@@ -345,4 +350,3 @@ async def delete_handrule_stub(rule_id: str):
         raise HTTPException(404, "Правило не найдено")
     _HANDRULES.pop(rule_id)
     return Response(status_code=204)
-

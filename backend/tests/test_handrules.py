@@ -47,10 +47,7 @@ def mock_ai_app():
         if request.method == "GET" and path == "/ml-api/handrules/search":
             q = request.url.params.get("q", "").lower()
             k = int(request.url.params.get("k", 3))
-            matches = [
-                r for r in rules.values()
-                if any(w in r["user_message"].lower() for w in q.split())
-            ]
+            matches = [r for r in rules.values() if any(w in r["user_message"].lower() for w in q.split())]
             if not matches:
                 matches = list(rules.values())
             return httpx.Response(200, json=matches[:k])
@@ -186,7 +183,9 @@ async def test_handrules_validation_errors(mock_ai_app):
         assert (await client.post("/ml-api/handrules", json={"user_message": "test"})).status_code == 422
         assert (await client.post("/ml-api/handrules", json={"instructions": "test"})).status_code == 422
         # Create validation: empty strings
-        assert (await client.post("/ml-api/handrules", json={"user_message": "", "instructions": "test"})).status_code == 422
+        assert (
+            await client.post("/ml-api/handrules", json={"user_message": "", "instructions": "test"})
+        ).status_code == 422
 
         # Search validation: q is required
         assert (await client.get("/ml-api/handrules/search")).status_code == 422
