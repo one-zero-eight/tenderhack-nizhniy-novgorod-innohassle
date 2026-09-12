@@ -8,8 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from src.api.app import create_app
-from src.db.models import User, utcnow
-from src.seed import seed_demo
+from src.db.models import SupportLine, User, utcnow
 
 
 async def test_auth_and_permissions(case):
@@ -213,10 +212,15 @@ async def test_claim_is_atomic(case):
     assert state["operator"]["id"] == winner["operator"]["id"]
 
 
-async def test_direct_support_without_question_and_seed_idempotency(case):
+async def test_startup_preserves_support_lines_and_accounts(case):
+    async with case.storage.create_session() as session, session.begin():
+        line = await session.get(SupportLine, 1)
+        line.name = "Custom support"
+        line.description = "Configured responsibilities"
+    await asyncio.gather(case.storage.create_all(), case.storage.create_all())
     lines = await case.request("GET", "/support-lines")
     assert len(lines.json()) == 3
-    await seed_demo(case.storage, "a-different-password")
+    assert lines.json()[0] == {"id": 1, "name": "Custom support", "description": "Configured responsibilities"}
     async with case.storage.create_session() as session:
         users = list(await session.scalars(select(User)))
     assert len(users) == 6

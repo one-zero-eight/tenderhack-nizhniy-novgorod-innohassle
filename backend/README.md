@@ -77,28 +77,28 @@ uv run python -c 'import secrets; print(secrets.token_hex(32))'
 
 1. Insert the generated hex string into `api_settings.jwt_secret` in `settings.yaml`.
 2. Configure `ai_base_url` to point to the ML service (default: `http://100.64.0.5:8010` or local `http://127.0.0.1:8010`).
-3. Start the PostgreSQL container and seed demo accounts:
+3. Start the PostgreSQL container and the API:
 
 ```bash
 # Launch database
 docker compose up -d --wait db
 
-# Seed default test users and support lines
-export DEMO_PASSWORD='your-demo-password'
-uv run -m src.seed
-
 # Run FastAPI server
 uv run -m src.api --host 127.0.0.1 --port 8000
 ```
 
-### Pre-seeded Demo Accounts
-- `user` / `user2` — Customer accounts (Role: `user`)
-- `operator1` — Line 1 Operator: Technical Support (Role: `operator`)
-- `operator2` — Line 2 Operator: Procurement & Quotation Sessions (Role: `operator`)
-- `operator3` — Line 3 Operator: Organization Accreditation & ERUZ (Role: `operator`)
-- `admin` — System Administrator (Role: `admin`)
+The API creates missing support lines 1–3 on startup, preserving existing names and descriptions.
+No accounts are created automatically; create accounts through `POST /auth/register`.
 
-Password for all pre-seeded accounts is the value of `DEMO_PASSWORD` passed during seeding.
+To create the same support lines manually in an existing database:
+
+```sql
+INSERT INTO support_lines (id, name, description) VALUES
+    (1, 'Линия 1', 'Техническая поддержка.'),
+    (2, 'Линия 2', 'Закупки и котировочные сессии.'),
+    (3, 'Линия 3', 'Аккредитация организаций и ЕРУЗ.')
+ON CONFLICT (id) DO NOTHING;
+```
 
 AI generation has a total deadline of 300 seconds, including pauses during model
 generation and tool calls. Configure it with `API_SETTINGS__AI_ANSWER_TIMEOUT`

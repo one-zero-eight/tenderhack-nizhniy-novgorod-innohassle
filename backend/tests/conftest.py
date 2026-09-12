@@ -18,9 +18,8 @@ os.environ["API_SETTINGS__JWT_SECRET"] = "test-only-signing-secret-at-least-32-c
 
 from src.api.app import create_app  # noqa: E402
 from src.config_schema import ApiSettings  # noqa: E402
-from src.db.models import User  # noqa: E402
+from src.db.models import SupportLine, User  # noqa: E402
 from src.db.storage import SQLAlchemyStorage  # noqa: E402
-from src.seed import seed_demo  # noqa: E402
 from src.services.ai_client import AIClient  # noqa: E402
 from src.services.auth import issue_token  # noqa: E402
 from src.services.moderation import ModerationUnavailable  # noqa: E402
@@ -224,15 +223,30 @@ async def case(monkeypatch):
         monkeypatch.setattr(SQLAlchemyStorage, "from_url", lambda url: storage)
         app = create_app(settings)
         async with app.router.lifespan_context(app):
-            # Startup must create the tables in our empty, isolated schema before seeding.
-            await seed_demo(storage, PASSWORD)
+            # Startup creates required support lines, but no accounts.
             async with storage.create_session() as session:
-                users = {user.login: user for user in await session.scalars(select(User))}
+                assert list(await session.scalars(select(SupportLine.id).order_by(SupportLine.id))) == [1, 2, 3]
+                assert await session.scalar(select(User.id)) is None
             async with httpx.AsyncClient(transport=httpx.MockTransport(fake), base_url="http://ai.test/") as ai_http:
                 app.state.ai = AIClient(ai_http, settings)
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app), base_url="http://backend.test"
                 ) as client:
+                    for login, role, line_id in [
+                        ("user", "user", None),
+                        ("user2", "user", None),
+                        ("operator1", "operator", 1),
+                        ("operator2", "operator", 2),
+                        ("operator3", "operator", 3),
+                        ("admin", "admin", None),
+                    ]:
+                        response = await client.post(
+                            "/auth/register",
+                            json={"login": login, "password": PASSWORD, "role": role, "support_line_id": line_id},
+                        )
+                        assert response.status_code == 201, response.text
+                    async with storage.create_session() as session:
+                        users = {user.login: user for user in await session.scalars(select(User))}
                     yield Case(client, storage, fake, app.state.moderator, settings, users)
     finally:
         fake.release.set()
