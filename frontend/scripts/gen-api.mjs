@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 const host = process.env.TRAEFIK_HOSTNAME || "localhost";
 const baseUrl =
   host === "localhost"
-    ? "http://localhost:8000"
+    ? "http://localhost:8080"
     : `https://${host}`;
 const specUrl = `${baseUrl}/api/openapi.json`;
 

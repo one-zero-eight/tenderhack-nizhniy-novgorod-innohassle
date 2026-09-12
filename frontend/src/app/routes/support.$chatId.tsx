@@ -1,16 +1,12 @@
-import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import ChatContainer from '@/components/ui/ChatContainer'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { requireAuth } from '@/app/routes/-guards'
 import { useChat } from '@/hooks/useChat'
 import { useChatMessages, useSendChatMessage } from '@/hooks/useChatMessages'
-import { getUsername } from '@/lib/storage'
 
 export const Route = createFileRoute('/support/$chatId')({
-  beforeLoad: () => {
-    if (!getUsername()) {
-      throw redirect({ to: '/auth' })
-    }
-  },
+  beforeLoad: requireAuth,
   component: ChatPage,
 })
 
@@ -39,13 +35,15 @@ function ChatPage() {
     )
   }
 
+  const isClosed = chat.status === 'closed'
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-8">
       <div className="flex flex-col gap-1">
         <Link to="/support" className="text-gray hover:text-main-blue text-xs underline underline-offset-4">
           ← Все обращения
         </Link>
-        <h1 className="text-2xl font-bold text-pale-black">{chat.chat_title}</h1>
+        <h1 className="text-2xl font-bold text-pale-black">{chat.title}</h1>
       </div>
 
       {messagesLoading ? (
@@ -55,7 +53,16 @@ function ChatPage() {
       ) : messagesError ? (
         <p className="text-red py-10 text-center text-sm">{messagesErr?.message || 'Не удалось загрузить сообщения'}</p>
       ) : (
-        <ChatContainer messages={messages ?? []} onSend={(text) => sendMessage.mutate(text)} disabled={sendMessage.isPending} />
+        <>
+          {sendMessage.isError && (
+            <p className="text-red text-center text-sm">{sendMessage.error?.message || 'Не удалось отправить сообщение'}</p>
+          )}
+          <ChatContainer
+            messages={messages ?? []}
+            onSend={(text) => sendMessage.mutate(text)}
+            disabled={sendMessage.isPending || isClosed}
+          />
+        </>
       )}
     </div>
   )

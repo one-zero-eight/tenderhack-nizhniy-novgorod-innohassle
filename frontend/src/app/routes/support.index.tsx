@@ -1,18 +1,14 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import Button from '@/components/ui/Button'
 import ChatList from '@/components/ui/ChatList'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { requireAuth } from '@/app/routes/-guards'
 import { useCreateChat } from '@/hooks/useChat'
 import { useChats } from '@/hooks/useChats'
-import { getUsername } from '@/lib/storage'
-import type { ChatMinimal } from '@/types/types'
+import type { ChatView } from '@/lib/chat-view'
 
 export const Route = createFileRoute('/support/')({
-  beforeLoad: () => {
-    if (!getUsername()) {
-      throw redirect({ to: '/auth' })
-    }
-  },
+  beforeLoad: requireAuth,
   component: SupportPage,
 })
 
@@ -23,12 +19,12 @@ function SupportPage() {
 
   const handleCreate = () => {
     createChat.mutate(undefined, {
-      onSuccess: (chat) => navigate({ to: '/support/$chatId', params: { chatId: chat.chat_id } }),
+      onSuccess: (chat) => navigate({ to: '/support/$chatId', params: { chatId: chat.id } }),
     })
   }
 
-  const handleSelect = (chat: ChatMinimal) => {
-    navigate({ to: '/support/$chatId', params: { chatId: chat.chat_id } })
+  const handleSelect = (chat: ChatView) => {
+    navigate({ to: '/support/$chatId', params: { chatId: chat.id } })
   }
 
   return (

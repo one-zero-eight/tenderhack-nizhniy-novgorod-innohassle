@@ -1,8 +1,8 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { getUsername } from '@/lib/storage'
+import { getToken } from '@/lib/auth-storage'
 
 export const Route = createFileRoute('/')({
   beforeLoad: () => {
-    throw redirect({ to: getUsername() ? '/support' : '/auth' })
+    throw redirect({ to: getToken() ? '/support' : '/auth' })
   },
 })

@@ -1,11 +1,11 @@
 import ChatListItem from '@/components/ui/ChatListItem'
 import { cn } from '@/lib/cn'
-import type { ChatMinimal } from '@/types/types'
+import type { ChatView } from '@/lib/chat-view'
 
 interface ChatListProps {
-  chats: ChatMinimal[]
+  chats: ChatView[]
   activeChatId?: string | null
-  onSelect?: (chat: ChatMinimal) => void
+  onSelect?: (chat: ChatView) => void
   className?: string
 }
 
@@ -17,8 +17,8 @@ export default function ChatList({ chats, activeChatId, onSelect, className }: C
   return (
     <ul className={cn('flex flex-col gap-0', className)}>
       {chats.map((chat) => (
-        <li key={chat.chat_id}>
-          <ChatListItem chat={chat} isActive={chat.chat_id === activeChatId} onClick={onSelect} />
+        <li key={chat.id}>
+          <ChatListItem chat={chat} isActive={chat.id === activeChatId} onClick={onSelect} />
         </li>
       ))}
     </ul>

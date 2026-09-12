@@ -1,18 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchChats } from '@/lib/chats-api'
-import type { ChatMinimal } from '@/types/types'
+import { fetchChats } from '@/api/chat'
+import { toChatView, type ChatView } from '@/lib/chat-view'
 
 export const chatsQueryKey = ['chats'] as const
 
 /**
- * Loads the current user's chats.
- *
- * Uses a mock async source for now; swapping to the API only requires
- * changing `fetchChats` (or `queryFn`) here.
+ * Loads the current user's chats from `GET /chats`.
  */
 export function useChats() {
-  return useQuery<ChatMinimal[], Error>({
+  return useQuery<ChatView[], Error>({
     queryKey: chatsQueryKey,
-    queryFn: fetchChats,
+    queryFn: async () => {
+      const page = await fetchChats({ limit: 100 })
+      return page.items.map((chat) => toChatView(chat))
+    },
   })
 }
