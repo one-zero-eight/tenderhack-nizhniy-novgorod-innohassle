@@ -22,6 +22,7 @@ from src.db.models import SupportLine, User  # noqa: E402
 from src.db.storage import SQLAlchemyStorage  # noqa: E402
 from src.services.ai_client import AIClient  # noqa: E402
 from src.services.auth import issue_token  # noqa: E402
+from src.services.chats import ChatService  # noqa: E402
 from src.services.moderation import ModerationUnavailable  # noqa: E402
 
 PASSWORD = "test-user-password"
@@ -197,6 +198,16 @@ class Case:
             login=login,
             json={"text": message, "client_message_id": client_id or str(uuid4())},
         )
+
+    async def transfer_to_operator(self, chat_id: str, line_id: int = 1, *, login: str = "user"):
+        user = self.users[login]
+        service = ChatService(self.storage, self.ai, self.moderator)
+        return await service.request_operator(chat_id, user, line_id)
+
+    async def close_chat(self, chat_id: str, reason: str = "resolved", *, login: str = "user"):
+        user = self.users[login]
+        service = ChatService(self.storage, self.ai, self.moderator)
+        return await service.close(chat_id, user, reason)
 
 
 @pytest.fixture

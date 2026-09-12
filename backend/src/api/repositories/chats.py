@@ -9,12 +9,10 @@ from src.db.repositories.chats import support_lines
 from src.schemas.chat import (
     ChatOut,
     ChatPage,
-    CloseIn,
     MessageIn,
     MessagePage,
     RatingIn,
     RatingOut,
-    RequestOperatorIn,
     SendResult,
     SupportLineOut,
 )
@@ -81,7 +79,6 @@ async def send_message(
     return await service.send(chat_id, user, payload)
 
 
-@router.post("/chats/{chat_id}/message")
 @router.post("/chats/{chat_id}/stream")
 async def stream_message(
     chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats
@@ -91,18 +88,6 @@ async def stream_message(
         media_type=SSE_MEDIA_TYPE,
         headers=SSE_HEADERS,
     )
-
-
-@router.post("/chats/{chat_id}/request-operator", response_model=ChatOut)
-async def request_operator(
-    chat_id: str, payload: RequestOperatorIn, user: CurrentUser, service: Chats
-) -> ChatOut:
-    return await service.request_operator(chat_id, user, payload.support_line_id)
-
-
-@router.post("/chats/{chat_id}/close", response_model=ChatOut)
-async def close(chat_id: str, payload: CloseIn, user: CurrentUser, service: Chats) -> ChatOut:
-    return await service.close(chat_id, user, payload.reason)
 
 
 @router.put("/chats/{chat_id}/rating", response_model=RatingOut, tags=["ratings"])

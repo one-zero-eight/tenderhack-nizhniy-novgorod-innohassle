@@ -85,11 +85,9 @@ async def test_auth_and_permissions(case):
     for method, suffix, kwargs in [
         ("GET", "", {}),
         ("GET", "/messages", {}),
-        ("POST", "/request-operator", {"json": {"support_line_id": 1}}),
     ]:
         assert (await case.request(method, f"/chats/{chat}{suffix}", login="user2", **kwargs)).status_code == 404
     assert (await case.request("GET", f"/chats/{chat}", login="admin")).status_code == 200
-    assert (await case.request("GET", "/admin/ai-health", login="admin")).json()["status"] == "ready"
 
 
 async def test_answer_idempotency_ratings_and_stats(case):
@@ -108,7 +106,7 @@ async def test_answer_idempotency_ratings_and_stats(case):
     assert (await case.request("PUT", f"/chats/{chat}/rating", login="user2", json={"stars": 5})).status_code == 404
     for stars in [0, 6, True, "5"]:
         assert (await case.request("PUT", f"/chats/{chat}/rating", json={"stars": stars})).status_code == 422
-    assert (await case.request("POST", f"/chats/{chat}/close", json={"reason": "resolved"})).status_code == 200
+    await case.close_chat(chat, reason="resolved")
     first = await case.request("PUT", f"/chats/{chat}/rating", json={"stars": 5, "comment": "Good"})
     assert first.status_code == 200
     assert first.json()["chat_id"] == chat
@@ -179,8 +177,7 @@ async def test_closing_during_local_moderation_does_not_publish(case):
     pending = asyncio.create_task(case.send(chat))
     try:
         await asyncio.wait_for(case.moderator.started.wait(), timeout=2)
-        closed = await case.request("POST", f"/chats/{chat}/close", json={"reason": "user_cancelled"})
-        assert closed.status_code == 200
+        await case.close_chat(chat, reason="user_cancelled")
     finally:
         case.moderator.release.set()
     assert (await pending).status_code == 409
@@ -191,7 +188,7 @@ async def test_closing_during_local_moderation_does_not_publish(case):
 
 async def test_waiting_chat_uses_only_local_moderation(case):
     chat = await case.chat()
-    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 1})
+    await case.transfer_to_operator(chat, 1)
     assert (await case.send(chat)).status_code == 200
     assert len(case.moderator.calls) == 1
     assert [c for c in case.ai.calls if "/message" in c[0]] == []
@@ -200,17 +197,10 @@ async def test_waiting_chat_uses_only_local_moderation(case):
     assert [c for c in case.ai.calls if "/message" in c[0]] == []
 
 
-@pytest.mark.parametrize("invalid_line", [0, 4])
-async def test_invalid_routing_requires_manual_choice(case, invalid_line):
-    chat = await case.chat()
-    assert (await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": invalid_line})).status_code == 422
-
-
 async def test_operator_handoff_moderation_and_identity(case):
     chat = await case.chat()
     await case.send(chat)
-    accepted = await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
-    assert accepted.json()["recipient"]["kind"] == "support_queue"
+    await case.transfer_to_operator(chat, 2)
     assert (await case.request("GET", f"/chats/{chat}/messages", login="operator2")).status_code == 404
     assert (await case.request("GET", "/support/chats", login="operator1")).json()["total"] == 0
     assert (await case.request("GET", "/support/chats", login="operator2")).json()["total"] == 1
@@ -242,7 +232,7 @@ async def test_claim_is_atomic(case):
         competitor = await session.get(User, case.users["operator3"].id)
         competitor.support_line_id = 2
     chat = await case.chat()
-    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
+    await case.transfer_to_operator(chat, 2)
     responses = await asyncio.gather(
         *[case.request("POST", f"/support/chats/{chat}/claim", login=login) for login in ("operator2", "operator3")]
     )
@@ -341,15 +331,10 @@ async def test_routing_outage_and_human_rating_attribution(case, caplog):
     result = await case.send(chat)
     assert result.status_code == 200
     assert "AI service unavailable for chat" in caplog.text
-    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
+    await case.transfer_to_operator(chat, 2)
     await case.request("POST", f"/support/chats/{chat}/claim", login="operator2")
     await case.send(chat, "Human reply", login="operator2")
-    assert (
-        await case.request("POST", f"/chats/{chat}/close", login="operator2", json={"reason": "user_cancelled"})
-    ).status_code == 403
-    assert (
-        await case.request("POST", f"/chats/{chat}/close", login="operator2", json={"reason": "resolved"})
-    ).status_code == 200
+    await case.close_chat(chat, reason="resolved", login="operator2")
     ratings = await asyncio.gather(
         *[case.request("PUT", f"/chats/{chat}/rating", json={"stars": score}) for score in (4, 5)]
     )
@@ -391,33 +376,27 @@ async def test_schema_initialization_preserves_existing_data(case):
 
 
 async def test_knowledge_base_proxy_endpoints(case):
-    for path in ["/ml-api/knowledge-base", "/knowledge-base"]:
-        res = await case.client.get(path)
-        assert res.status_code == 200, res.text
-        manuals = res.json()
-        assert isinstance(manuals, list)
-        assert len(manuals) >= 1
-        assert manuals[0]["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
+    res = await case.client.get("/ml-api/knowledge-base")
+    assert res.status_code == 200, res.text
+    manuals = res.json()
+    assert isinstance(manuals, list)
+    assert len(manuals) >= 1
+    assert manuals[0]["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
 
-    for path in [
-        "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
-        "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
-    ]:
-        res = await case.client.get(path)
-        assert res.status_code == 200, res.text
-        structure = res.json()
-        assert structure["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
-        assert len(structure["sections"]) >= 1
+    # Verify alias is removed
+    assert (await case.client.get("/knowledge-base")).status_code == 404
 
-    for path in [
-        "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1",
-        "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1",
-    ]:
-        res = await case.client.get(path)
-        assert res.status_code == 200, res.text
-        section = res.json()
-        assert section["id"] == "1"
-        assert "content_md" in section
+    res = await case.client.get("/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste")
+    assert res.status_code == 200, res.text
+    structure = res.json()
+    assert structure["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
+    assert len(structure["sections"]) >= 1
+
+    res = await case.client.get("/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1")
+    assert res.status_code == 200, res.text
+    section = res.json()
+    assert section["id"] == "1"
+    assert "content_md" in section
 
     res_404 = await case.client.get("/ml-api/knowledge-base/not-found")
     assert res_404.status_code == 404
@@ -445,8 +424,9 @@ async def test_chat_rating_returned_in_all_endpoints(case):
     chats_list = (await case.request("GET", "/chats")).json()
     assert chats_list["items"][0]["rating"]["stars"] == 5
 
-    # 5. POST /chats/{chat_id}/request-operator returns rating
-    req_op = (await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 1})).json()
+    # 5. transfer to operator
+    await case.transfer_to_operator(chat, 1)
+    req_op = (await case.request("GET", f"/chats/{chat}")).json()
     assert req_op["status"] == "waiting_operator"
     assert req_op["rating"]["stars"] == 5
 
@@ -465,8 +445,9 @@ async def test_chat_rating_returned_in_all_endpoints(case):
     assert re_rate.json()["stars"] == 4
     assert re_rate.json()["sender_type"] == "operator"
 
-    # 8. POST /chats/{chat_id}/close returns rating
-    closed = (await case.request("POST", f"/chats/{chat}/close", json={"reason": "resolved"})).json()
+    # 8. close chat returns rating
+    await case.close_chat(chat, reason="resolved", login="operator1")
+    closed = (await case.request("GET", f"/chats/{chat}")).json()
     assert closed["status"] == "closed"
     assert closed["rating"]["stars"] == 4
     assert closed["rating"]["comment"] == "Оператор помог"

@@ -1,14 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 from pydantic import AwareDatetime
 
 from src.api.repositories.chats import Limit, Offset
 from src.api.repositories.dependencies import Admin, Chats, Storage
 from src.db.models import ChatStatus, SenderType
 from src.schemas.chat import ChatPage, RatingPage
-from src.services.ai_client import AIUnavailable
 from src.services.errors import fail
 from src.services.stats import StatsService
 
@@ -81,11 +80,3 @@ async def ratings(
 @router.get("/stats")
 async def stats(user: Admin, storage: Storage, since: Since = None, until: Until = None) -> dict:
     return await StatsService(storage).summary(since, until)
-
-
-@router.get("/ai-health")
-async def ai_health(user: Admin, request: Request) -> dict:
-    try:
-        return await request.app.state.ai.health()
-    except AIUnavailable:
-        fail(503, "AI_UNAVAILABLE", "The AI service is not fully ready")

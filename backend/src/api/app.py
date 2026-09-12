@@ -8,7 +8,6 @@ from src.api.lifespan import lifespan
 from src.api.repositories.admin import router as admin_router
 from src.api.repositories.auth import router as auth_router
 from src.api.repositories.chats import router as chats_router
-from src.api.repositories.knowledge_base import kb_alias_router
 from src.api.repositories.knowledge_base import router as kb_router
 from src.api.repositories.manul import router as manul_router
 from src.api.repositories.ml_assets import router as ml_assets_router
@@ -40,7 +39,6 @@ def create_app(settings: ApiSettings) -> FastAPI:
         admin_router,
         ml_assets_router,
         kb_router,
-        kb_alias_router,
         manul_router,
     ):
         app.include_router(router)
