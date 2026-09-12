@@ -3,12 +3,36 @@ from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
 from src.api.repositories.dependencies import CurrentUser, Settings, Storage
-from src.db.models import User
-from src.schemas.chat import LoginIn, TokenOut, UserOut
-from src.services.auth import dummy_password_hash, issue_token, verify_password
+from src.db.models import Role, User
+from src.schemas.chat import LoginIn, RegisterIn, TokenOut, UserOut
+from src.services.auth import dummy_password_hash, hash_password, issue_token, verify_password
 from src.services.errors import fail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=TokenOut, status_code=201)
+async def register(payload: RegisterIn, storage: Storage, settings: Settings) -> TokenOut:
+    async with storage.create_session() as session, session.begin():
+        existing = await session.scalar(select(User.id).where(User.login == payload.login))
+        if existing:
+            fail(409, "LOGIN_TAKEN", "A user with this login already exists")
+        if payload.role == Role.OPERATOR and not payload.support_line_id:
+            fail(400, "OPERATOR_LINE_REQUIRED", "Operators must specify a support line ID")
+        display_name = payload.display_name or payload.login
+        hashed = await run_in_threadpool(hash_password, payload.password)
+        user = User(
+            login=payload.login,
+            password_hash=hashed,
+            display_name=display_name,
+            role=payload.role,
+            support_line_id=payload.support_line_id if payload.role == Role.OPERATOR else None,
+        )
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+
+    return TokenOut(access_token=issue_token(user_id, settings), expires_in=settings.access_token_minutes * 60)
 
 
 @router.post("/login", response_model=TokenOut)

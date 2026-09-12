@@ -10,14 +10,16 @@ services:
     restart: always
     ports:
       - "8000:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Settings can be fully configured via environment variables, no settings.yaml needed.
       API_SETTINGS__DB_URL: ${API_SETTINGS__DB_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres}
       API_SETTINGS__APP_ROOT_PATH: ${API_SETTINGS__APP_ROOT_PATH:-}
       API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX: ${API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX:-.*}
-      API_SETTINGS__JWT_SECRET: ${API_SETTINGS__JWT_SECRET:-}
+      API_SETTINGS__JWT_SECRET: ${API_SETTINGS__JWT_SECRET:-dev_jwt_secret_change_me_in_production_32chars_min}
       API_SETTINGS__ACCESS_TOKEN_MINUTES: ${API_SETTINGS__ACCESS_TOKEN_MINUTES:-120}
-      API_SETTINGS__AI_BASE_URL: ${API_SETTINGS__AI_BASE_URL:-http://ai-stub:8002}
+      API_SETTINGS__AI_BASE_URL: ${API_SETTINGS__AI_BASE_URL:-http://100.64.0.5:8010}
       API_SETTINGS__AI_SERVICE_TOKEN: ${API_SETTINGS__AI_SERVICE_TOKEN:-}
       API_SETTINGS__MODERATION_MODEL_PATH: ${API_SETTINGS__MODERATION_MODEL_PATH:-/app/models/rubert-tiny-toxicity}
       API_SETTINGS__MODERATION_THRESHOLD: ${API_SETTINGS__MODERATION_THRESHOLD:-0.8}
@@ -33,11 +35,11 @@ services:
   ai-stub:
     profiles: ["demo"]
     build: *backend-build
-    command: ["uv", "run", "--no-sync", "uvicorn", "scripts.ai_stub:app", "--host", "0.0.0.0", "--port", "8002"]
+    command: ["uv", "run", "--no-sync", "uvicorn", "scripts.ai_stub:app", "--host", "0.0.0.0", "--port", "8010"]
     environment:
       API_SETTINGS__AI_SERVICE_TOKEN: ${API_SETTINGS__AI_SERVICE_TOKEN:-}
     ports:
-      - "127.0.0.1:8002:8002"
+      - "127.0.0.1:8010:8010"
 
   db:
     # See more: https://hub.docker.com/_/postgres

@@ -6,7 +6,7 @@ try:
     settings: Settings = Settings()  # type: ignore[call-arg]
 except ValidationError as e:  # pragma: no cover
     raise RuntimeError(
-        "❌ Invalid settings. Provide them via `settings.yaml` or environment variables (e.g. `API_SETTINGS__DB_URL`)."
+        f"❌ Invalid settings ({e}). Provide them via `settings.yaml` or environment variables (e.g. `API_SETTINGS__JWT_SECRET`, `API_SETTINGS__DB_URL`)."
     ) from e
 
 api_settings: ApiSettings = settings.api_settings
