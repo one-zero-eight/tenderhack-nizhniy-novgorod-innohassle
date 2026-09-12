@@ -22,7 +22,7 @@ export default function Navbar() {
   const isAdmin = user?.role === Role.admin
 
   return (
-    <nav className="fixed border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
+    <nav className="fixed top-0 z-50 border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
       <div className="flex items-stretch pl-2">
         <RouterLink to={homePath(user?.role)} className="mr-4 flex items-center no-underline" aria-label="Портал Поставщиков">
           <img
