@@ -363,12 +363,11 @@ sequenceDiagram
 
 ---
 
-### Ratings & Feedback (`/chats` / `/messages`)
+### Ratings & Feedback (`/chats`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `PUT` | `/chats/{chat_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | Submit or update star rating (1–5) and comment for a chat session. |
-| `PUT` | `/messages/{message_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | *(Compatibility alias)* Rate the chat corresponding to the given message. |
 
 #### Rating Payload
 ```json

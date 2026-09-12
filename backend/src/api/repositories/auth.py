@@ -26,6 +26,7 @@ async def register(payload: RegisterIn, storage: Storage, settings: Settings) ->
             password_hash=hashed,
             display_name=display_name,
             role=payload.role,
+            user_type=payload.user_type or "buyer",
             support_line_id=payload.support_line_id if payload.role == Role.OPERATOR else None,
         )
         session.add(user)

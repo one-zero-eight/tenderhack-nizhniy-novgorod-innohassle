@@ -59,7 +59,6 @@ class StatsService:
                 AdminRatingOut(
                     id=rating.id,
                     chat_id=rating.chat_id,
-                    message_id=rating.message_id,
                     user_id=rating.user_id,
                     stars=rating.stars,
                     comment=rating.comment,
@@ -70,7 +69,6 @@ class StatsService:
                     sender_name=rating.sender_name,
                     support_line_id=rating.support_line_id,
                     chat_title=rating.chat_title or "",
-                    message_text=rating.message_text or "",
                 )
                 for rating in rows
             ]

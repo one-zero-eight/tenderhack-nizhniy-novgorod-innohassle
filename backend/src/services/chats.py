@@ -552,9 +552,7 @@ class ChatService:
                 close_chat(session, chat, CloseReason(reason))
             return await chat_view(session, chat)
 
-    async def rate(
-        self, chat_id: str, user: User, payload: RatingIn, message_id: str | None = None
-    ) -> RatingOut:
+    async def rate(self, chat_id: str, user: User, payload: RatingIn) -> RatingOut:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
@@ -586,7 +584,6 @@ class ChatService:
                     sender_name=sender_name,
                     support_line_id=support_line_id,
                     chat_title=chat.title,
-                    message_id=message_id,
                 )
                 session.add(rating)
             else:
@@ -597,78 +594,7 @@ class ChatService:
                 rating.sender_name = sender_name
                 rating.support_line_id = support_line_id
                 rating.chat_title = chat.title
-                if message_id:
-                    rating.message_id = message_id
                 rating.updated_at = utcnow()
             await session.flush()
             return RatingOut.model_validate(rating)
-
-    async def rate_message(self, message_id: str, user: User, payload: RatingIn) -> RatingOut:
-        async with self.storage.create_session() as session, session.begin():
-            pg_message = await session.get(Message, message_id)
-            if pg_message is not None:
-                chat = await load_chat(session, pg_message.chat_id, lock=True)
-                check_read_access(chat, user)
-                check_owner(chat, user)
-                if pg_message.sender_type not in (SenderType.AI, SenderType.OPERATOR) or pg_message.is_redacted:
-                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-                target_chat_id = pg_message.chat_id
-            else:
-                user_chats = list(
-                    await session.scalars(
-                        select(Chat).where(Chat.user_id == user.id).order_by(Chat.updated_at.desc())
-                    )
-                )
-                found_chat = None
-                found_msg = None
-                for c in user_chats:
-                    try:
-                        ml_data = await self.ai.get_chat(c.id)
-                        for m in ml_data.get("messages", []):
-                            if m.get("id") == message_id:
-                                found_chat = c
-                                found_msg = m
-                                break
-                    except Exception:
-                        continue
-                    if found_chat:
-                        break
-
-                if found_chat is None and message_id.startswith("user-"):
-                    for (c_id, _), cached_res in self._submissions.items():
-                        for m in cached_res.messages:
-                            if m.id == message_id:
-                                c = await session.get(Chat, c_id)
-                                if c and c.user_id == user.id:
-                                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-                                elif c and c.user_id != user.id:
-                                    fail(404, "CHAT_NOT_FOUND", "Chat not found")
-
-                if found_chat is None:
-                    all_chats = list(await session.scalars(select(Chat).where(Chat.user_id != user.id)))
-                    other_found = False
-                    for c in all_chats:
-                        try:
-                            ml_data = await self.ai.get_chat(c.id)
-                            for m in ml_data.get("messages", []):
-                                if m.get("id") == message_id:
-                                    other_found = True
-                                    break
-                        except Exception:
-                            continue
-                        if other_found:
-                            break
-                    if other_found:
-                        fail(404, "CHAT_NOT_FOUND", "Chat not found")
-                    fail(404, "MESSAGE_NOT_FOUND", "Message not found")
-
-                chat = found_chat
-                check_read_access(chat, user)
-                check_owner(chat, user)
-                if found_msg.get("role") != "assistant":
-                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-
-                target_chat_id = chat.id
-
-        return await self.rate(target_chat_id, user, payload, message_id=message_id)
 

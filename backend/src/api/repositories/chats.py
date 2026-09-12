@@ -102,8 +102,3 @@ async def close(chat_id: str, payload: CloseIn, user: CurrentUser, service: Chat
 @router.put("/chats/{chat_id}/rating", response_model=RatingOut, tags=["ratings"])
 async def rate_chat(chat_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
     return await service.rate(chat_id, user, payload)
-
-
-@router.put("/messages/{message_id}/rating", response_model=RatingOut, tags=["ratings"])
-async def rate(message_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
-    return await service.rate_message(message_id, user, payload)

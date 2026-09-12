@@ -8,10 +8,12 @@ from src.api.lifespan import lifespan
 from src.api.repositories.admin import router as admin_router
 from src.api.repositories.auth import router as auth_router
 from src.api.repositories.chats import router as chats_router
-from src.api.repositories.knowledge_base import kb_alias_router, router as kb_router
-from src.api.repositories.ml_assets import router as ml_assets_router
+from src.api.repositories.knowledge_base import kb_alias_router
+from src.api.repositories.knowledge_base import router as kb_router
 from src.api.repositories.manul import router as manul_router
+from src.api.repositories.ml_assets import router as ml_assets_router
 from src.api.repositories.ping import router as ping_router
+from src.api.repositories.profile import router as profile_router
 from src.api.repositories.support import router as support_router
 from src.config import api_settings
 from src.config_schema import ApiSettings
@@ -29,7 +31,18 @@ def create_app(settings: ApiSettings) -> FastAPI:
     app.state.settings = settings
     app.router.route_class = AutoDeriveResponsesAPIRoute
     patch_fastapi(app)
-    for router in (ping_router, auth_router, chats_router, support_router, admin_router, ml_assets_router, kb_router, kb_alias_router, manul_router):
+    for router in (
+        ping_router,
+        auth_router,
+        profile_router,
+        chats_router,
+        support_router,
+        admin_router,
+        ml_assets_router,
+        kb_router,
+        kb_alias_router,
+        manul_router,
+    ):
         app.include_router(router)
     app.add_middleware(
         CORSMiddleware,

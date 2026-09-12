@@ -68,6 +68,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(100))
     role: Mapped[Role] = mapped_column(enum_type(Role))
+    user_type: Mapped[str] = mapped_column(String(20), default="buyer")
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
 
 
@@ -147,8 +148,6 @@ class Rating(Base):
     sender_name: Mapped[str] = mapped_column(String(100), default="ИИ-помощник")
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
     chat_title: Mapped[str] = mapped_column(String(200), default="")
-    message_id: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
-    message_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

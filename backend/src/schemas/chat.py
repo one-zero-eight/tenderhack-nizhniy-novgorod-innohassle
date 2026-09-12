@@ -21,6 +21,7 @@ class RegisterIn(Schema):
     password: str = Field(min_length=1, max_length=1024)
     display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
     role: Role = Role.USER
+    user_type: Literal["seller", "buyer"] | None = "buyer"
     support_line_id: int | None = Field(default=None, ge=1, le=3)
 
 
@@ -35,6 +36,7 @@ class UserOut(Schema):
     login: str
     display_name: str
     role: Role
+    user_type: str | None = "buyer"
     support_line_id: int | None
 
 
@@ -67,7 +69,6 @@ class RatingOut(RatingIn):
     user_id: UUID
     created_at: datetime
     updated_at: datetime
-    message_id: str | None = None
 
 
 class ChatOut(Schema):
@@ -114,7 +115,6 @@ class MessageOut(Schema):
     reply_to_message_id: str | None = None
     is_redacted: bool = False
     created_at: datetime
-    rating: RatingOut | None = None
 
 
 class MessagePage(Schema):
@@ -142,7 +142,6 @@ class AdminRatingOut(RatingOut):
     sender_name: str
     support_line_id: int | None = None
     chat_title: str = ""
-    message_text: str = ""
 
 
 class RatingPage(Schema):
