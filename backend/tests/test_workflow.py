@@ -19,10 +19,10 @@ async def test_auth_and_permissions(case):
     assert valid.status_code == 200
     token = valid.json()["access_token"]
     me = await case.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert me.json()["role"] == "user"
+    assert me.json()["role"] == "buyer"
     assert "password_hash" not in me.json()
 
-    # Public registration
+    # Public registration (default role is buyer)
     reg = await case.client.post(
         "/auth/register",
         json={"login": "newuser", "password": "newpassword123", "display_name": "Новый Пользователь"},
@@ -32,7 +32,36 @@ async def test_auth_and_permissions(case):
     new_me = await case.client.get("/auth/me", headers={"Authorization": f"Bearer {new_token}"})
     assert new_me.json()["login"] == "newuser"
     assert new_me.json()["display_name"] == "Новый Пользователь"
-    assert new_me.json()["role"] == "user"
+    assert new_me.json()["role"] == "buyer"
+
+    # Register as seller
+    reg_seller = await case.client.post(
+        "/auth/register",
+        json={"login": "newseller", "password": "password123", "role": "seller"},
+    )
+    assert reg_seller.status_code == 201
+    seller_me = (await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_seller.json()['access_token']}"})).json()
+    assert seller_me["role"] == "seller"
+
+    # Register as support
+    bad_support = await case.client.post(
+        "/auth/register",
+        json={"login": "badsupport", "password": "password123", "role": "support"},
+    )
+    assert bad_support.status_code == 400
+
+    reg_support = await case.client.post(
+        "/auth/register",
+        json={"login": "newsupport", "password": "password123", "role": "support", "support_line_id": 2},
+    )
+    assert reg_support.status_code == 201
+    support_me = (await case.client.get("/auth/me", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"})).json()
+    assert support_me["role"] == "support"
+    assert support_me["support_line_id"] == 2
+
+    # Verify /support/chats works
+    support_chats = await case.client.get("/support/chats", headers={"Authorization": f"Bearer {reg_support.json()['access_token']}"})
+    assert support_chats.status_code == 200
 
     # Duplicate registration conflict
     dup = await case.client.post("/auth/register", json={"login": "newuser", "password": "newpassword123"})

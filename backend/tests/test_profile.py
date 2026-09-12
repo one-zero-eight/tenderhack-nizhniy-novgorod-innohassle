@@ -23,11 +23,11 @@ def app(api_settings):
 @pytest.mark.asyncio
 async def test_sample_profile_seller(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/profile/sample?user_type=seller")
+        resp = await client.get("/profile/sample?role=seller")
         assert resp.status_code == 200, resp.text
         data = resp.json()
 
-        assert data["user_type"] == "seller"
+        assert data["role"] == "seller"
         assert data["type_label"] == "Поставщик"
 
         # 1. Компания
@@ -69,11 +69,11 @@ async def test_sample_profile_seller(app):
 @pytest.mark.asyncio
 async def test_sample_profile_buyer(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/profile/sample?user_type=buyer")
+        resp = await client.get("/profile/sample?role=buyer")
         assert resp.status_code == 200, resp.text
         data = resp.json()
 
-        assert data["user_type"] == "buyer"
+        assert data["role"] == "buyer"
         assert data["type_label"] == "Заказчик"
 
         # 1. Компания
@@ -123,7 +123,7 @@ async def test_authenticated_profile_flow(case):
     # Register buyer
     reg_buyer = await case.client.post(
         "/auth/register",
-        json={"login": "test_buyer", "password": "password123", "user_type": "buyer"},
+        json={"login": "test_buyer", "password": "password123", "role": "buyer"},
     )
     assert reg_buyer.status_code == 201
     buyer_token = reg_buyer.json()["access_token"]
@@ -131,7 +131,7 @@ async def test_authenticated_profile_flow(case):
     # Register seller
     reg_seller = await case.client.post(
         "/auth/register",
-        json={"login": "test_seller", "password": "password123", "user_type": "seller"},
+        json={"login": "test_seller", "password": "password123", "role": "seller"},
     )
     assert reg_seller.status_code == 201
     seller_token = reg_seller.json()["access_token"]
@@ -139,23 +139,23 @@ async def test_authenticated_profile_flow(case):
     # Get buyer profile
     buyer_prof = await case.client.get("/profile", headers={"Authorization": f"Bearer {buyer_token}"})
     assert buyer_prof.status_code == 200
-    assert buyer_prof.json()["user_type"] == "buyer"
+    assert buyer_prof.json()["role"] == "buyer"
     assert buyer_prof.json()["type_label"] == "Заказчик"
 
     # Get seller profile
     seller_prof = await case.client.get("/profile", headers={"Authorization": f"Bearer {seller_token}"})
     assert seller_prof.status_code == 200
-    assert seller_prof.json()["user_type"] == "seller"
+    assert seller_prof.json()["role"] == "seller"
     assert seller_prof.json()["type_label"] == "Поставщик"
 
-    # Switch buyer to seller via PATCH /profile/type
+    # Switch buyer to seller via PATCH /profile/role
     switched = await case.client.patch(
-        "/profile/type",
+        "/profile/role",
         headers={"Authorization": f"Bearer {buyer_token}"},
-        json={"user_type": "seller"},
+        json={"role": "seller"},
     )
     assert switched.status_code == 200
-    assert switched.json()["user_type"] == "seller"
+    assert switched.json()["role"] == "seller"
     assert switched.json()["type_label"] == "Поставщик"
 
 
@@ -164,7 +164,7 @@ async def test_post_lifecycle_endpoints(case):
     # 1. Register buyer & seller
     buyer_res = await case.client.post(
         "/auth/register",
-        json={"login": "proc_buyer", "password": "password123", "user_type": "buyer"},
+        json={"login": "proc_buyer", "password": "password123", "role": "buyer"},
     )
     assert buyer_res.status_code == 201
     buyer_token = buyer_res.json()["access_token"]
@@ -172,7 +172,7 @@ async def test_post_lifecycle_endpoints(case):
 
     seller_res = await case.client.post(
         "/auth/register",
-        json={"login": "tender_seller", "password": "password123", "user_type": "seller"},
+        json={"login": "tender_seller", "password": "password123", "role": "seller"},
     )
     assert seller_res.status_code == 201
     seller_token = seller_res.json()["access_token"]

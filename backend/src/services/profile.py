@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from src.db.models import User
+from src.db.models import Role, User
 from src.schemas.profile import (
     CompanyProfileOut,
     ContractCreateIn,
@@ -414,6 +414,7 @@ def get_profile_data(
         return ProfileViewOut(
             user_id=user_id,
             display_name=display_name,
+            role=UserType.SELLER,
             user_type=UserType.SELLER,
             type_label="Поставщик",
             company=company,
@@ -436,6 +437,7 @@ def get_profile_data(
         return ProfileViewOut(
             user_id=user_id,
             display_name=display_name,
+            role=UserType.BUYER,
             user_type=UserType.BUYER,
             type_label="Заказчик",
             company=company,
@@ -455,7 +457,7 @@ def get_contract_by_id(contract_id: str) -> ContractOut | None:
 
 
 def create_procurement(payload: ProcurementCreateIn, user: User | None = None) -> ProcurementOut:
-    customer_name = user.display_name if user and user.user_type == "buyer" else BUYER_COMPANY.name
+    customer_name = user.display_name if user and (user.role == Role.BUYER or user.user_type == "buyer") else BUYER_COMPANY.name
     proc_id = f"proc-{len(STORE.procurements) + 1:03d}"
     number = payload.number or f"0173200001426000{len(STORE.procurements) + 10:03d}"
     docs = [
@@ -492,7 +494,7 @@ def create_offer(payload: OfferCreateIn, user: User | None = None) -> OfferOut:
     if proc is None:
         fail(404, "PROCUREMENT_NOT_FOUND", f"Procurement with id '{payload.procurement_id}' not found")
 
-    supplier_name = user.display_name if user and user.user_type == "seller" else SELLER_COMPANY.name
+    supplier_name = user.display_name if user and (user.role == Role.SELLER or user.user_type == "seller") else SELLER_COMPANY.name
     offer_id = f"off-{len(STORE.offers) + 1:03d}"
     docs = [
         DocumentOut(

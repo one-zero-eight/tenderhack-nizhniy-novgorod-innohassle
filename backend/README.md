@@ -289,7 +289,7 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Public | `RegisterIn` | `TokenOut` | Register a new user or operator. Returns Bearer token. |
+| `POST` | `/auth/register` | Public | `RegisterIn` | `TokenOut` | Register a new user (`seller`/`buyer`) or support specialist. Returns Bearer token. |
 | `POST` | `/auth/login` | Public | `LoginIn` | `TokenOut` | Authenticate with login and password. |
 | `GET` | `/auth/me` | Authenticated | None | `UserOut` | Retrieve profile and role of current user. |
 
@@ -300,8 +300,8 @@ sequenceDiagram
   "login": "supplier_ivan",
   "password": "strongpassword123",
   "display_name": "Иван Петров",
-  "role": "user",                  // "user" | "operator" | "admin"
-  "support_line_id": null          // Required if role == "operator" (1, 2, or 3)
+  "role": "seller",                // "seller" | "buyer" | "support" | "admin" (legacy: "user" | "operator")
+  "support_line_id": null          // Required if role == "support" (or "operator") (1, 2, or 3)
 }
 
 // POST /auth/login
@@ -320,6 +320,20 @@ sequenceDiagram
 
 ---
 
+### User Profiles (`/profile`)
+
+| Method | Endpoint | Role Required | Request Body | Response Body | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/profile` | Authenticated | Query (`role` / `user_type`) | `ProfileViewOut` | Get current user's profile view (seller or buyer data model). |
+| `GET` | `/profile/sample` | Public | Query (`role` / `user_type`) | `ProfileViewOut` | Sample demonstration profile with related procurements, offers, and contracts. |
+| `PATCH` | `/profile/role` | Authenticated | `UpdateUserTypeIn` | `ProfileViewOut` | Switch active role / profile view between `seller` and `buyer`. |
+| `POST` | `/profile/procurements` | Authenticated | `ProcurementCreateIn` | `ProcurementOut` | Create a new procurement. |
+| `POST` | `/profile/offers` | Authenticated | `OfferCreateIn` | `OfferOut` | Submit an offer for a procurement. |
+| `POST` | `/profile/contracts` | Authenticated | `ContractCreateIn` | `ContractOut` | Create a contract. |
+| `POST` | `/profile/documents` | Authenticated | `DocumentCreateIn` | `DocumentOut` | Attach a document. |
+
+---
+
 ### Support Lines (`/support-lines`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
@@ -332,15 +346,15 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/chats` | `user` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
+| `POST` | `/chats` | `seller` / `buyer` / `user` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
 | `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `topic`, `subtopic`, `offset`, `limit`). |
-| `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Operator | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
-| `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Operator | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
-| `POST` | `/chats/{chat_id}/messages` | Owner / Assigned Operator | `MessageIn` | `SendResult` or SSE Stream | Send message. Emits SSE if `Accept: text/event-stream`, else JSON. |
-| `POST` | `/chats/{chat_id}/stream` | Owner / Assigned Operator | `MessageIn` | SSE Stream | Explicit SSE streaming message submission endpoint. |
-| `POST` | `/chats/{chat_id}/message` | Owner / Assigned Operator | `MessageIn` | SSE Stream | Alternate explicit SSE streaming message submission endpoint. |
+| `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Support | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
+| `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Support | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
+| `POST` | `/chats/{chat_id}/messages` | Owner / Assigned Support | `MessageIn` | `SendResult` or SSE Stream | Send message. Emits SSE if `Accept: text/event-stream`, else JSON. |
+| `POST` | `/chats/{chat_id}/stream` | Owner / Assigned Support | `MessageIn` | SSE Stream | Explicit SSE streaming message submission endpoint. |
+| `POST` | `/chats/{chat_id}/message` | Owner / Assigned Support | `MessageIn` | SSE Stream | Alternate explicit SSE streaming message submission endpoint. |
 | `POST` | `/chats/{chat_id}/request-operator` | Owner | `RequestOperatorIn` | `ChatOut` | Request transfer to a human support line (`1`, `2`, or `3`). |
-| `POST` | `/chats/{chat_id}/close` | Owner / Assigned Operator | `CloseIn` | `ChatOut` | Close chat session (`"resolved"` or `"user_cancelled"`). |
+| `POST` | `/chats/{chat_id}/close` | Owner / Assigned Support | `CloseIn` | `ChatOut` | Close chat session (`"resolved"` or `"user_cancelled"`). |
 
 #### Chat Request Payloads
 ```json
@@ -380,12 +394,12 @@ sequenceDiagram
 
 ---
 
-### Operator Desk (`/operator`)
+### Support Desk (`/support` & `/operator`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/operator/chats` | `operator` | Query params | `ChatPage` | View active and waiting chats routed to operator's support line. |
-| `POST` | `/operator/chats/{chat_id}/claim` | `operator` | None | `ChatOut` | Assign waiting chat to current operator (`status: operator`). |
+| `GET` | `/support/chats` (or `/operator/chats`) | `support` / `operator` | Query params | `ChatPage` | View active and waiting chats routed to specialist's support line. |
+| `POST` | `/support/chats/{chat_id}/claim` (or `/operator/chats/{chat_id}/claim`) | `support` / `operator` | None | `ChatOut` | Assign waiting chat to current support specialist (`status: operator`). |
 
 ---
 

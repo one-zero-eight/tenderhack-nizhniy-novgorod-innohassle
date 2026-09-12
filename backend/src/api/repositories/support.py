@@ -5,10 +5,11 @@ from src.api.repositories.dependencies import Chats, CurrentUser
 from src.db.models import ChatStatus
 from src.schemas.chat import ChatOut, ChatPage
 
-router = APIRouter(prefix="/operator/chats", tags=["operators"])
+router = APIRouter(tags=["support"])
 
 
-@router.get("", response_model=ChatPage)
+@router.get("/support/chats", response_model=ChatPage)
+@router.get("/operator/chats", response_model=ChatPage)
 async def operator_chats(
     user: CurrentUser,
     service: Chats,
@@ -19,11 +20,12 @@ async def operator_chats(
     limit: Limit = 50,
 ) -> ChatPage:
     return await service.list_chats(
-        user, scope="operator", status=status, topic=topic, subtopic=subtopic, offset=offset, limit=limit
+        user, scope="support", status=status, topic=topic, subtopic=subtopic, offset=offset, limit=limit
     )
 
 
-@router.post("/{chat_id}/claim", response_model=ChatOut)
+@router.post("/support/chats/{chat_id}/claim", response_model=ChatOut)
+@router.post("/operator/chats/{chat_id}/claim", response_model=ChatOut)
 async def claim(chat_id: str, user: CurrentUser, service: Chats) -> ChatOut:
     return await service.claim(chat_id, user)
 

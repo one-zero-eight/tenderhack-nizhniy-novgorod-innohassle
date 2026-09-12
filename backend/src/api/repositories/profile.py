@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from src.api.repositories.dependencies import CurrentUser, Storage
+from src.db.models import Role
 from src.schemas.profile import (
     ContractCreateIn,
     ContractOut,
@@ -34,31 +35,45 @@ async def get_my_profile(
         default=None,
         description="Переопределить представление: seller (поставщик) или buyer (заказчик)",
     ),
+    role: UserType | None = Query(
+        default=None,
+        description="Переопределить роль: seller (поставщик) или buyer (заказчик)",
+    ),
 ) -> ProfileViewOut:
     """
     Возвращает профиль текущего пользователя.
-    По умолчанию тип определяется из учётной записи пользователя (поставщик/заказчик),
-    либо может быть явно переопределен параметром user_type.
+    По умолчанию роль определяется из учётной записи пользователя (поставщик/заказчик),
+    либо может быть явно переопределена параметром role или user_type.
     """
-    selected_type = user_type or (UserType.SELLER if user.user_type == "seller" else UserType.BUYER)
+    selected_type = (
+        role
+        or user_type
+        or (UserType.SELLER if (user.role == Role.SELLER or user.user_type == "seller") else UserType.BUYER)
+    )
     return get_profile_data(selected_type, user=user)
 
 
 @router.get("/sample", response_model=ProfileViewOut)
 async def get_sample_profile(
-    user_type: UserType = Query(
-        default=UserType.SELLER,
+    user_type: UserType | None = Query(
+        default=None,
         description="Тип профиля: seller (поставщик) или buyer (заказчик)",
+    ),
+    role: UserType | None = Query(
+        default=None,
+        description="Роль профиля: seller (поставщик) или buyer (заказчик)",
     ),
 ) -> ProfileViewOut:
     """
     Демонстрационный профиль без авторизации.
     Демонстрирует цепочку: Компания -> Закупка -> Предложения -> Контракт -> Документы.
     """
-    return get_profile_data(user_type)
+    selected = role or user_type or UserType.SELLER
+    return get_profile_data(selected)
 
 
 @router.patch("/type", response_model=ProfileViewOut)
+@router.patch("/role", response_model=ProfileViewOut)
 async def update_user_type(
     payload: UpdateUserTypeIn,
     user: CurrentUser,
@@ -67,10 +82,12 @@ async def update_user_type(
     """
     Переключение роли пользователя между Поставщиком (seller) и Заказчиком (buyer).
     """
+    target = payload.role or payload.user_type or UserType.BUYER
     async with storage.create_session() as session, session.begin():
-        user.user_type = payload.user_type.value
+        user.role = Role.SELLER if target == UserType.SELLER else Role.BUYER
+        user.user_type = target.value
         session.add(user)
-    return get_profile_data(payload.user_type, user=user)
+    return get_profile_data(target, user=user)
 
 
 @router.post("/procurements", response_model=ProcurementOut, status_code=201)

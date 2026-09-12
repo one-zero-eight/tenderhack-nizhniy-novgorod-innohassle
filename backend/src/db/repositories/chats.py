@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Chat, ChatStatus, Message, Rating, Role, SenderType, SupportLine, User, utcnow
+from src.db.models import Chat, ChatStatus, Message, Rating, SenderType, SupportLine, User, utcnow
 from src.schemas.chat import ActorOut, ChatOut, MessageOut, RatingOut, RecipientOut, SupportLineOut
 from src.services.errors import fail
 
@@ -19,23 +19,23 @@ async def load_chat(session: AsyncSession, chat_id: str, *, lock: bool = False) 
 
 
 def check_read_access(chat: Chat, user: User) -> None:
-    if user.role == Role.ADMIN or chat.user_id == user.id:
+    if user.is_admin or chat.user_id == user.id:
         return
-    if user.role == Role.OPERATOR and chat.operator_id == user.id:
+    if user.is_support and chat.operator_id == user.id:
         return
     fail(404, "CHAT_NOT_FOUND", "Chat not found")
 
 
 def check_owner(chat: Chat, user: User) -> None:
-    if user.role != Role.USER or chat.user_id != user.id:
+    if not user.is_customer or chat.user_id != user.id:
         fail(403, "OWNER_REQUIRED", "Only the chat owner can perform this action")
 
 
 def check_writer(chat: Chat, user: User) -> None:
     check_read_access(chat, user)
-    if user.role == Role.USER and chat.user_id == user.id:
+    if user.is_customer and chat.user_id == user.id:
         return
-    if user.role == Role.OPERATOR and chat.operator_id == user.id:
+    if user.is_support and chat.operator_id == user.id:
         return
     fail(403, "CHAT_WRITE_FORBIDDEN", "Only the owner or assigned operator can write to this chat")
 

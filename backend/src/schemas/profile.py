@@ -101,6 +101,7 @@ class CompanyProfileOut(Schema):
 class ProfileViewOut(Schema):
     user_id: UUID | str
     display_name: str
+    role: UserType
     user_type: UserType
     type_label: str  # "Поставщик" | "Заказчик"
     company: CompanyProfileOut
@@ -111,7 +112,8 @@ class ProfileViewOut(Schema):
 
 
 class UpdateUserTypeIn(Schema):
-    user_type: UserType
+    role: UserType | None = None
+    user_type: UserType | None = None
 
 
 class DocumentCreateIn(Schema):

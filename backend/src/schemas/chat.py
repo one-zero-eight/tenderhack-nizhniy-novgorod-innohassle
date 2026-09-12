@@ -20,8 +20,8 @@ class RegisterIn(Schema):
     login: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     password: str = Field(min_length=1, max_length=1024)
     display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
-    role: Role = Role.USER
-    user_type: Literal["seller", "buyer"] | None = "buyer"
+    role: Role | None = None
+    user_type: Literal["seller", "buyer"] | None = None
     support_line_id: int | None = Field(default=None, ge=1, le=3)
 
 
@@ -36,8 +36,8 @@ class UserOut(Schema):
     login: str
     display_name: str
     role: Role
-    user_type: str | None = "buyer"
-    support_line_id: int | None
+    user_type: str | None = None
+    support_line_id: int | None = None
 
 
 class SupportLineOut(Schema):

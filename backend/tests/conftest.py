@@ -235,11 +235,11 @@ async def case(monkeypatch):
                     transport=httpx.ASGITransport(app), base_url="http://backend.test"
                 ) as client:
                     for login, role, line_id in [
-                        ("user", "user", None),
-                        ("user2", "user", None),
-                        ("operator1", "operator", 1),
-                        ("operator2", "operator", 2),
-                        ("operator3", "operator", 3),
+                        ("user", "buyer", None),
+                        ("user2", "seller", None),
+                        ("operator1", "support", 1),
+                        ("operator2", "support", 2),
+                        ("operator3", "support", 3),
                         ("admin", "admin", None),
                     ]:
                         response = await client.post(

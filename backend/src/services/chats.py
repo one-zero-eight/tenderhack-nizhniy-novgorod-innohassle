@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Chat, ChatStatus, CloseReason, Message, Rating, Role, SenderType, SupportLine, User, utcnow
+from src.db.models import Chat, ChatStatus, CloseReason, Message, Rating, SenderType, SupportLine, User, utcnow
 from src.db.repositories.chats import (
     append_message,
     chat_view,
@@ -97,7 +97,7 @@ class ChatService:
         return lock
 
     async def create(self, user: User) -> ChatOut:
-        if user.role != Role.USER:
+        if not user.is_customer:
             fail(403, "USER_REQUIRED", "Only users can open chats")
         ml_chat_id, title = await self.ai.create_chat()
         async with self.storage.create_session() as session, session.begin():
@@ -138,8 +138,8 @@ class ChatService:
         filters = []
         if scope == "owner":
             filters.append(Chat.user_id == user.id)
-        elif scope == "operator":
-            if user.role != Role.OPERATOR:
+        elif scope in ("operator", "support"):
+            if not user.is_support:
                 fail(403, "OPERATOR_REQUIRED", "Operator access required")
             filters.append(
                 or_(
@@ -147,7 +147,7 @@ class ChatService:
                     Chat.operator_id == user.id,
                 )
             )
-        elif scope != "admin" or user.role != Role.ADMIN:
+        elif scope != "admin" or not user.is_admin:
             fail(403, "ADMIN_REQUIRED", "Admin access required")
         if status is not None:
             filters.append(Chat.status == status)
@@ -167,7 +167,7 @@ class ChatService:
             filters.append(Chat.created_at < until)
         order = (
             (Chat.handed_off_at.asc().nulls_last(), Chat.id)
-            if scope == "operator"
+            if scope in ("operator", "support")
             else (
                 Chat.created_at.desc(),
                 Chat.id.desc(),
@@ -254,7 +254,7 @@ class ChatService:
                 fail(409, "CHAT_CLOSED", "This chat is closed")
 
         blocked = False
-        if user.role == Role.USER:
+        if user.is_customer:
             try:
                 blocked = await self.moderator.is_blocked(payload.text)
             except ModerationUnavailable:
@@ -290,7 +290,7 @@ class ChatService:
                     session,
                     chat,
                     payload.text,
-                    sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                    sender_type=SenderType.USER if user.is_customer else SenderType.OPERATOR,
                     sender=user,
                     client_message_id=payload.client_message_id,
                     input_hash=digest,
@@ -357,7 +357,7 @@ class ChatService:
                     fail(409, "CHAT_CLOSED", "This chat is closed")
 
             blocked = False
-            if user.role == Role.USER:
+            if user.is_customer:
                 try:
                     blocked = await self.moderator.is_blocked(payload.text)
                 except ModerationUnavailable:
@@ -395,7 +395,7 @@ class ChatService:
                         session,
                         chat,
                         payload.text,
-                        sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                        sender_type=SenderType.USER if user.is_customer else SenderType.OPERATOR,
                         sender=user,
                         client_message_id=payload.client_message_id,
                         input_hash=digest,
@@ -535,7 +535,7 @@ class ChatService:
             return await chat_view(session, chat)
 
     async def claim(self, chat_id: str, user: User) -> ChatOut:
-        if user.role != Role.OPERATOR:
+        if not user.is_support:
             fail(403, "OPERATOR_REQUIRED", "Operator access required")
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
@@ -556,7 +556,7 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
-            if user.role == Role.OPERATOR and reason != "resolved":
+            if user.is_support and reason != "resolved":
                 fail(403, "INVALID_CLOSE_REASON", "Operators can close a chat as resolved")
             if chat.status != ChatStatus.CLOSED:
                 close_chat(session, chat, CloseReason(reason))
