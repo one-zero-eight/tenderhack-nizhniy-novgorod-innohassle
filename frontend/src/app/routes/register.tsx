@@ -2,9 +2,10 @@ import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-ro
 import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+import Radio from '@/components/ui/Radio'
 import { useRegister } from '@/hooks/useAuth'
 import { getToken } from '@/lib/auth-storage'
-import { Role } from '@/api/types'
+import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ROLE, REGISTER_ACCOUNT_TYPES, type AccountType } from '@/lib/roles'
 
 export const Route = createFileRoute('/register')({
   beforeLoad: () => {
@@ -21,6 +22,7 @@ function RegisterPage() {
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [accountType, setAccountType] = useState<AccountType>('customer')
 
   const trimmedLogin = login.trim()
   const trimmedDisplayName = displayName.trim()
@@ -33,9 +35,7 @@ function RegisterPage() {
       {
         login: trimmedLogin,
         password,
-        // Self-registration always creates a regular user. The endpoint accepts
-        // `role` but exposing it here would allow privilege escalation.
-        role: Role.user,
+        role: ACCOUNT_TYPE_ROLE[accountType],
         // Omitted when blank so the backend keeps its default display name.
         ...(trimmedDisplayName ? { display_name: trimmedDisplayName } : {}),
       },
@@ -70,6 +70,21 @@ function RegisterPage() {
           placeholder="Придумайте пароль..."
           autoComplete="new-password"
         />
+        <fieldset className="space-y-2">
+          <legend className="text-gray mb-2 block text-sm font-medium">Я регистрируюсь как</legend>
+          <div className="flex flex-col gap-2">
+            {REGISTER_ACCOUNT_TYPES.map((value) => (
+              <Radio
+                key={value}
+                name="role"
+                value={value}
+                checked={accountType === value}
+                onChange={() => setAccountType(value)}
+                label={ACCOUNT_TYPE_LABELS[value]}
+              />
+            ))}
+          </div>
+        </fieldset>
         {register.isError && (
           <p className="text-red text-sm">{register.error?.message || 'Не удалось зарегистрироваться'}</p>
         )}

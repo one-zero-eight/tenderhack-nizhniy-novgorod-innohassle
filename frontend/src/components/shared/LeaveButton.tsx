@@ -2,13 +2,13 @@ import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { FaUser } from 'react-icons/fa'
 import { FaDoorOpen } from 'react-icons/fa6'
 import { useAuth } from '@/app/providers/auth-context'
+import { roleLabel } from '@/lib/roles'
 import { navButtonClasses } from './nav-button'
 
 export default function LeaveButton() {
   const { user, logout } = useAuth()
 
   const label = user?.display_name || user?.login || 'Профиль'
-
   return (
     <Menu as="div" className="relative flex">
       <MenuButton className={navButtonClasses(false, 'data-open:bg-pale-blue/50')} title={label}>
@@ -25,6 +25,11 @@ export default function LeaveButton() {
         anchor={{ to: 'bottom', gap: 0 }}
         className="border-gray-blue z-50 w-[var(--button-width)] border border-t-0 bg-white shadow-lg focus:outline-none"
       >
+        {user && (
+          <div className="border-gray-blue text-gray border-b px-5 py-2 text-xs">
+            {user.login} · <span className="text-main-blue font-medium">{roleLabel(user.role)}</span>
+          </div>
+        )}
         <MenuItem>
           <button
             type="button"
