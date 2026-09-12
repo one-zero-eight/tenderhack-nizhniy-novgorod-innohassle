@@ -1,6 +1,7 @@
 import hashlib
-from datetime import datetime, timedelta
-from uuid import UUID, uuid4
+import logging
+from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,18 +13,14 @@ from src.db.repositories.chats import (
     check_owner,
     check_read_access,
     check_writer,
-    history_for,
-    latest_question,
     load_chat,
     message_views,
     submission_messages,
-    support_lines,
 )
 from src.db.storage import AbstractSQLAlchemyStorage
 from src.schemas.chat import (
     ChatOut,
     ChatPage,
-    HandoffOfferOut,
     MessageIn,
     MessagePage,
     RatingIn,
@@ -34,40 +31,13 @@ from src.services.ai_client import AIClient, AIUnavailable
 from src.services.errors import fail
 from src.services.moderation import ModerationUnavailable, Moderator
 
-BOT_STATES = (ChatStatus.AI, ChatStatus.HANDOFF_OFFERED)
+logger = logging.getLogger(__name__)
+
+BOT_STATES = (ChatStatus.AI,)
 
 
 def invalidate_pending(chat: Chat) -> None:
-    chat.pending_ai_message_id = None
-    chat.ai_deadline_at = None
-    chat.generation += 1
     chat.updated_at = utcnow()
-
-
-def offer_text(reason: str, line: SupportLine | None) -> str:
-    prefix = {
-        "no_answer": "В базе знаний нет достаточной информации для ответа.",
-        "ai_unavailable": "ИИ-помощник временно недоступен.",
-        "user_requested": "Вы запросили помощь оператора.",
-    }[reason]
-    if line:
-        return f"{prefix} Предлагаем обратиться в «{line.name}». Подтвердите перевод в поддержку."
-    return f"{prefix} Выберите одну из трёх линий поддержки."
-
-
-def recover_expired(session: AsyncSession, chat: Chat) -> None:
-    if (
-        chat.status in BOT_STATES
-        and chat.pending_ai_message_id
-        and chat.ai_deadline_at
-        and chat.ai_deadline_at <= utcnow()
-    ):
-        reply_to = chat.pending_ai_message_id
-        invalidate_pending(chat)
-        chat.status = ChatStatus.HANDOFF_OFFERED
-        chat.suggested_line_id = None
-        chat.handoff_reason = "ai_unavailable"
-        append_message(session, chat, offer_text("ai_unavailable", None), reply_to=reply_to)
 
 
 def close_chat(session: AsyncSession, chat: Chat, reason: CloseReason, *, reply_to: UUID | None = None) -> None:
@@ -102,7 +72,6 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
-            recover_expired(session, chat)
             return await chat_view(session, chat)
 
     async def list_chats(
@@ -115,6 +84,7 @@ class ChatService:
         status: ChatStatus | None = None,
         line_id: int | None = None,
         operator_id: UUID | None = None,
+        user_id: UUID | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> ChatPage:
@@ -132,13 +102,14 @@ class ChatService:
             )
         elif scope != "admin" or user.role != Role.ADMIN:
             fail(403, "ADMIN_REQUIRED", "Admin access required")
-        recovery_filters = list(filters)
         if status is not None:
             filters.append(Chat.status == status)
         if line_id is not None:
             filters.append(Chat.support_line_id == line_id)
         if operator_id is not None:
             filters.append(Chat.operator_id == operator_id)
+        if user_id is not None:
+            filters.append(Chat.user_id == user_id)
         if since is not None:
             filters.append(Chat.created_at >= since)
         if until is not None:
@@ -152,20 +123,6 @@ class ChatService:
             )
         )
         async with self.storage.create_session() as session, session.begin():
-            expired = await session.scalars(
-                select(Chat)
-                .where(
-                    *recovery_filters,
-                    Chat.status.in_(BOT_STATES),
-                    Chat.pending_ai_message_id.is_not(None),
-                    Chat.ai_deadline_at <= utcnow(),
-                )
-                .order_by(Chat.id)
-                .with_for_update()
-            )
-            for chat in expired:
-                recover_expired(session, chat)
-            await session.flush()
             total = await session.scalar(select(func.count()).select_from(Chat).where(*filters))
             rows = list(
                 await session.scalars(select(Chat).where(*filters).order_by(*order).offset(offset).limit(limit))
@@ -178,7 +135,6 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
-            recover_expired(session, chat)
             rows = list(
                 await session.scalars(
                     select(Message)
@@ -217,7 +173,6 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
-            recover_expired(session, chat)
             existing = await self._existing(session, chat, user, payload, digest)
             if existing:
                 return existing
@@ -234,14 +189,11 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
-            recover_expired(session, chat)
             existing = await self._existing(session, chat, user, payload, digest)
             if existing:
                 return existing
             if chat.status == ChatStatus.CLOSED:
                 fail(409, "CHAT_CLOSED", "This chat was closed while the message was being checked")
-            if not blocked and user.role == Role.USER and chat.status in BOT_STATES and chat.pending_ai_message_id:
-                fail(409, "AI_BUSY", "Wait for the current response or request human support")
             message = append_message(
                 session,
                 chat,
@@ -254,22 +206,15 @@ class ChatService:
             )
             if blocked:
                 close_chat(session, chat, CloseReason.MODERATION, reply_to=message.id)
-            elif user.role == Role.USER and chat.status in BOT_STATES:
-                invalidate_pending(chat)
-                chat.status = ChatStatus.AI
-                chat.suggested_line_id = None
-                chat.handoff_reason = None
-                chat.pending_ai_message_id = message.id
-                chat.ai_deadline_at = utcnow() + timedelta(
-                    seconds=self.ai.settings.ai_answer_timeout + 2,
-                )
-                generation = chat.generation
-            else:
-                generation = None
-            if blocked or generation is None:
                 return SendResult(
                     chat=await chat_view(session, chat), messages=await submission_messages(session, message)
                 )
+
+            if user.role != Role.USER or chat.status != ChatStatus.AI:
+                return SendResult(
+                    chat=await chat_view(session, chat), messages=await submission_messages(session, message)
+                )
+
             message_id = message.id
             ml_chat_id = chat.ml_chat_id
 
@@ -278,77 +223,85 @@ class ChatService:
             if not ml_chat_id:
                 ml_chat_id = await self.ai.create_chat()
             answer = await self.ai.send_message(ml_chat_id, payload.text)
-        except AIUnavailable:
+        except AIUnavailable as exc:
+            logger.warning(
+                "AI service unavailable for chat %s (user %s): %s. Falling back to system message.",
+                chat_id,
+                user.id,
+                exc,
+            )
             answer = None
 
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             if ml_chat_id and chat.ml_chat_id is None:
                 chat.ml_chat_id = ml_chat_id
-            if (
-                chat.generation == generation
-                and chat.pending_ai_message_id == message_id
-                and chat.status == ChatStatus.AI
-            ):
-                invalidate_pending(chat)
+
+            if chat.status == ChatStatus.AI:
                 if answer is not None:
+                    if answer.redirect_line:
+                        line = await session.get(SupportLine, answer.redirect_line)
+                        if line is None:
+                            line = await session.get(SupportLine, 1)
+                        chat.status = ChatStatus.WAITING_OPERATOR
+                        chat.support_line_id = line.id if line else 1
+                        chat.handed_off_at = utcnow()
+                        chat.updated_at = utcnow()
+                        if answer.content.strip():
+                            append_message(
+                                session,
+                                chat,
+                                answer.content,
+                                sender_type=SenderType.AI,
+                                reply_to=message_id,
+                                citations=answer.citations,
+                                tool_calls=answer.tool_calls,
+                            )
+                        reason_str = f"причина: {answer.redirect_reason}" if answer.redirect_reason else "по рекомендации ИИ"
+                        line_name = line.name if line else f"Линия {answer.redirect_line}"
+                        append_message(
+                            session,
+                            chat,
+                            f"Обращение автоматически перенаправлено в «{line_name}» ({reason_str}). Ожидайте подключения оператора.",
+                            sender_type=SenderType.SYSTEM,
+                        )
+                    else:
+                        append_message(
+                            session,
+                            chat,
+                            answer.content,
+                            sender_type=SenderType.AI,
+                            reply_to=message_id,
+                            citations=answer.citations,
+                            tool_calls=answer.tool_calls,
+                        )
+                else:
                     append_message(
                         session,
                         chat,
-                        answer.content,
-                        sender_type=SenderType.AI,
+                        "ИИ-помощник временно недоступен. Вы можете перенаправить запрос оператору.",
+                        sender_type=SenderType.SYSTEM,
                         reply_to=message_id,
                     )
-                else:
-                    chat.status = ChatStatus.HANDOFF_OFFERED
-                    chat.suggested_line_id = None
-                    chat.handoff_reason = "ai_unavailable"
-                    append_message(session, chat, offer_text("ai_unavailable", None), reply_to=message_id)
             message = await session.get(Message, message_id)
             return SendResult(chat=await chat_view(session, chat), messages=await submission_messages(session, message))
 
-    async def handoff_offer(self, chat_id: UUID, user: User) -> HandoffOfferOut:
+    async def request_operator(self, chat_id: UUID, user: User, line_id: int) -> ChatOut:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
             check_owner(chat, user)
-            recover_expired(session, chat)
-            if chat.status not in BOT_STATES:
-                fail(409, "HANDOFF_NOT_AVAILABLE", "The chat is already handed off or closed")
-            lines = await support_lines(session)
-            if chat.status == ChatStatus.HANDOFF_OFFERED and (chat.suggested_line_id or chat.pending_ai_message_id):
-                return HandoffOfferOut(chat=await chat_view(session, chat), support_lines=lines)
-            invalidate_pending(chat)
-            chat.status = ChatStatus.HANDOFF_OFFERED
-            chat.handoff_reason = "user_requested"
-            chat.suggested_line_id = None
-            question = await latest_question(session, chat_id)
-            if question is None:
-                append_message(session, chat, offer_text("user_requested", None))
-                return HandoffOfferOut(chat=await chat_view(session, chat), support_lines=lines)
-            append_message(session, chat, offer_text("user_requested", None), reply_to=question.id)
-            return HandoffOfferOut(chat=await chat_view(session, chat), support_lines=lines)
-
-    async def handoff(self, chat_id: UUID, user: User, line_id: int | None) -> ChatOut:
-        async with self.storage.create_session() as session, session.begin():
-            chat = await load_chat(session, chat_id, lock=True)
-            check_read_access(chat, user)
-            check_owner(chat, user)
-            if chat.status == ChatStatus.WAITING_OPERATOR and (line_id is None or line_id == chat.support_line_id):
+            if chat.status == ChatStatus.WAITING_OPERATOR and line_id == chat.support_line_id:
                 return await chat_view(session, chat)
-            if chat.status not in BOT_STATES:
-                fail(409, "HANDOFF_NOT_AVAILABLE", "The chat is already handed off or closed")
-            line_id = line_id or chat.suggested_line_id
-            if line_id is None:
-                fail(422, "SUPPORT_LINE_REQUIRED", "Select one of the three support lines")
+            if chat.status not in (ChatStatus.AI, ChatStatus.WAITING_OPERATOR):
+                fail(409, "HANDOFF_NOT_AVAILABLE", "The chat is already claimed by an operator or closed")
             line = await session.get(SupportLine, line_id)
             if line is None:
                 fail(422, "INVALID_SUPPORT_LINE", "Unknown support line")
-            invalidate_pending(chat)
             chat.status = ChatStatus.WAITING_OPERATOR
             chat.support_line_id = line_id
-            chat.handoff_reason = chat.handoff_reason or "user_requested"
             chat.handed_off_at = utcnow()
+            chat.updated_at = utcnow()
             append_message(session, chat, f"Обращение передано в «{line.name}». Ожидайте подключения оператора.")
             return await chat_view(session, chat)
 
@@ -388,7 +341,6 @@ class ChatService:
             chat = await load_chat(session, message.chat_id, lock=True)
             check_read_access(chat, user)
             check_owner(chat, user)
-            recover_expired(session, chat)
             if message.sender_type not in (SenderType.AI, SenderType.OPERATOR) or message.is_redacted:
                 fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
             rating = await session.scalar(

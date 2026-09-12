@@ -39,8 +39,11 @@ else:
     # Fallback to basic logging if config file not found
     logging.basicConfig(level=logging.INFO)
 
+path_filter = RelativePathFilter()
 logger = logging.getLogger("src")
-logger.addFilter(RelativePathFilter())
+logger.addFilter(path_filter)
+for handler in logger.handlers:
+    handler.addFilter(path_filter)
 
 
 async def run_endpoint_function(*, dependant: Dependant, values: dict[str, Any], is_coroutine: bool) -> Any:

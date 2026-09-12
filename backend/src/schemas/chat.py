@@ -61,11 +61,8 @@ class ChatOut(Schema):
     user_id: UUID
     status: ChatStatus
     recipient: RecipientOut
-    suggested_line: SupportLineOut | None
     support_line: SupportLineOut | None
     operator: ActorOut | None
-    handoff_reason: str | None
-    ai_pending: bool
     created_at: datetime
     updated_at: datetime
     handed_off_at: datetime | None
@@ -109,7 +106,8 @@ class MessageOut(Schema):
     sender_name: str
     support_line_id: int | None
     text: str
-    citations: list[dict]
+    citations: list[dict] = Field(default_factory=list)
+    tool_calls: list[dict] = Field(default_factory=list)
     reply_to_message_id: UUID | None
     is_redacted: bool
     created_at: datetime
@@ -127,13 +125,8 @@ class SendResult(Schema):
     messages: list[MessageOut]
 
 
-class HandoffIn(Schema):
-    support_line_id: int | None = Field(default=None, strict=True, ge=1, le=3)
-
-
-class HandoffOfferOut(Schema):
-    chat: ChatOut
-    support_lines: list[SupportLineOut]
+class RequestOperatorIn(Schema):
+    support_line_id: int = Field(strict=True, ge=1, le=3)
 
 
 class CloseIn(Schema):

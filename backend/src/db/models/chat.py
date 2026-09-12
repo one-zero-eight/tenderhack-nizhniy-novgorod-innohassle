@@ -20,7 +20,6 @@ class Role(StrEnum):
 
 class ChatStatus(StrEnum):
     AI = "ai"
-    HANDOFF_OFFERED = "handoff_offered"
     WAITING_OPERATOR = "waiting_operator"
     OPERATOR = "operator"
     CLOSED = "closed"
@@ -93,15 +92,9 @@ class Chat(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     status: Mapped[ChatStatus] = mapped_column(enum_type(ChatStatus), default=ChatStatus.AI)
-    suggested_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
-    handoff_reason: Mapped[str | None] = mapped_column(String(40))
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
     operator_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     ml_chat_id: Mapped[str | None] = mapped_column(String(100))
-    # A plain UUID avoids a circular FK; it refers to a message in this chat under the chat lock.
-    pending_ai_message_id: Mapped[UUID | None]
-    ai_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    generation: Mapped[int] = mapped_column(default=0)
     next_sequence: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -128,6 +121,7 @@ class Message(Base):
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
     text: Mapped[str] = mapped_column(Text)
     citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    tool_calls: Mapped[list[dict]] = mapped_column(JSON, default=list)
     reply_to_message_id: Mapped[UUID | None] = mapped_column(ForeignKey("messages.id"), index=True)
     client_message_id: Mapped[UUID | None]
     input_hash: Mapped[str | None] = mapped_column(String(64))

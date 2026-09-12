@@ -10,12 +10,11 @@ from src.schemas.chat import (
     ChatOut,
     ChatPage,
     CloseIn,
-    HandoffIn,
-    HandoffOfferOut,
     MessageIn,
     MessagePage,
     RatingIn,
     RatingOut,
+    RequestOperatorIn,
     SendResult,
     SupportLineOut,
 )
@@ -60,14 +59,11 @@ async def send_message(chat_id: UUID, payload: MessageIn, user: CurrentUser, ser
     return await service.send(chat_id, user, payload)
 
 
-@router.post("/chats/{chat_id}/handoff-offer", response_model=HandoffOfferOut)
-async def request_handoff_offer(chat_id: UUID, user: CurrentUser, service: Chats) -> HandoffOfferOut:
-    return await service.handoff_offer(chat_id, user)
-
-
-@router.post("/chats/{chat_id}/handoff", response_model=ChatOut)
-async def handoff(chat_id: UUID, payload: HandoffIn, user: CurrentUser, service: Chats) -> ChatOut:
-    return await service.handoff(chat_id, user, payload.support_line_id)
+@router.post("/chats/{chat_id}/request-operator", response_model=ChatOut)
+async def request_operator(
+    chat_id: UUID, payload: RequestOperatorIn, user: CurrentUser, service: Chats
+) -> ChatOut:
+    return await service.request_operator(chat_id, user, payload.support_line_id)
 
 
 @router.post("/chats/{chat_id}/close", response_model=ChatOut)

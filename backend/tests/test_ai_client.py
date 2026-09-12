@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -42,18 +43,23 @@ async def test_send_message_sse_success():
         assert answer.content == "Hi there!"
 
 
-async def test_send_message_sse_error_event():
+async def test_send_message_sse_error_event(caplog):
+    caplog.set_level(logging.WARNING)
+    logging.getLogger("src").addHandler(caplog.handler)
     async def respond(request: httpx.Request):
-        sse_data = "event: error\ndata: {\"message\": \"Model overloaded\"}\n\n"
+        sse_data = 'event: error\ndata: {"message": "Model overloaded"}\n\n'
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
         client = AIClient(http, settings())
         with pytest.raises(AIUnavailable):
             await client.send_message("chat-1", "Hello")
+        assert "AI service unavailable during send_message" in caplog.text
 
 
-async def test_send_message_http_error():
+async def test_send_message_http_error(caplog):
+    caplog.set_level(logging.WARNING)
+    logging.getLogger("src").addHandler(caplog.handler)
     async def respond(request: httpx.Request):
         return httpx.Response(500, text="Internal server error")
 
@@ -61,6 +67,7 @@ async def test_send_message_http_error():
         client = AIClient(http, settings())
         with pytest.raises(AIUnavailable):
             await client.send_message("chat-1", "Hello")
+        assert "AI service unavailable during send_message" in caplog.text
 
 
 async def test_total_deadline_bounds_http_call():
@@ -100,3 +107,24 @@ async def test_stub_requires_configured_internal_token(monkeypatch):
         http.headers["Authorization"] = "Bearer stub-service-token"
         chat_id = await client.create_chat()
         assert chat_id.startswith("stub-chat-")
+
+
+async def test_send_message_sse_tool_call_and_redirect():
+    async def respond(request: httpx.Request):
+        sse_data = (
+            'event: tool_call\ndata: {"id": "call-1", "name": "open", "arguments": {"manual": "manual.json", "section_id": "1.2"}}\n\n'
+            'event: redirect\ndata: {"line": "L2", "reason": "User requested operator"}\n\n'
+            'event: done\ndata: {"message_id": "m2", "content": "Redirecting..."}\n\n'
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        answer = await client.send_message("chat-1", "Hello")
+        assert answer.message_id == "m2"
+        assert answer.content == "Redirecting..."
+        assert len(answer.tool_calls) == 1
+        assert answer.tool_calls[0]["name"] == "open"
+        assert answer.citations == [{"manual": "manual.json", "section_id": "1.2"}]
+        assert answer.redirect_line == 2
+        assert answer.redirect_reason == "User requested operator"

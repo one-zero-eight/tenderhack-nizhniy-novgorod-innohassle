@@ -52,6 +52,7 @@ def append_message(
     reply_to: UUID | None = None,
     is_redacted: bool = False,
     citations: list[dict] | None = None,
+    tool_calls: list[dict] | None = None,
 ) -> Message:
     """The caller holds the chat row lock, which also orders committed message sequences."""
     chat.next_sequence += 1
@@ -71,6 +72,7 @@ def append_message(
         reply_to_message_id=reply_to,
         is_redacted=is_redacted,
         citations=citations or [],
+        tool_calls=tool_calls or [],
         created_at=utcnow(),
     )
     session.add(message)
@@ -84,17 +86,16 @@ async def support_lines(session: AsyncSession) -> list[SupportLineOut]:
 
 async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
     line = await session.get(SupportLine, chat.support_line_id) if chat.support_line_id else None
-    suggested = await session.get(SupportLine, chat.suggested_line_id) if chat.suggested_line_id else None
     operator = await session.get(User, chat.operator_id) if chat.operator_id else None
     line_out = SupportLineOut.model_validate(line) if line else None
     operator_out = ActorOut.model_validate(operator) if operator else None
     if chat.status == ChatStatus.CLOSED:
         recipient = RecipientOut(kind="none", display_name="Обращение закрыто")
     elif chat.status == ChatStatus.WAITING_OPERATOR:
-        recipient = RecipientOut(kind="support_queue", display_name=f"Ожидание: {line.name}", support_line=line_out)
+        recipient = RecipientOut(kind="support_queue", display_name=f"Ожидание: {line.name if line else ''}", support_line=line_out)
     elif chat.status == ChatStatus.OPERATOR:
         recipient = RecipientOut(
-            kind="operator", display_name=operator.display_name, support_line=line_out, operator=operator_out
+            kind="operator", display_name=operator.display_name if operator else "", support_line=line_out, operator=operator_out
         )
     else:
         recipient = RecipientOut(kind="ai", display_name="ИИ-помощник")
@@ -103,11 +104,8 @@ async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
         user_id=chat.user_id,
         status=chat.status,
         recipient=recipient,
-        suggested_line=SupportLineOut.model_validate(suggested) if suggested else None,
         support_line=line_out,
         operator=operator_out,
-        handoff_reason=chat.handoff_reason,
-        ai_pending=chat.pending_ai_message_id is not None,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         handed_off_at=chat.handed_off_at,
@@ -152,24 +150,3 @@ async def latest_question(session: AsyncSession, chat_id: UUID) -> Message | Non
         .order_by(Message.sequence.desc())
         .limit(1)
     )
-
-
-async def history_for(session: AsyncSession, question: Message) -> list[dict]:
-    rows = await session.scalars(
-        select(Message)
-        .where(
-            Message.chat_id == question.chat_id,
-            Message.sequence < question.sequence,
-            Message.sender_type != SenderType.SYSTEM,
-            Message.is_redacted.is_(False),
-        )
-        .order_by(Message.sequence.desc())
-        .limit(20)
-    )
-    history, remaining = [], 20000
-    for row in rows:
-        if len(row.text) > remaining:
-            break
-        history.append({"author": row.sender_type.value, "text": row.text})
-        remaining -= len(row.text)
-    return list(reversed(history))

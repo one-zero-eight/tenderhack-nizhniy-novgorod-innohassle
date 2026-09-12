@@ -3,8 +3,8 @@ import json
 import logging
 
 import httpx
-from httpx_sse import aconnect_sse
-from pydantic import BaseModel, ConfigDict, ValidationError
+from httpx_sse import SSEError, aconnect_sse
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.config_schema import ApiSettings
 
@@ -19,6 +19,10 @@ class MLAnswer(BaseModel):
     model_config = ConfigDict(extra="ignore")
     message_id: str
     content: str
+    tool_calls: list[dict] = Field(default_factory=list)
+    citations: list[dict] = Field(default_factory=list)
+    redirect_line: int | None = None
+    redirect_reason: str | None = None
 
 
 class AIClient:
@@ -38,6 +42,7 @@ class AIClient:
                     raise ValueError("Invalid chat creation response")
                 return data["id"]
         except (httpx.HTTPError, TimeoutError, ValidationError, ValueError) as exc:
+            logger.warning("AI service unavailable during create_chat: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("ml-api/chat") from exc
 
     async def send_message(self, ml_chat_id: str, message: str) -> MLAnswer:
@@ -50,22 +55,52 @@ class AIClient:
                 ) as event_source:
                     final_content = None
                     final_message_id = None
+                    tool_calls = []
+                    citations = []
+                    redirect_line = None
+                    redirect_reason = None
 
                     async for sse in event_source.aiter_sse():
                         if sse.event == "error":
                             err_data = json.loads(sse.data) if sse.data else {}
                             msg = err_data.get("message", "SSE stream error")
                             raise ValueError(f"ML service error: {msg}")
+                        elif sse.event == "tool_call":
+                            call_data = json.loads(sse.data) if sse.data else {}
+                            name = call_data.get("name", "")
+                            args = call_data.get("arguments", {})
+                            tool_calls.append(call_data)
+                            if name == "open" and isinstance(args, dict):
+                                manual = args.get("manual")
+                                section_id = args.get("section_id")
+                                if manual and section_id:
+                                    citations.append({"manual": str(manual), "section_id": str(section_id)})
+                        elif sse.event == "redirect":
+                            redir_data = json.loads(sse.data) if sse.data else {}
+                            raw_line = str(redir_data.get("line", "1")).upper().lstrip("L")
+                            try:
+                                redirect_line = int(raw_line)
+                            except ValueError:
+                                redirect_line = 1
+                            redirect_reason = redir_data.get("reason")
                         elif sse.event == "done":
                             done_data = json.loads(sse.data) if sse.data else {}
                             final_message_id = done_data.get("message_id")
                             final_content = done_data.get("content")
 
-                    if final_content is None or final_message_id is None:
-                        raise ValueError("SSE stream closed without 'done' event")
+                    if final_content is None and redirect_line is None:
+                        raise ValueError("SSE stream closed without 'done' or 'redirect' event")
 
-                    return MLAnswer(message_id=final_message_id, content=final_content)
-        except (httpx.HTTPError, TimeoutError, ValidationError, ValueError, json.JSONDecodeError) as exc:
+                    return MLAnswer(
+                        message_id=final_message_id or "redirect",
+                        content=final_content or "",
+                        tool_calls=tool_calls,
+                        citations=citations,
+                        redirect_line=redirect_line,
+                        redirect_reason=redirect_reason,
+                    )
+        except (httpx.HTTPError, TimeoutError, ValidationError, ValueError, json.JSONDecodeError, SSEError) as exc:
+            logger.warning("AI service unavailable during send_message (%s): %s (%s)", endpoint, exc, type(exc).__name__)
             raise AIUnavailable(endpoint) from exc
 
     async def delete_chat(self, ml_chat_id: str) -> None:
@@ -92,4 +127,5 @@ class AIClient:
                     raise ValueError("Invalid health response")
                 return result
         except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+            logger.warning("AI service health check failed: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("health") from exc

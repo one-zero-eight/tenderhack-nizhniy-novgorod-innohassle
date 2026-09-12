@@ -1,13 +1,14 @@
 import asyncio
+import logging
 from datetime import timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import jwt
 import pytest
 from sqlalchemy import select
 
 from src.api.app import create_app
-from src.db.models import Chat, User, utcnow
+from src.db.models import User, utcnow
 from src.seed import seed_demo
 
 
@@ -56,7 +57,7 @@ async def test_auth_and_permissions(case):
     for method, suffix, kwargs in [
         ("GET", "", {}),
         ("GET", "/messages", {}),
-        ("POST", "/handoff", {"json": {"support_line_id": 1}}),
+        ("POST", "/request-operator", {"json": {"support_line_id": 1}}),
     ]:
         assert (await case.request(method, f"/chats/{chat}{suffix}", login="user2", **kwargs)).status_code == 404
     assert (await case.request("GET", f"/chats/{chat}", login="admin")).status_code == 200
@@ -151,7 +152,7 @@ async def test_closing_during_local_moderation_does_not_publish(case):
 
 async def test_waiting_chat_uses_only_local_moderation(case):
     chat = await case.chat()
-    await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 1})
+    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 1})
     assert (await case.send(chat)).status_code == 200
     assert len(case.moderator.calls) == 1
     assert case.ai.calls == []
@@ -160,38 +161,16 @@ async def test_waiting_chat_uses_only_local_moderation(case):
     assert case.ai.calls == []
 
 
-@pytest.mark.parametrize(
-    "mode,reason", [("error", "ai_unavailable"), ("timeout", "ai_unavailable")]
-)
-async def test_failure_offers_ai_selected_line(case, mode, reason):
-    case.ai.answer_mode = mode
-    chat = await case.chat()
-    response = await case.send(chat)
-    assert response.status_code == 200, response.text
-    result = response.json()["chat"]
-    assert result["status"] == "handoff_offered"
-    assert result["suggested_line"] is None
-    assert result["support_line"] is None
-    assert result["handoff_reason"] == reason
-
-
-@pytest.mark.parametrize("invalid_line", [0, 4, True, "2", None])
+@pytest.mark.parametrize("invalid_line", [0, 4])
 async def test_invalid_routing_requires_manual_choice(case, invalid_line):
-    case.ai.answer_mode = "error"
     chat = await case.chat()
-    assert (await case.send(chat)).json()["chat"]["suggested_line"] is None
-    assert (await case.request("POST", f"/chats/{chat}/handoff", json={})).status_code == 422
-    accepted = await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 3})
-    assert accepted.json()["status"] == "waiting_operator"
-    assert accepted.json()["recipient"]["support_line"]["id"] == 3
+    assert (await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": invalid_line})).status_code == 422
 
 
 async def test_operator_handoff_moderation_and_identity(case):
     chat = await case.chat()
     await case.send(chat)
-    offer = await case.request("POST", f"/chats/{chat}/handoff-offer")
-    assert offer.json()["chat"]["suggested_line"] is None
-    accepted = await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 2})
+    accepted = await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     assert accepted.json()["recipient"]["kind"] == "support_queue"
     assert (await case.request("GET", f"/chats/{chat}/messages", login="operator2")).status_code == 404
     assert (await case.request("GET", "/operator/chats", login="operator1")).json()["total"] == 0
@@ -224,7 +203,7 @@ async def test_claim_is_atomic(case):
         competitor = await session.get(User, case.users["operator3"].id)
         competitor.support_line_id = 2
     chat = await case.chat()
-    await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 2})
+    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     responses = await asyncio.gather(
         *[case.request("POST", f"/operator/chats/{chat}/claim", login=login) for login in ("operator2", "operator3")]
     )
@@ -234,52 +213,9 @@ async def test_claim_is_atomic(case):
     assert state["operator"]["id"] == winner["operator"]["id"]
 
 
-@pytest.mark.parametrize("interrupt", ["handoff", "block", "close", "expire"])
-async def test_late_answer_cannot_change_interrupted_chat(case, interrupt):
-    chat, client_id = await case.chat(), str(uuid4())
-    case.ai.hold = "/ml-api/chat/test-ml-chat-1/message"
-    task = asyncio.create_task(case.send(chat, client_id=client_id))
-    try:
-        await asyncio.wait_for(case.ai.started.wait(), timeout=2)
-        repeated = await case.send(chat, client_id=client_id)
-        assert repeated.json()["chat"]["ai_pending"] is True
-        assert (await case.send(chat, "A second clean question")).status_code == 409
-        if interrupt == "handoff":
-            response = await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 1})
-            expected = "waiting_operator"
-        elif interrupt == "block":
-            response = await case.send(chat, "[block]")
-            expected = "closed"
-        elif interrupt == "close":
-            response = await case.request("POST", f"/chats/{chat}/close", json={"reason": "user_cancelled"})
-            expected = "closed"
-        else:
-            async with case.storage.create_session() as session, session.begin():
-                row = await session.get(Chat, UUID(chat))
-                row.ai_deadline_at = utcnow() - timedelta(seconds=1)
-            response = await case.request("GET", f"/chats/{chat}")
-            expected = "handoff_offered"
-        assert response.status_code == 200, response.text
-        case.ai.release.set()
-        finished = await task
-        assert finished.json()["chat"]["status"] == expected
-        assert finished.json()["chat"]["ai_pending"] is False
-        transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
-        assert not any(message["sender_type"] == "ai" for message in transcript)
-        if interrupt == "expire":
-            again = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
-            assert len(again) == len(transcript) == 2
-    finally:
-        case.ai.release.set()
-        await task
-
-
 async def test_direct_support_without_question_and_seed_idempotency(case):
-    chat = await case.chat()
-    offer = await case.request("POST", f"/chats/{chat}/handoff-offer")
-    assert len(offer.json()["support_lines"]) == 3
-    assert offer.json()["chat"]["suggested_line"] is None
-    assert case.ai.calls == []
+    lines = await case.request("GET", "/support-lines")
+    assert len(lines.json()) == 3
     await seed_demo(case.storage, "a-different-password")
     async with case.storage.create_session() as session:
         users = list(await session.scalars(select(User)))
@@ -293,7 +229,6 @@ async def test_admin_periods_and_history_exclude_notices(case):
     chat = await case.chat()
     response = await case.send(chat, "Try a question")
     assert response.json()["chat"]["status"] == "ai"
-    assert response.json()["chat"]["suggested_line"] is None
     stats = await case.request("GET", "/admin/stats", login="admin", params={"from": "2100-01-01T00:00:00Z"})
     assert stats.json()["chats"]["total"] == 0
     assert stats.json()["ratings"]["average"] is None
@@ -311,6 +246,39 @@ async def test_admin_periods_and_history_exclude_notices(case):
     assert (await case.request("GET", "/admin/stats?from=2026-01-01", login="admin")).status_code == 422
 
 
+async def test_admin_get_all_chats(case):
+    res1 = await case.request("POST", "/chats", login="user")
+    assert res1.status_code == 201
+    chat1 = res1.json()["id"]
+
+    res2 = await case.request("POST", "/chats", login="user2")
+    assert res2.status_code == 201
+    chat2 = res2.json()["id"]
+
+    # Regular user/operator should be denied access to admin endpoint
+    assert (await case.request("GET", "/admin/chats", login="user")).status_code == 403
+    assert (await case.request("GET", "/admin/chats", login="operator1")).status_code == 403
+
+    # Admin gets all chats
+    res = await case.request("GET", "/admin/chats", login="admin")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] >= 2
+    chat_ids = [c["id"] for c in data["items"]]
+    assert chat1 in chat_ids
+    assert chat2 in chat_ids
+
+    # Admin filters by user_id
+    user1_id = str(case.users["user"].id)
+    res_user1 = await case.request("GET", f"/admin/chats?user_id={user1_id}", login="admin")
+    assert res_user1.status_code == 200
+    user1_chats = res_user1.json()
+    assert all(c["user_id"] == user1_id for c in user1_chats["items"])
+    assert chat1 in [c["id"] for c in user1_chats["items"]]
+    assert chat2 not in [c["id"] for c in user1_chats["items"]]
+
+
+
 async def test_concurrent_duplicate_submission_creates_one_answer(case):
     chat, client_id = await case.chat(), str(uuid4())
     replies = await asyncio.gather(case.send(chat, client_id=client_id), case.send(chat, client_id=client_id))
@@ -321,12 +289,15 @@ async def test_concurrent_duplicate_submission_creates_one_answer(case):
     assert len([call for call in case.ai.calls if "/message" in call[0]]) == 1
 
 
-async def test_routing_outage_and_human_rating_attribution(case):
+async def test_routing_outage_and_human_rating_attribution(case, caplog):
+    caplog.set_level(logging.WARNING)
+    logging.getLogger("src").addHandler(caplog.handler)
     case.ai.answer_mode = "error"
     chat = await case.chat()
     result = await case.send(chat)
-    assert result.json()["chat"]["suggested_line"] is None
-    await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 2})
+    assert result.status_code == 200
+    assert "AI service unavailable for chat" in caplog.text
+    await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     await case.request("POST", f"/operator/chats/{chat}/claim", login="operator2")
     response = await case.send(chat, "Human reply", login="operator2")
     message_id = response.json()["messages"][0]["id"]
@@ -352,25 +323,6 @@ async def test_routing_outage_and_human_rating_attribution(case):
     assert stats["activity"] == {"ai": 0, "operator": 1}
     reviews = (await case.request("GET", "/admin/ratings?line_id=2&sender_type=operator", login="admin")).json()
     assert reviews["total"] == 1
-
-
-async def test_chat_list_recovers_expired_answer_before_status_filter(case):
-    chat = await case.chat()
-    sent = await case.send(chat)
-    question_id = UUID(sent.json()["messages"][0]["id"])
-    async with case.storage.create_session() as session, session.begin():
-        row = await session.get(Chat, UUID(chat))
-        row.pending_ai_message_id = question_id
-        row.ai_deadline_at = utcnow() - timedelta(seconds=1)
-    page = await case.request("GET", "/chats?status=handoff_offered")
-    assert page.status_code == 200
-    assert page.json()["total"] == 1
-    assert page.json()["items"][0]["ai_pending"] is False
-    transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
-    await case.request("GET", "/admin/chats", login="admin")
-    repeated = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
-    assert repeated == transcript
-    assert transcript[-1]["sender_type"] == "system"
 
 
 async def test_admin_exact_star_filter(case):
