@@ -216,19 +216,14 @@ async def search(query: str) -> str:
 
     grouped = await retriever.find_across_manuals(query)
     if not grouped:
-        return (
-            f"По запросу «{query}» ничего не найдено ни в одной инструкции. "
-            "Попробуй другие ключевые слова."
-        )
+        return f"По запросу «{query}» ничего не найдено ни в одной инструкции. Попробуй другие ключевые слова."
 
     blocks: list[str] = []
     total = 0
     for slug, ids in grouped.items():
         manual = manuals[slug]
         total += len(ids)
-        blocks.append(
-            f"[{slug}] — {manual.title} ({len(ids)} разделов):\n{render_tree(manual, ids)}"
-        )
+        blocks.append(f"[{slug}] — {manual.title} ({len(ids)} разделов):\n{render_tree(manual, ids)}")
     return (
         f"Найдено {total} разделов в {len(grouped)} мануалах по запросу «{query}»:\n\n"
         + "\n\n".join(blocks)
@@ -305,7 +300,14 @@ SYSTEM_PROMPT = """Ты — консультант по Порталу пост�
 5. Если в разделе есть картинки — вставляй их в ответ отдельной строкой в том виде,
    как они даны: ![подпись](/ml-assets/image/<slug>/image-N.png). Интерфейс умеет их показывать.
    Ставь картинку рядом с тем шагом, который она иллюстрирует.
-6. Если пользователь спрашивает про заказчика — бери мануал заказчика, если про поставщика —
+6. В конце ответа дай ссылки на разделы, которыми пользовался, в виде markdown-ссылок
+   на страницы базы знаний: [<номер> <заголовок>](/knowledge-base/<slug>/<номер>).
+   Например: [5.2.1 Добавить код ЕРУЗ](/knowledge-base/instrukciya-po-elektronnomu-aktirovaniyu/5.2.1),
+   [Работа с ответами банков](/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/5).
+   Ставь 1—3 самых релевантных раздела, только те, что реально открывал (open).
+   Не ссылайся на root и не выдумывай номера, которых не видел в search/open.
+   Если ни один раздел не помог (перевод на линию или отказ), ссылки не нужны.
+7. Если пользователь спрашивает про заказчика — бери мануал заказчика, если про поставщика —
    мануал поставщика; если непонятно, уточни или посмотри в обоих.
 
 Если ответа в базе знаний нет:
@@ -396,7 +398,7 @@ def main() -> None:  # pragma: no cover
     print(manuals_overview(manuals))
     if len(sys.argv) < 2:
         return
-    print("\n" + asyncio.run(search(" ".join(sys.argv[1:]))) )
+    print("\n" + asyncio.run(search(" ".join(sys.argv[1:]))))
 
 
 if __name__ == "__main__":

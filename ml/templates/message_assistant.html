@@ -1,3 +1,5 @@
+{# Сообщение ассистента. Если ответ ещё генерируется, элемент подключается к SSE-стриму;
+   stream отдаёт весь накопленный текст, поэтому переподключение при смене чата безопасно. #}
 <article class="msg assistant"{% if chat.message_is_streaming(assistant_msg) %} hx-ext="sse" sse-connect="/chats/{{ chat.id }}/messages/{{ assistant_msg.id }}/stream" sse-close="done"{% endif %}>
   <div class="who">Ассистент</div>
   <div class="tools" sse-swap="tool" hx-swap="beforeend">

@@ -14,7 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.3/dist/sse.min.js"></script>
 </head>
-<body>
+<body hx-ext="sse">
   <header class="topbar">
     <div class="topbar-title">Портал поставщиков</div>
     <nav class="tabs" aria-label="Разделы">
@@ -29,17 +29,30 @@
         {% if tab == 'knowledge' %}aria-current="page"{% endif %}
       >База знаний</a>
     </nav>
-  </header>  <main class="page">
+  </header>
+  <main class="page">
     {% block content %}{% endblock %}
   </main>
   <script>
-    document.body.addEventListener("htmx:sseMessage", (e) => {
-      if (e.detail.type === "panel") {
-        document.getElementById("chat-panel").innerHTML = e.detail.data;
-      }
+    // Автоскролл переписки вниз (в т.ч. после полной перерисовки страницы).
+    function scrollMessages() {
       const el = document.getElementById("messages");
       if (el) el.scrollTop = el.scrollHeight;
+    }
+
+    document.body.addEventListener("htmx:sseMessage", scrollMessages);
+    document.body.addEventListener("htmx:afterSwap", scrollMessages);
+
+    document.body.addEventListener("htmx:sseMessage", (e) => {
+      // Чат переведён на линию поддержки — перерисуем страницу, чтобы появилась плашка.
+      if (e.detail.type === "redirect") {
+        htmx.ajax("GET", window.location.pathname, {
+          target: "body",
+          swap: "outerHTML",
+        });
+      }
     });
+
     document.body.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && e.target.matches("textarea[name=message]")) {
         e.preventDefault();

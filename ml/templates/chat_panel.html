@@ -1,5 +1,12 @@
 {% if chat %}
 <section class="chat">
+  {% if chat.is_closed %}
+  <div class="redirect-banner">
+    <div class="redirect-title">Вопрос переведён на линию поддержки {{ chat.redirect_line_title }}</div>
+    {% if chat.redirect_reason %}<div class="redirect-reason">{{ chat.redirect_reason }}</div>{% endif %}
+    <div class="redirect-note">Скоро вам ответит специалист. Чат закрыт — новые сообщения отправлять нельзя.</div>
+  </div>
+  {% endif %}
   <div id="messages">
     {% for m in chat.messages %}
       {% if m.role == "user" %}
@@ -9,18 +16,12 @@
       {% endif %}
     {% endfor %}
   </div>
-  {% if chat.is_closed %}
-  <div class="redirect-banner" sse-swap="none">
-    <div class="redirect-title">Вопрос переведён на линию поддержки {{ chat.redirect_line_title }}</div>
-    {% if chat.redirect_reason %}<div class="redirect-reason">{{ chat.redirect_reason }}</div>{% endif %}
-    <div class="redirect-note">Скоро вам ответит специалист. Чат закрыт — новые сообщения отправлять нельзя.</div>
-  </div>
-  {% else %}
+  {% if not chat.is_closed %}
   <form
     class="composer"
     hx-post="/chats/{{ chat.id }}/messages"
-    hx-target="#messages"
-    hx-swap="beforeend scroll:bottom"
+    hx-target="body"
+    hx-swap="outerHTML"
     hx-on::after-request="this.reset()"
   >
     <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>

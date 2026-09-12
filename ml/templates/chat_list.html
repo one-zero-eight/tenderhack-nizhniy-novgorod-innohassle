@@ -1,6 +1,26 @@
 <div id="chat-list">
   {% for chat in chats %}
-    {% include "chat_item.html" %}
+    <a
+      class="chat-item{% if chat.id == active_id %} active{% endif %}"
+      id="chat-item-{{ chat.id }}"
+      href="/chats/{{ chat.id }}"
+      hx-get="/chats/{{ chat.id }}"
+      hx-target="body"
+      hx-swap="outerHTML"
+      hx-push-url="true"
+    >
+      <span class="chat-open">{{ chat.title }}</span>
+      <button
+        type="button"
+        class="chat-del"
+        title="Удалить"
+        hx-delete="/chats/{{ chat.id }}"
+        hx-target="body"
+        hx-swap="outerHTML"
+        hx-confirm="Удалить этот чат?"
+        onclick="event.preventDefault();event.stopPropagation();"
+      >×</button>
+    </a>
   {% endfor %}
   {% if not chats %}
     <p class="muted">Пока нет чатов</p>

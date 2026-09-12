@@ -2,46 +2,57 @@
 
 {% block title %}{{ manual.title }} — База знаний{% endblock %}
 
+{% macro tree(nodes, depth=0) %}
+  <ul class="tree">
+    {% for node in nodes %}
+      <li>
+        <a
+          class="tree-link{% if node.on_path %} on-path{% endif %}{% if current and current.id == node.id %} active{% endif %}"
+          href="/knowledge-base/{{ manual.slug }}/{{ node.id }}"
+          style="--depth: {{ depth }}"
+        >{{ node.title_line }}</a>
+        {% if node.subtree %}
+          {{ tree(node.subtree, depth + 1) }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
+
 {% block content %}
 <div class="page-band">
   <nav class="crumbs">
     <a href="/knowledge-base">База знаний</a>
     <span class="crumb-sep">/</span>
-    <span>{{ manual.title }}</span>
+    {% if current %}
+      <a href="/knowledge-base/{{ manual.slug }}">{{ manual.title }}</a>
+      <span class="crumb-sep">/</span>
+      <span>{{ current.title_line }}</span>
+    {% else %}
+      <span>{{ manual.title }}</span>
+    {% endif %}
   </nav>
 </div>
 
 <div class="manual-layout">
   <aside class="manual-toc">
     <div class="manual-toc-head">Содержание</div>
-    <ul class="tree">
-      {% for node in toc %}
-        <li>
-          <div class="tree-node" id="section-{{ node.id }}">
-            <button
-              type="button"
-              class="tree-toggle{% if not node.has_children %} leaf{% endif %}"
-              {% if node.has_children %}
-                hx-get="/knowledge-base/{{ manual.slug }}/sections/{{ node.id }}"
-                hx-target="#subtree-{{ node.id }}"
-                hx-swap="innerHTML"
-              {% endif %}
-              onclick="this.classList.toggle('open');this.parentElement.querySelector('.tree-kids')?.classList.toggle('open')"
-            >
-              <span class="tree-caret" aria-hidden="true"></span>
-              <span class="tree-label">{{ node.title_line }}</span>
-            </button>
-            <div class="tree-kids" id="subtree-{{ node.id }}"></div>
-          </div>
-        </li>
-      {% endfor %}
-    </ul>
+    {{ tree(toc) }}
   </aside>
 
   <section class="manual-body">
-    <div class="manual-placeholder">
-      <p>Выберите раздел слева — он раскроется в дереве вместе с подразделами.</p>
-    </div>
+    {% if active_section %}
+      <article class="section-card">
+        <header class="section-head">
+          <h1 class="section-title">{{ active_section.title_line }}</h1>
+        </header>
+        <div class="section-body markdown">{{ active_section.body | safe }}</div>
+      </article>
+    {% else %}
+      <div class="manual-placeholder">
+        <p>Выберите раздел слева.</p>
+      </div>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

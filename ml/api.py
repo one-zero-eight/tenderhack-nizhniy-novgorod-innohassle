@@ -1,9 +1,16 @@
-"""REST API чатов: /ml-api/chat ...
+"""REST API: `/ml-api/chat` для чатов и `/ml-api/knowledge-base` для мануалов.
 
-Эндпоинты:
-    POST /ml-api/chat                — создать чат, вернуть id
-    GET  /ml-api/chat/<id>           — содержимое чата (сообщения + вызовы инструментов)
-    POST /ml-api/chat/<id>/message   — SSE-стрим ответа агента и вызовов инструментов
+Эндпоинты чатов:
+    POST /ml-api/chat                        — создать чат, вернуть id
+    GET  /ml-api/chat                        — список чатов
+    GET  /ml-api/chat/<id>                   — содержимое чата (сообщения + вызовы инструментов)
+    DELETE /ml-api/chat/<id>                 — удалить чат
+    POST /ml-api/chat/<id>/message           — SSE-стрим ответа агента и вызовов инструментов
+
+Эндпоинты базы знаний:
+    GET /ml-api/knowledge-base               — список мануалов
+    GET /ml-api/knowledge-base/<slug>        — структура мануала (все разделы дерева)
+    GET /ml-api/knowledge-base/<slug>/<id>   — markdown одного раздела
 
 Никакой аутентификации: все чаты общие, доступ по id.
 """
@@ -18,8 +25,19 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 import chat as chat_service
+from manuals import ROOT as SECTION_ROOT
+from manuals import Manual, Section, section_body
+from rag import state
 from storage import ChatRecord, get_storage
+
 router = APIRouter(prefix="/ml-api", tags=["ml-api"])
+
+
+def _manuals() -> dict[str, Manual]:
+    """Загруженные мануалы: slug -> Manual."""
+    manuals, _ = state()
+    return manuals
+
 
 SSE_MEDIA_TYPE = "text/event-stream"
 SSE_HEADERS = {
@@ -38,9 +56,7 @@ class ToolCallOut(BaseModel):
 
     id: str = Field(description="Идентификатор вызова инструмента (tool_call_id из LLM)")
     name: str = Field(description="Имя инструмента, например `search` или `open`")
-    kwargs: dict[str, object] = Field(
-        default_factory=dict, description="Аргументы вызова, как их передал агент"
-    )
+    kwargs: dict[str, object] = Field(default_factory=dict, description="Аргументы вызова, как их передал агент")
     output: str | None = Field(
         default=None,
         description="Результат инструмента. `null`, пока вызов ещё выполняется",
@@ -77,9 +93,7 @@ class ChatSummary(BaseModel):
         default=None,
         description="Линия поддержки, на которую переведён чат (`L1`/`L2`/`L3`). `null`, пока не переведён",
     )
-    redirect_reason: str | None = Field(
-        default=None, description="Пояснение от агента для оператора поддержки"
-    )
+    redirect_reason: str | None = Field(default=None, description="Пояснение от агента для оператора поддержки")
     closed_at: str | None = Field(
         default=None,
         description="Время перевода на линию поддержки. Если не `null`, чат закрыт и писать в него нельзя",
@@ -91,9 +105,7 @@ class ChatSummary(BaseModel):
 class ChatOut(ChatSummary):
     """Полное содержимое чата: метаданные плюс вся переписка по порядку."""
 
-    messages: list[MessageOut] = Field(
-        default_factory=list, description="Сообщения в хронологическом порядке"
-    )
+    messages: list[MessageOut] = Field(default_factory=list, description="Сообщения в хронологическом порядке")
 
 
 class ChatIn(BaseModel):
@@ -126,6 +138,112 @@ class ErrorOut(BaseModel):
     """Стандартная ошибка FastAPI."""
 
     detail: str = Field(description="Человекочитаемое описание ошибки")
+
+
+# --------------------------------------------------- база знаний (DTO)
+
+
+class ManualSummary(BaseModel):
+    """Мануал в списке: без разделов, только метаданные."""
+
+    slug: str = Field(
+        description="Идентификатор мануала в URL, например `instrukciya-po-sozdaniyu-oferty-i-ste`",
+        examples=["instrukciya-po-sozdaniyu-oferty-i-ste"],
+    )
+    title: str = Field(
+        description="Человеческое название мануала из заголовка документа",
+        examples=["Инструкция по созданию оферты и СТЕ"],
+    )
+    sections: int = Field(
+        description="Число разделов, не считая служебный корень `root`",
+        examples=[42],
+    )
+    url: str = Field(
+        description="Путь до страницы мануала в веб-интерфейсе",
+        examples=["/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste"],
+    )
+
+
+class ManualSectionNode(BaseModel):
+    """Раздел мануала внутри структуры (дерева). Без текста."""
+
+    id: str = Field(
+        description="Иерархический id раздела: `root`, `5`, `5.2`, `5.2.1`",
+        examples=["5.2.1"],
+    )
+    title: str = Field(
+        description="Заголовок раздела без номера",
+        examples=["Добавить код ЕРУЗ"],
+    )
+    title_line: str = Field(
+        description="Номер и заголовок одной строкой — то, что видно в оглавлении",
+        examples=["5.2.1 Добавить код ЕРУЗ"],
+    )
+    depth: int = Field(
+        description="Уровень вложенности: 0 — раздел верхнего уровня",
+        examples=[2],
+    )
+    ancestors: list[str] = Field(
+        default_factory=list,
+        description="Цепочка родительских id от корня вниз, без `root` и без самого раздела",
+        examples=[["5", "5.2"]],
+    )
+    has_content: bool = Field(description="`true`, если у раздела есть собственный текст (а не только подразделы)")
+    children: list[str] = Field(
+        default_factory=list,
+        description="id непосредственных подразделов в порядке документа",
+        examples=[["5.2.1", "5.2.2"]],
+    )
+    url: str = Field(
+        description="Путь до страницы раздела в веб-интерфейсе",
+        examples=["/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/5.2.1"],
+    )
+
+
+class ManualStructure(BaseModel):
+    """Полная структура мануала: все разделы плоским списком в порядке документа."""
+
+    slug: str = Field(description="Идентификатор мануала", examples=["instrukciya-po-sozdaniyu-oferty-i-ste"])
+    title: str = Field(description="Название мануала", examples=["Инструкция по созданию оферты и СТЕ"])
+    sections: list[ManualSectionNode] = Field(
+        default_factory=list,
+        description="Все разделы, включая корневой `root`, в порядке документа",
+    )
+
+
+class ManualSection(BaseModel):
+    """Содержимое одного раздела: markdown-текст плюс навигация по дереву."""
+
+    slug: str = Field(description="Идентификатор мануала", examples=["instrukciya-po-sozdaniyu-oferty-i-ste"])
+    manual_title: str = Field(description="Название мануала", examples=["Инструкция по созданию оферты и СТЕ"])
+    id: str = Field(description="id раздела внутри мануала", examples=["5.2.1"])
+    title: str = Field(description="Заголовок раздела без номера", examples=["Добавить код ЕРУЗ"])
+    title_line: str = Field(description="Номер и заголовок одной строкой", examples=["5.2.1 Добавить код ЕРУЗ"])
+    ancestors: list[str] = Field(
+        default_factory=list,
+        description="id родителей от корня вниз — по ним строится путь в оглавлении",
+        examples=[["5", "5.2"]],
+    )
+    breadcrumbs: list[str] = Field(
+        default_factory=list,
+        description="Читаемый путь по заголовкам, включая сам раздел",
+        examples=[["Перед началом работы", "Для исполнения через ЕИС необходимо", "Добавить код ЕРУЗ"]],
+    )
+    children: list[str] = Field(
+        default_factory=list,
+        description="id непосредственных подразделов в порядке документа",
+        examples=[["5.2.1", "5.2.2"]],
+    )
+    content: str = Field(
+        description=(
+            "Текст раздела в markdown. Ссылки на картинки уже абсолютные "
+            "(`/ml-assets/image/<slug>/image-N.png`) — их можно подставлять в `<img src>`."
+        )
+    )
+    url: str = Field(
+        description="Путь до страницы раздела в веб-интерфейсе",
+        examples=["/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/5.2.1"],
+    )
 
 
 class StreamEventInfo(BaseModel):
@@ -165,10 +283,7 @@ STREAM_EVENTS: list[StreamEventInfo] = [
     StreamEventInfo(
         event="redirect",
         data='{"line": "L2", "reason": "..."}',
-        description=(
-            "Агент перевёл обращение на линию поддержки; чат закрыт, дальнейшие сообщения "
-            "отклоняются с 409"
-        ),
+        description=("Агент перевёл обращение на линию поддержки; чат закрыт, дальнейшие сообщения отклоняются с 409"),
     ),
     StreamEventInfo(
         event="done",
@@ -194,6 +309,35 @@ def _require_chat(chat_id: str) -> ChatRecord:
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Чат не найден")
     return record
+
+
+# --------------------------------------------------- база знаний (helpers)
+
+
+def _manual_url(slug: str, section_id: str | None = None) -> str:
+    """Путь до страницы мануала или раздела в веб-интерфейсе."""
+    base = f"/knowledge-base/{slug}"
+    return base if section_id is None else f"{base}/{section_id}"
+
+
+def _require_manual(slug: str) -> Manual:
+    manual = _manuals().get(slug)
+    if manual is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мануал не найден")
+    return manual
+
+
+def _section_node(manual: Manual, section: Section) -> ManualSectionNode:
+    return ManualSectionNode(
+        id=section.id,
+        title=section.heading,
+        title_line=section.title_line,
+        depth=len(section.ancestors),
+        ancestors=list(section.ancestors),
+        has_content=bool(section.text),
+        children=[c for c in section.children if c in manual.sections],
+        url=_manual_url(manual.slug, section.id),
+    )
 
 
 # ------------------------------------------------------------------ endpoints
@@ -272,10 +416,7 @@ async def delete_chat(
     description=(
         "Записывает сообщение пользователя и стримит ответ агента в формате `text/event-stream`.\n\n"
         "**События стрима:**\n\n"
-        + "\n".join(
-            f"- `{event.event}` — {event.description}. payload: `{event.data}`"
-            for event in STREAM_EVENTS
-        )
+        + "\n".join(f"- `{event.event}` — {event.description}. payload: `{event.data}`" for event in STREAM_EVENTS)
         + "\n\nОтвет агента сохраняется в БД по мере генерации, поэтому `GET /ml-api/chat/{chat_id}` "
         "после обрыва соединения вернёт уже сгенерированный текст.\n\n"
         "**Пример:**\n\n"
@@ -337,13 +478,133 @@ async def send_message(
     return StreamingResponse(events(), media_type=SSE_MEDIA_TYPE, headers=SSE_HEADERS)
 
 
+# ------------------------------------------ база знаний (endpoints)
+
+
+@router.get(
+    "/knowledge-base",
+    response_model=list[ManualSummary],
+    summary="Список мануалов",
+    description=(
+        "Возвращает все загруженные инструкции Портала поставщиков: slug, название, "
+        "число разделов и ссылку на страницу в веб-интерфейсе.\n\n"
+        "Из `slug` собираются остальные запросы к базе знаний."
+    ),
+    response_description="Список мануалов в алфавитном порядке slug",
+)
+async def list_manuals() -> list[ManualSummary]:
+    return [
+        ManualSummary(
+            slug=manual.slug,
+            title=manual.title,
+            sections=len(manual.sections) - 1,
+            url=_manual_url(manual.slug),
+        )
+        for manual in _manuals().values()
+    ]
+
+
+@router.get(
+    "/knowledge-base/{slug}",
+    response_model=ManualStructure,
+    summary="Структура мануала",
+    description=(
+        "Возвращает все разделы мануала плоским списком в порядке документа, "
+        "включая служебный корень `root`, у которого лежит полный текст инструкции.\n\n"
+        "Иерархия задаётся полями `depth`, `ancestors` и `children`: "
+        "`depth` — уровень вложенности, `ancestors` — цепочка родителей от корня вниз, "
+        "`children` — id непосредственных подразделов. Текста разделов здесь нет — "
+        "за ним идите в `GET /ml-api/knowledge-base/{slug}/{section_id}`."
+    ),
+    response_description="Структура мануала",
+    responses={404: {"model": ErrorOut, "description": "Мануал не найден"}},
+)
+async def get_manual_structure(
+    slug: Annotated[
+        str,
+        Path(
+            description="Slug мануала из `GET /ml-api/knowledge-base`",
+            examples=["instrukciya-po-sozdaniyu-oferty-i-ste"],
+        ),
+    ],
+) -> ManualStructure:
+    manual = _require_manual(slug)
+    ordered = sorted(manual.sections.values(), key=lambda s: s.id == SECTION_ROOT)
+    return ManualStructure(
+        slug=manual.slug,
+        title=manual.title,
+        sections=[_section_node(manual, section) for section in ordered],
+    )
+
+
+@router.get(
+    "/knowledge-base/{slug}/{section_id}",
+    response_model=ManualSection,
+    summary="Содержимое раздела мануала",
+    description=(
+        "Возвращает один раздел инструкции: текст в markdown плюс навигацию по дереву.\n\n"
+        "`section_id` — иерархический номер из структуры мануала (`root`, `5`, `5.2.1`). "
+        "Ссылки на картинки в тексте уже абсолютные (`/ml-assets/image/<slug>/image-N.png`), "
+        "их можно подставлять в `<img src>` как есть.\n\n"
+        "Поле `breadcrumbs` даёт читаемый путь до раздела — его удобно показывать пользователю."
+    ),
+    response_description="Раздел мануала с markdown-текстом",
+    responses={
+        404: {"model": ErrorOut, "description": "Мануал или раздел не найден"},
+    },
+)
+async def get_manual_section(
+    slug: Annotated[
+        str,
+        Path(
+            description="Slug мануала из `GET /ml-api/knowledge-base`",
+            examples=["instrukciya-po-sozdaniyu-oferty-i-ste"],
+        ),
+    ],
+    section_id: Annotated[
+        str,
+        Path(
+            description="id раздела из `GET /ml-api/knowledge-base/{slug}`",
+            examples=["5.2.1"],
+        ),
+    ],
+) -> ManualSection:
+    manual = _require_manual(slug)
+    section = manual.sections.get(section_id)
+    if section is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Раздел не найден")
+
+    # Путь по заголовкам: предки от корня вниз плюс сам раздел.
+    breadcrumbs = [
+        *(manual.sections[a].heading for a in section.ancestors if a in manual.sections),
+        section.heading,
+    ]
+    return ManualSection(
+        slug=manual.slug,
+        manual_title=manual.title,
+        id=section.id,
+        title=section.heading,
+        title_line=section.title_line,
+        ancestors=list(section.ancestors),
+        breadcrumbs=breadcrumbs,
+        children=[c for c in section.children if c in manual.sections],
+        content=section_body(section),
+        url=_manual_url(manual.slug, section.id),
+    )
+
+
 __all__ = [
+    "STREAM_EVENTS",
     "ChatIn",
     "ChatOut",
     "ChatSummary",
+    "ErrorOut",
+    "ManualSection",
+    "ManualSectionNode",
+    "ManualStructure",
+    "ManualSummary",
     "MessageIn",
     "MessageOut",
-    "STREAM_EVENTS",
     "ToolCallOut",
     "router",
 ]
