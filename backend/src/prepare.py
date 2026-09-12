@@ -22,9 +22,8 @@ def get_settings() -> Settings:
         return Settings()  # type: ignore[call-arg]
     except Exception as e:
         raise RuntimeError(
-            "❌ No `settings.yaml` found and no environment variables provided. "
-            "Please provide settings via `settings.yaml` or environment variables "
-            "(e.g. `API_SETTINGS__DB_URL`)."
+            f"❌ Invalid or missing settings ({e}). "
+            "Please check settings.yaml or environment variables (e.g. API_SETTINGS__JWT_SECRET, API_SETTINGS__DB_URL)."
         ) from e
 
 
