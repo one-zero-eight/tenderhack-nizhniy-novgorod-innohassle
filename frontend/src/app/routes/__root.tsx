@@ -36,8 +36,8 @@ const RootLayout = () => {
 function NotFoundComponent() {
   return (
     <div className="flex min-h-[calc(100vh-20rem)] flex-col items-center justify-center gap-4 px-4">
-      <h1 className="text-4xl font-bold text-pale-black">404</h1>
-      <p className="text-pale-black text-center">Страница не найдена</p>
+      <h1 className="text-4xl font-bold text-black">404</h1>
+      <p className="text-black text-center">Страница не найдена</p>
       <RouterLink to="/">
         <Button variant="primary">На главную</Button>
       </RouterLink>

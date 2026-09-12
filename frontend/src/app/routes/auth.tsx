@@ -34,7 +34,7 @@ function AuthPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-20rem)] flex-col items-center justify-center gap-6 px-4">
-      <h1 className="text-3xl font-bold text-pale-black">Вход</h1>
+      <h1 className="text-3xl font-bold text-black">Вход</h1>
       <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
         <Input
           label="Логин"

@@ -7,7 +7,7 @@ interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>
 }
 
 const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(({ label, className, ...props }, ref) => (
-  <label className={cn('text-gray flex cursor-pointer items-center gap-2 text-sm', className)}>
+  <label className={cn('text-black flex cursor-pointer items-center gap-2 text-sm', className)}>
     <input ref={ref} type="checkbox" className="border-gray-300 rounded focus:ring-main-blue/40" {...props} />
     {label}
   </label>

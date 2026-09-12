@@ -13,7 +13,7 @@ function KnowledgeIndexPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8">
-      <h1 className="text-pale-black text-2xl font-bold">База знаний</h1>
+      <h1 className="text-black text-2xl font-bold">База знаний</h1>
 
       {isLoading ? (
         <div className="flex justify-center py-10">
@@ -37,7 +37,7 @@ function KnowledgeIndexPage() {
                 params={{ slug: manual.slug }}
                 className="hover:bg-pale-blue/50 flex flex-col gap-1 px-3 py-4 no-underline transition-colors"
               >
-                <span className="text-pale-black text-sm font-medium">{manual.title}</span>
+                <span className="text-black text-sm font-medium">{manual.title}</span>
                 <span className="text-gray text-xs">{manual.sections} разделов</span>
               </Link>
             </li>

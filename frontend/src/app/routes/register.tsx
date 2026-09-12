@@ -45,7 +45,7 @@ function RegisterPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-20rem)] flex-col items-center justify-center gap-6 px-4">
-      <h1 className="text-3xl font-bold text-pale-black">Регистрация</h1>
+      <h1 className="text-3xl font-bold text-black">Регистрация</h1>
       <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
         <Input
           label="Логин"
@@ -71,7 +71,7 @@ function RegisterPage() {
           autoComplete="new-password"
         />
         <fieldset className="space-y-2">
-          <legend className="text-gray mb-2 block text-sm font-medium">Я регистрируюсь как</legend>
+          <legend className="text-black mb-2 block text-sm font-medium">Я регистрируюсь как</legend>
           <div className="flex flex-col gap-2">
             {REGISTER_ACCOUNT_TYPES.map((value) => (
               <Radio

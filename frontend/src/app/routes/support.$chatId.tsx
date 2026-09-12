@@ -46,7 +46,7 @@ function ChatPage() {
         <Link to="/support" className="text-gray hover:text-main-blue text-xs underline underline-offset-4">
           ← Все обращения
         </Link>
-        <h1 className="text-pale-black text-2xl font-bold">{chat.title}</h1>
+        <h1 className="text-black text-2xl font-bold">{chat.title}</h1>
       </div>
 
       {messagesLoading ? (

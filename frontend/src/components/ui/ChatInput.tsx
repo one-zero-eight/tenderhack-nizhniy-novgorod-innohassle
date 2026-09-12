@@ -43,7 +43,7 @@ interface ChatInputProps extends NativeTextareaProps {
  *  2. The textarea, which grows with content up to `maxHeight`.
  *  3. A control row with the attach button and the send button.
  *
- * - `Enter` submits; `Shift+Enter` inserts a newline.
+ * - `Enter` submits; `+Enter` inserts a newline.
  * - The attach button opens the system file picker.
  * - Files can also be dropped anywhere on the composer.
  */
@@ -159,7 +159,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
           disabled={disabled}
           rows={1}
           className={cn(
-            'block min-h-9 w-full resize-none bg-transparent px-2 py-1 text-sm text-pale-black',
+            'block min-h-9 w-full resize-none bg-transparent px-2 py-1 text-sm text-black',
             'placeholder:text-gray outline-none disabled:cursor-not-allowed',
           )}
           {...props}

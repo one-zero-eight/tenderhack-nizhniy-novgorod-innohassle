@@ -27,7 +27,7 @@ export default function ChatAttachments({ attachments, onRemove, className }: Ch
       {attachments.map(({ id, file }) => (
         <li
           key={id}
-          className="border-gray-blue bg-pale-blue/40 text-pale-black flex max-w-full items-center gap-2 border px-2 py-1 text-xs"
+          className="border-gray-blue bg-pale-blue/40 text-black flex max-w-full items-center gap-2 border px-2 py-1 text-xs"
         >
           <IoDocumentOutline className="text-main-blue size-4 shrink-0" />
           <span className="max-w-48 truncate font-medium" title={file.name}>

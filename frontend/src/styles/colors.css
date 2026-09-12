@@ -6,6 +6,8 @@
   --color-red: var(--red);
   --color-black: var(--black);
   --color-pale-black: var(--pale-black);
+  --color-foreground: var(--black);
+  --color-background: #ffffff;
 
   --color-green: var(--green);
   --color-sea-dark: var(--sea-dark);

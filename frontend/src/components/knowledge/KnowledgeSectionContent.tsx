@@ -31,12 +31,12 @@ export default function KnowledgeSectionContent({ section, className }: Knowledg
         </nav>
       )}
 
-      <h1 className="text-pale-black text-2xl font-bold">{section.title_line}</h1>
+      <h1 className="text-black text-2xl font-bold">{section.title_line}</h1>
 
       {paragraphs.length === 0 ? (
         <p className="text-gray text-sm">В этом разделе нет содержимого.</p>
       ) : (
-        <div className="text-pale-black flex flex-col gap-3 text-sm leading-relaxed">
+        <div className="text-black flex flex-col gap-3 text-sm leading-relaxed">
           {paragraphs.map((paragraph, index) => (
             <p key={index} className="whitespace-pre-wrap">
               {paragraph}

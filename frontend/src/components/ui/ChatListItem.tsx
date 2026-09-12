@@ -23,7 +23,7 @@ export default function ChatListItem({ chat, isActive = false, onClick, classNam
         className,
       )}
     >
-      <span className="text-pale-black truncate text-sm font-medium">{chat.title}</span>
+      <span className="text-black truncate text-sm font-medium">{chat.title}</span>
       <div className="flex gap-4 w-[50%]">
         <span className="flex gap-2 items-center text-gray shrink-0 text-xs">
           <FaCalendarDays />

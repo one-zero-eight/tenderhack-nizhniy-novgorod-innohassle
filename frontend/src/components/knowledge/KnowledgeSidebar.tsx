@@ -27,7 +27,7 @@ export default function KnowledgeSidebar({ slug, sections, activeSectionId, clas
               'rounded px-2 py-1 no-underline transition-colors',
               // Indent by nesting depth, capped so deep ids stay readable.
               section.depth === 0 ? 'font-semibold' : undefined,
-              isActive ? 'bg-main-blue/10 text-main-blue' : 'text-pale-black hover:bg-pale-blue/50 hover:text-main-blue',
+              isActive ? 'bg-main-blue/10 text-main-blue' : 'text-black hover:bg-pale-blue/50 hover:text-main-blue',
             )}
             style={{ paddingLeft: `${0.5 + Math.min(section.depth, 5) * 0.75}rem` }}
             title={section.title_line}

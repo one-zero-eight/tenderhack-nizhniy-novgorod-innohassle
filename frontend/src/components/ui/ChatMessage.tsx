@@ -56,7 +56,7 @@ export default function ChatMessage({ message, className }: ChatMessageProps) {
         <div
           className={cn(
             'relative rounded-lg pt-2 pr-16 pb-2 pl-4 text-sm wrap-break-word border-gray-200 border',
-            mine ? 'bg-main-blue rounded-br-none text-white' : 'bg-white text-pale-black rounded-bl-none',
+            mine ? 'bg-main-blue rounded-br-none text-white' : 'bg-white text-black rounded-bl-none',
             message.isRedacted ? 'italic opacity-70' : undefined,
           )}
         >

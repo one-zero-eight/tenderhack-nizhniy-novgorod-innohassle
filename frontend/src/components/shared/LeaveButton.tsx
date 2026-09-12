@@ -34,7 +34,7 @@ export default function LeaveButton() {
           <button
             type="button"
             onClick={logout}
-            className="text-pale-black data-focus:bg-pale-blue/50 data-focus:text-main-blue flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-medium transition-colors"
+            className="text-black data-focus:bg-pale-blue/50 data-focus:text-main-blue flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-medium transition-colors"
           >
             <FaDoorOpen className="shrink-0" />
             <span>Выйти</span>
