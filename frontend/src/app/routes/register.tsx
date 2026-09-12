@@ -4,13 +4,13 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Radio from '@/components/ui/Radio'
 import { useRegister } from '@/hooks/useAuth'
-import { getToken } from '@/lib/auth-storage'
-import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ROLE, REGISTER_ACCOUNT_TYPES, type AccountType } from '@/lib/roles'
+import { getStoredUser, getToken } from '@/lib/auth-storage'
+import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ROLE, REGISTER_ACCOUNT_TYPES, homePath, type AccountType } from '@/lib/roles'
 
 export const Route = createFileRoute('/register')({
   beforeLoad: () => {
     if (getToken()) {
-      throw redirect({ to: '/support' })
+      throw redirect({ to: homePath(getStoredUser()?.role) })
     }
   },
   component: RegisterPage,
@@ -39,7 +39,7 @@ function RegisterPage() {
         ...(trimmedDisplayName ? { display_name: trimmedDisplayName } : {}),
       },
       // Full reload so the app boots with the new session.
-      { onSuccess: () => window.location.assign('/support') },
+      { onSuccess: (user) => window.location.assign(homePath(user.role)) },
     )
   }
 

@@ -3,12 +3,13 @@ import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { useLogin } from '@/hooks/useAuth'
-import { getToken } from '@/lib/auth-storage'
+import { getStoredUser, getToken } from '@/lib/auth-storage'
+import { homePath } from '@/lib/roles'
 
 export const Route = createFileRoute('/auth')({
   beforeLoad: () => {
     if (getToken()) {
-      throw redirect({ to: '/support' })
+      throw redirect({ to: homePath(getStoredUser()?.role) })
     }
   },
   component: AuthPage,
@@ -28,7 +29,7 @@ function AuthPage() {
       { login: loginValue.trim(), password },
       // Full reload so the app boots with the new session (no stale cached
       // account/token state anywhere in memory).
-      { onSuccess: () => window.location.assign('/support') },
+      { onSuccess: (user) => window.location.assign(homePath(user.role)) },
     )
   }
 

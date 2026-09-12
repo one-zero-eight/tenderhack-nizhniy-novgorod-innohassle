@@ -2,6 +2,7 @@ import { Link as RouterLink, useLocation } from '@tanstack/react-router'
 import { FaBook, FaHeadset, FaClockRotateLeft, FaTriangleExclamation } from 'react-icons/fa6'
 import { useAuth } from '@/app/providers/auth-context'
 import { Role } from '@/api/types'
+import { homePath } from '@/lib/roles'
 import { navButtonClasses } from './nav-button'
 import LeaveButton from './LeaveButton'
 
@@ -23,7 +24,7 @@ export default function Navbar() {
   return (
     <nav className="fixed border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
       <div className="flex items-stretch pl-2">
-        <RouterLink to="/" className="mr-4 flex items-center no-underline" aria-label="Портал Поставщиков">
+        <RouterLink to={homePath(user?.role)} className="mr-4 flex items-center no-underline" aria-label="Портал Поставщиков">
           <img
             src="https://zakupki.mos.ru/cms/Media/holidaysthemes/pplogo/pp_logo.svg"
             alt="Портал Поставщиков"

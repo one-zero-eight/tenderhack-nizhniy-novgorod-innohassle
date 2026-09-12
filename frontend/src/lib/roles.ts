@@ -37,3 +37,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 export function roleLabel(role: Role | null | undefined): string {
   return role ? (ROLE_LABELS[role] ?? role) : ''
 }
+
+/** Default landing path after login, registration, or clicking the portal logo. */
+export function homePath(role: Role | null | undefined): '/history' | '/support' {
+  return role === Role.admin ? '/history' : '/support'
+}
