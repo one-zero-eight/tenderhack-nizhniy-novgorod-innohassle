@@ -2,6 +2,7 @@ __all__ = ["SQLAlchemyStorage", "AbstractSQLAlchemyStorage"]
 
 from abc import ABC, abstractmethod
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
@@ -38,6 +39,9 @@ class SQLAlchemyStorage(AbstractSQLAlchemyStorage):
         from src.db.models import Base  # noqa: PLC0415
 
         async with self.engine.begin() as conn:
+            # Serialize schema checks/creation when multiple API workers start together.
+            # PostgreSQL releases this transaction-scoped lock on commit or rollback.
+            await conn.execute(text("SELECT pg_advisory_xact_lock(734921680214)"))
             await conn.run_sync(Base.metadata.create_all)
 
     async def drop_all(self) -> None:

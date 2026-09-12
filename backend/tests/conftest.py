@@ -147,14 +147,14 @@ async def case(monkeypatch):
     fake = FakeAI()
     app = None
     try:
-        await storage.create_all()
-        await seed_demo(storage, PASSWORD)
-        async with storage.create_session() as session:
-            users = {user.login: user for user in await session.scalars(select(User))}
         monkeypatch.setattr("src.api.lifespan.RubertModerator", FakeModerator)
+        monkeypatch.setattr(SQLAlchemyStorage, "from_url", lambda url: storage)
         app = create_app(settings)
         async with app.router.lifespan_context(app):
-            app.state.storage = storage
+            # Startup must create the tables in our empty, isolated schema before seeding.
+            await seed_demo(storage, PASSWORD)
+            async with storage.create_session() as session:
+                users = {user.login: user for user in await session.scalars(select(User))}
             async with httpx.AsyncClient(transport=httpx.MockTransport(fake), base_url="http://ai.test/") as ai_http:
                 app.state.ai = AIClient(ai_http, settings)
                 async with httpx.AsyncClient(

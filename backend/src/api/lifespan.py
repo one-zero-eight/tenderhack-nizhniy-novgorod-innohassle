@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     moderator = RubertModerator(settings)
     app.state.moderator = moderator
     try:
+        await storage.create_all()
         # Fail startup if local model files are missing or incompatible.
         await moderator.start()
         yield

@@ -15,6 +15,7 @@ Paste the generated value into `api_settings.jwt_secret` in `settings.yaml`. Set
 
 ```bash
 docker compose up -d --wait db
+# Optional here: initialize before seeding; API startup also creates missing tables.
 uv run -m src.db.init
 export DEMO_PASSWORD='choose-your-demo-password'
 uv run -m src.seed
@@ -63,7 +64,7 @@ docker compose --profile demo up --build -d
 docker compose exec -e DEMO_PASSWORD api uv run --no-sync python -m src.seed
 ```
 
-Docker builds download a pinned model revision into the image; runtime inference requires no internet access. Compose creates missing tables from the SQLAlchemy models before starting the API. Schema initialization is idempotent; it does not alter existing tables. The API listens on port 8000 and the stub on local port 8002. For a real neighboring AI service, set `API_SETTINGS__AI_BASE_URL` to its address reachable from the API container and run Compose without `--profile demo`. Retain the same signing secret across restarts. Demo accounts are created only by the explicit seed command.
+Docker builds download a pinned model revision into the image; runtime inference requires no internet access. The API creates missing tables from the SQLAlchemy models during startup, both locally and in Compose. Startup fails if database initialization fails. Initialization is idempotent and serialized across concurrent API workers; it preserves existing data and does not alter existing columns or constraints. No separate initialization container is needed. The API listens on port 8000 and the stub on local port 8002. For a real neighboring AI service, set `API_SETTINGS__AI_BASE_URL` to its address reachable from the API container and run Compose without `--profile demo`. Retain the same signing secret across restarts. Demo accounts are created only by the explicit seed command.
 
 **Authenticate and exercise the chat API.** Login accepts JSON:
 
@@ -117,7 +118,7 @@ uv run ruff check .
 docker stop tenderhack-test-db
 ```
 
-Integration tests create the SQLAlchemy model tables in each test schema and use a controllable HTTP stub for the AI contract and an injected local moderator. Unit tests exercise real tokenization with controlled model logits, including chunk boundaries, thresholding, failures, and cancellation; they do not establish pretrained model accuracy. They cover access control, handoff, moderation and routing failures, duplicate sends/ratings, concurrent claims, stale AI results, history, and reporting. Without `TEST_DATABASE_URL`, the independent AI-client and local moderation tests run; PostgreSQL integration tests are skipped. After downloading the pinned model, run `HF_HUB_OFFLINE=1 RUN_MODERATION_MODEL_TESTS=1 uv run pytest -q` to include real-model smoke checks for ordinary Russian support messages, explicit profanity, insults, and a swear sentence at the end of a long message. These examples verify integration, not general accuracy or resistance to obfuscation.
+Integration tests let API startup create the SQLAlchemy model tables in each empty test schema and use a controllable HTTP stub for the AI contract and an injected local moderator. Unit tests exercise real tokenization with controlled model logits, including chunk boundaries, thresholding, failures, and cancellation; they do not establish pretrained model accuracy. They cover access control, handoff, moderation and routing failures, duplicate sends/ratings, concurrent claims, stale AI results, history, and reporting. Without `TEST_DATABASE_URL`, the independent AI-client and local moderation tests run; PostgreSQL integration tests are skipped. After downloading the pinned model, run `HF_HUB_OFFLINE=1 RUN_MODERATION_MODEL_TESTS=1 uv run pytest -q` to include real-model smoke checks for ordinary Russian support messages, explicit profanity, insults, and a swear sentence at the end of a long message. These examples verify integration, not general accuracy or resistance to obfuscation.
 
 
 **Conversation workflow and access rules.** A new chat starts with AI. Every user message passes moderation before publication. An approved question receives an AI answer or a support offer; missing knowledge and temporary service failures have distinct notices. The user confirms the recommended line or chooses another line before entering its waiting list. An operator from that line claims the chat and continues the existing transcript. User messages while waiting or talking to an operator use local moderation without AI-service calls. Operator replies retain their existing behavior and are not moderated.
@@ -150,7 +151,7 @@ Messages allow up to 4,000 characters; rating comments allow up to 2,000. Only t
 | `messages` | `id`, `chat_id`, per-chat `sequence`, `sender_type`, nullable `sender_id`, `sender_name`, nullable `support_line_id`, `text`, optional `citations` JSON, nullable `reply_to_message_id`, nullable `client_message_id` and `input_hash`, `is_redacted`, `created_at`. The operator's line is stored at send time for correct attribution. |
 | `ratings` | `id`, `message_id`, `user_id`, integer `stars` constrained to `1..5`, optional `comment`, `created_at`, `updated_at`. Unique `(message_id, user_id)` so updating a rating replaces the previous value. |
 
-Chats also store `generation` and `next_sequence` to reject stale AI results and allocate ordered messages under a chat-row lock. Unique `(chat_id, sequence)` and `(chat_id, client_message_id)` constraints enforce ordering and submission deduplication. Indexes support owner/date lookups, support queues, reply targets, and rating dates. Schema initialization creates missing tables directly from model metadata; there are no migrations.
+Chats also store `generation` and `next_sequence` to reject stale AI results and allocate ordered messages under a chat-row lock. Unique `(chat_id, sequence)` and `(chat_id, client_message_id)` constraints enforce ordering and submission deduplication. Indexes support owner/date lookups, support queues, reply targets, and rating dates. API startup creates missing tables directly from model metadata; there are no migrations. `python -m src.db.init` remains available for initializing tables before an explicit seed command.
 
 Business logic lives in `src/services/`: `chats.py` handles conversations and human support, `ai_client.py` handles AI HTTP contracts, `moderation.py` handles local obscenity classification, `auth.py` handles authentication, and `stats.py` handles reporting. HTTP routes live in `src/api/repositories/`, database helpers in `src/db/repositories/`, models in `src/db/models/`, and request/response schemas in `src/schemas/`.
 

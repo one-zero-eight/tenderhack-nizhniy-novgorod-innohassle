@@ -6,6 +6,7 @@ import jwt
 import pytest
 from sqlalchemy import select
 
+from src.api.app import create_app
 from src.db.models import Chat, User, utcnow
 from src.seed import seed_demo
 
@@ -402,6 +403,7 @@ async def test_admin_exact_star_filter(case):
 
 async def test_schema_initialization_preserves_existing_data(case):
     chat = await case.chat()
-    await case.storage.create_all()
-    assert (await case.request("GET", f"/chats/{chat}")).status_code == 200
+    restarted = create_app(case.settings)
+    async with restarted.router.lifespan_context(restarted):
+        assert (await case.request("GET", f"/chats/{chat}")).status_code == 200
     assert (await case.request("GET", "/support-lines")).json()[0]["id"] == 1

@@ -7,12 +7,10 @@ services:
       db:
         # Wait for the database to be ready before starting the application
         condition: service_healthy
-      init-db:
-        condition: service_completed_successfully
     restart: always
     ports:
       - "8000:8001"
-    environment: &backend-environment
+    environment:
       # Settings can be fully configured via environment variables, no settings.yaml needed.
       API_SETTINGS__DB_URL: ${API_SETTINGS__DB_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres}
       API_SETTINGS__APP_ROOT_PATH: ${API_SETTINGS__APP_ROOT_PATH:-}
@@ -30,15 +28,6 @@ services:
     # Optional: mount settings.yaml to override values. Commented out so it is not required.
     # volumes:
     #   - "./settings.yaml:/app/settings.yaml:ro"
-
-  init-db:
-    build: *backend-build
-    environment: *backend-environment
-    command: ["uv", "run", "--no-sync", "python", "-m", "src.db.init"]
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: "no"
 
   # Development contract stub only; normal deployments supply API_SETTINGS__AI_BASE_URL.
   ai-stub:
