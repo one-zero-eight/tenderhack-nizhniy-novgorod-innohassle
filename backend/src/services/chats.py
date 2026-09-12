@@ -105,7 +105,7 @@ class ChatService:
             chat = Chat(id=ml_chat_id, title=title, user_id=user.id)
             session.add(chat)
             await session.flush()
-            return await chat_view(session, chat)
+            return await chat_view(session, chat, user=user)
 
     async def get(self, chat_id: str, user: User) -> ChatOut:
         async with self.storage.create_session() as session, session.begin():

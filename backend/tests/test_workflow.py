@@ -301,12 +301,26 @@ async def test_admin_get_all_chats(case):
     assert chat1 in chat_ids
     assert chat2 in chat_ids
 
+    # Verify user display_name returned in GET /admin/chats
+    chat1_data = next(c for c in data["items"] if c["id"] == chat1)
+    chat2_data = next(c for c in data["items"] if c["id"] == chat2)
+    assert chat1_data["user_display_name"] == case.users["user"].display_name
+    assert chat1_data["display_name"] == case.users["user"].display_name
+    assert chat1_data["user"]["id"] == str(case.users["user"].id)
+    assert chat1_data["user"]["display_name"] == case.users["user"].display_name
+
+    assert chat2_data["user_display_name"] == case.users["user2"].display_name
+    assert chat2_data["display_name"] == case.users["user2"].display_name
+    assert chat2_data["user"]["id"] == str(case.users["user2"].id)
+    assert chat2_data["user"]["display_name"] == case.users["user2"].display_name
+
     # Admin filters by user_id
     user1_id = str(case.users["user"].id)
     res_user1 = await case.request("GET", f"/admin/chats?user_id={user1_id}", login="admin")
     assert res_user1.status_code == 200
     user1_chats = res_user1.json()
     assert all(c["user_id"] == user1_id for c in user1_chats["items"])
+    assert all(c["user_display_name"] == case.users["user"].display_name for c in user1_chats["items"])
     assert chat1 in [c["id"] for c in user1_chats["items"]]
     assert chat2 not in [c["id"] for c in user1_chats["items"]]
 

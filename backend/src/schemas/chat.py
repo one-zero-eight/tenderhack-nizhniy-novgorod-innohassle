@@ -77,6 +77,9 @@ class ChatOut(Schema):
     id: str
     title: str = "Новый чат"
     user_id: UUID
+    user: ActorOut | None = None
+    user_display_name: str | None = None
+    display_name: str | None = None
     status: ChatStatus
     recipient: RecipientOut
     support_line: SupportLineOut | None

@@ -87,7 +87,12 @@ async def support_lines(session: AsyncSession) -> list[SupportLineOut]:
 _UNSET = object()
 
 
-async def chat_view(session: AsyncSession, chat: Chat, rating: Rating | None | object = _UNSET) -> ChatOut:
+async def chat_view(
+    session: AsyncSession,
+    chat: Chat,
+    rating: Rating | None | object = _UNSET,
+    user: User | None | object = _UNSET,
+) -> ChatOut:
     line = await session.get(SupportLine, chat.support_line_id) if chat.support_line_id else None
     operator = await session.get(User, chat.operator_id) if chat.operator_id else None
     line_out = SupportLineOut.model_validate(line) if line else None
@@ -109,10 +114,20 @@ async def chat_view(session: AsyncSession, chat: Chat, rating: Rating | None | o
         rating_obj = rating
     rating_out = RatingOut.model_validate(rating_obj) if rating_obj else None
 
+    if user is _UNSET:
+        chat_user = await session.get(User, chat.user_id) if chat.user_id else None
+    else:
+        chat_user = user
+    user_out = ActorOut.model_validate(chat_user) if chat_user else None
+    user_display_name = chat_user.display_name if chat_user else None
+
     return ChatOut(
         id=chat.id,
         title=chat.title,
         user_id=chat.user_id,
+        user=user_out,
+        user_display_name=user_display_name,
+        display_name=user_display_name,
         status=chat.status,
         recipient=recipient,
         support_line=line_out,
@@ -135,7 +150,15 @@ async def chat_views(session: AsyncSession, chats: list[Chat]) -> list[ChatOut]:
         return []
     ratings = list(await session.scalars(select(Rating).where(Rating.chat_id.in_([c.id for c in chats]))))
     by_chat = {r.chat_id: r for r in ratings}
-    return [await chat_view(session, c, rating=by_chat.get(c.id)) for c in chats]
+
+    user_ids = {c.user_id for c in chats if c.user_id} | {c.operator_id for c in chats if c.operator_id}
+    if user_ids:
+        users = list(await session.scalars(select(User).where(User.id.in_(user_ids))))
+        by_user = {u.id: u for u in users}
+    else:
+        by_user = {}
+
+    return [await chat_view(session, c, rating=by_chat.get(c.id), user=by_user.get(c.user_id)) for c in chats]
 
 
 async def message_views(session: AsyncSession, messages: list[Message]) -> list[MessageOut]:
