@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import cva, { type VariantProps } from '@/lib/cva'
 import { cn } from '@/lib/cn'
 
-const buttonVariants = cva('text-base text-center cursor-pointer transition-colors duration-100 h-min w-min text-nowrap select-none focus:outline-red/40', {
+const buttonVariants = cva('flex justify-center items-center text-base text-center cursor-pointer transition-colors duration-100 h-min w-min text-nowrap select-none focus:outline-red/40', {
   variants: {
     size: {
       sm: 'px-5 py-2',

@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import Button from '@/components/ui/Button'
+import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
 import ChatRedirectDivider from '@/components/ui/ChatRedirectDivider'
-import Input from '@/components/ui/Input'
 import { cn } from '@/lib/cn'
 import { SenderType } from '@/api/types'
 import type { MessageView } from '@/lib/chat-view'
@@ -18,11 +18,16 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
   const [text, setText] = useState('')
   const trimmed = text.trim()
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
+  const submit = () => {
     if (!trimmed || disabled) return
     onSend?.(trimmed)
     setText('')
+  }
+
+  // Also allow submitting via the "Отправить" button (native form submit).
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    submit()
   }
 
   return (
@@ -44,16 +49,19 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
       </div>
 
       <form onSubmit={handleSubmit} className="flex items-end gap-2">
-        <Input
+        <ChatInput
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={disabled ? 'Ожидайте ответа...' : 'Введите сообщение...'}
+          onChange={setText}
+          onSubmit={submit}
+          placeholder={disabled ? 'Ожидайте ответа...' : 'Введите сообщение... (Shift+Enter — новая строка)'}
           disabled={disabled}
-          autoFocus
+          aria-label="Сообщение"
+          action={
+            <Button type="submit" variant="primary" size="sm" disabled={disabled || !trimmed} className="h-9">
+              Отправить
+            </Button>
+          }
         />
-        <Button type="submit" variant="primary" disabled={disabled || !trimmed}>
-          Отправить
-        </Button>
       </form>
     </div>
   )

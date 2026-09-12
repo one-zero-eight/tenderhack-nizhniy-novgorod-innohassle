@@ -1,3 +1,4 @@
+import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
 import { cn } from '@/lib/cn'
 import { formatDateTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
@@ -7,6 +8,41 @@ interface ChatMessageProps {
   message: MessageView
   className?: string
 }
+
+/** Props passed to custom components; the parser adds a `node` field we drop. */
+type ElementProps<Tag extends keyof React.JSX.IntrinsicElements> = MarkdownComponentProps<Tag> & { node?: unknown }
+
+/** Removes the non-DOM `node` prop before spreading onto an element. */
+function withoutNode<T extends { node?: unknown }>({ node, ...rest }: T): Omit<T, 'node'> {
+  void node
+  return rest
+}
+
+/**
+ * Element styling for rendered Markdown. Kept compact so it fits inside a chat
+ * bubble; `current`-relative colors let it adapt to the bubble background.
+ */
+const components = {
+  p: (props: ElementProps<'p'>) => <p {...withoutNode(props)} className="not-first:mt-2 whitespace-pre-wrap" />,
+  code: (props: ElementProps<'code'>) => (
+    <code {...withoutNode(props)} className={cn('rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em]', props.className)} />
+  ),
+  pre: (props: ElementProps<'pre'>) => (
+    <pre {...withoutNode(props)} className="my-2 overflow-x-auto rounded bg-black/10 p-2 text-[0.85em]" />
+  ),
+  ul: (props: ElementProps<'ul'>) => <ul {...withoutNode(props)} className="my-2 list-disc space-y-1 pl-5" />,
+  ol: (props: ElementProps<'ol'>) => <ol {...withoutNode(props)} className="my-2 list-decimal space-y-1 pl-5" />,
+  a: (props: ElementProps<'a'>) => (
+    <a {...withoutNode(props)} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-80" />
+  ),
+  blockquote: (props: ElementProps<'blockquote'>) => (
+    <blockquote {...withoutNode(props)} className="my-2 border-l-2 border-current pl-3 opacity-80" />
+  ),
+  hr: (props: ElementProps<'hr'>) => <hr {...withoutNode(props)} className="my-2 border-current opacity-20" />,
+  h1: (props: ElementProps<'h1'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
+  h2: (props: ElementProps<'h2'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
+  h3: (props: ElementProps<'h3'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
+} satisfies MarkdownComponents
 
 export default function ChatMessage({ message, className }: ChatMessageProps) {
   const mine = message.senderType === SenderType.user
@@ -20,12 +56,13 @@ export default function ChatMessage({ message, className }: ChatMessageProps) {
         </span>
         <div
           className={cn(
-            'rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap break-words',
+            'rounded-2xl px-4 py-2 text-sm break-words',
             mine ? 'bg-main-blue rounded-br-sm text-white' : 'bg-white text-pale-black rounded-bl-sm',
             message.isRedacted ? 'italic opacity-70' : undefined,
           )}
         >
-          {message.text}
+          {/* The user's own text is shown verbatim; assistant replies may contain Markdown. */}
+          {mine ? <span className="whitespace-pre-wrap">{message.text}</span> : <Markdown components={components}>{message.text}</Markdown>}
         </div>
       </div>
     </div>
