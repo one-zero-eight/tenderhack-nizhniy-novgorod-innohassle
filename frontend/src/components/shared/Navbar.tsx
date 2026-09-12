@@ -23,8 +23,12 @@ export default function Navbar() {
   return (
     <nav className="border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
       <div className="flex items-stretch">
-        <RouterLink to="/" className="text-main-blue hover:text-main-blue/80 mr-4 flex items-center text-lg font-bold no-underline">
-          Портал Поставщиков
+        <RouterLink to="/" className="mr-4 flex items-center no-underline" aria-label="Портал Поставщиков">
+          <img
+            src="https://zakupki.mos.ru/cms/Media/holidaysthemes/pplogo/pp_logo.svg"
+            alt="Портал Поставщиков"
+            className="h-8 w-auto"
+          />
         </RouterLink>
         {isAdmin ? (
           <>
