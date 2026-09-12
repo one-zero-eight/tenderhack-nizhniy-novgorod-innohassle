@@ -1,34 +1,76 @@
-import { forwardRef, useEffect, useLayoutEffect, useRef, type KeyboardEvent, type TextareaHTMLAttributes } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type TextareaHTMLAttributes,
+} from 'react'
+import { FaPaperclip, FaPaperPlane } from 'react-icons/fa6'
+import Button from '@/components/ui/Button'
+import ChatAttachments from '@/components/ui/ChatAttachments'
 import { cn } from '@/lib/cn'
+import type { Attachment } from '@/hooks/useFileAttachments'
 
 type NativeTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value' | 'rows'>
 
 interface ChatInputProps extends NativeTextareaProps {
   value: string
   onChange: (value: string) => void
-  /** Called when the user submits with Enter (without Shift). */
+  /** Called when the user submits (Enter without Shift, or the send button). */
   onSubmit?: () => void
-  /** Renders the input in a non-interactive, waiting state. */
+  /** Renders the composer in a non-interactive, waiting state. */
   disabled?: boolean
   /** Max height in pixels before the textarea starts scrolling. */
   maxHeight?: number
-  /** Optional content rendered on the right, vertically centered (e.g. a submit button). */
-  action?: React.ReactNode
+  /** Files attached to the next message. */
+  attachments?: Attachment[]
+  /** Called with newly selected or dropped files. */
+  onFilesAdded?: (files: File[]) => void
+  /** Called when the user removes an attachment. */
+  onRemoveAttachment?: (id: string) => void
+  /** `accept` attribute for the file picker. */
+  accept?: string
 }
 
 /**
- * Multi-line chat composer.
+ * Multi-line chat composer with attachments.
  *
- * - `Enter` submits the message.
- * - `Shift+Enter` inserts a newline.
+ * Layout (top to bottom):
+ *  1. Attachment chips (when any are present).
+ *  2. The textarea, which grows with content up to `maxHeight`.
+ *  3. A control row with the attach button and the send button.
  *
- * The textarea grows with its content up to `maxHeight`, after which it
- * scrolls. An optional `action` (e.g. a send button) sits vertically centered
- * on the right so the composer reads as a single, bounded control.
+ * - `Enter` submits; `Shift+Enter` inserts a newline.
+ * - The attach button opens the system file picker.
+ * - Files can also be dropped anywhere on the composer.
  */
 const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
-  ({ value, onChange, onSubmit, disabled = false, maxHeight = 160, action, className, onKeyDown, ...props }, ref) => {
+  (
+    {
+      value,
+      onChange,
+      onSubmit,
+      disabled = false,
+      maxHeight = 160,
+      attachments = [],
+      onFilesAdded,
+      onRemoveAttachment,
+      accept,
+      className,
+      onKeyDown,
+      ...props
+    },
+    ref,
+  ) => {
     const innerRef = useRef<HTMLTextAreaElement | null>(null)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const [isDragging, setIsDragging] = useState(false)
+    // Drag events fire for every child element; count enter/leave to know when
+    // the pointer really left the composer.
+    const dragDepth = useRef(0)
 
     // Keep the height synced with the content, resetting first so it can shrink.
     useLayoutEffect(() => {
@@ -61,15 +103,54 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
     }
 
+    const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+      if (disabled) return
+      event.preventDefault()
+      dragDepth.current += 1
+      if (event.dataTransfer.types.includes('Files')) setIsDragging(true)
+    }
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+      if (disabled) return
+      // Required so the browser allows the drop.
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+      if (disabled) return
+      event.preventDefault()
+      dragDepth.current -= 1
+      if (dragDepth.current <= 0) {
+        dragDepth.current = 0
+        setIsDragging(false)
+      }
+    }
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+      if (disabled) return
+      event.preventDefault()
+      dragDepth.current = 0
+      setIsDragging(false)
+      const files = Array.from(event.dataTransfer.files)
+      if (files.length > 0) onFilesAdded?.(files)
+    }
+
     return (
       <div
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         className={cn(
-          'flex w-full items-end gap-2 border-2 border-pale-blue bg-white px-2 py-1.5 transition-colors',
-          'focus-within:border-main-blue/50',
+          'flex w-full flex-col gap-2 border-2 border-pale-blue bg-white p-2 transition-colors',
+          isDragging ? 'border-main-blue/60 bg-pale-blue/20' : 'focus-within:border-main-blue/50',
           disabled ? 'cursor-not-allowed opacity-50' : undefined,
           className,
         )}
       >
+        <ChatAttachments attachments={attachments} onRemove={onRemoveAttachment} />
+
         <textarea
           ref={setRefs}
           value={value}
@@ -78,12 +159,49 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
           disabled={disabled}
           rows={1}
           className={cn(
-            'block min-h-9 w-full flex-1 resize-none self-center bg-transparent px-2 py-1 text-sm text-pale-black',
+            'block min-h-9 w-full resize-none bg-transparent px-2 py-1 text-sm text-pale-black',
             'placeholder:text-gray outline-none disabled:cursor-not-allowed',
           )}
           {...props}
         />
-        {action && <div className="shrink-0 self-end">{action}</div>}
+
+        <div className="flex items-center justify-between gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={accept}
+            className="hidden"
+            onChange={(e) => {
+              const files = e.target.files ? Array.from(e.target.files) : []
+              if (files.length > 0) onFilesAdded?.(files)
+              // Reset so picking the same file again still fires onChange.
+              e.target.value = ''
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FaPaperclip />
+            <span>Прикрепить</span>
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            className="flex items-center gap-2"
+            disabled={disabled || !value.trim()}
+            onClick={() => onSubmit?.()}
+          >
+            <FaPaperPlane />
+            <span>Отправить</span>
+          </Button>
+        </div>
       </div>
     )
   },

@@ -13,10 +13,13 @@ import { Route as RegisterRouteImport } from './routes/register';
 import { Route as AuthRouteImport } from './routes/auth';
 import { Route as IndexRouteImport } from './routes/index';
 import { Route as SupportIndexRouteImport } from './routes/support.index';
-import { Route as KnowledgeIndexRouteImport } from './routes/knowledge.index';
+import { Route as KnowledgeBaseIndexRouteImport } from './routes/knowledge-base.index';
 import { Route as IssuesIndexRouteImport } from './routes/issues.index';
 import { Route as HistoryIndexRouteImport } from './routes/history.index';
 import { Route as SupportChatIdRouteImport } from './routes/support.$chatId';
+import { Route as KnowledgeBaseSlugRouteImport } from './routes/knowledge-base.$slug';
+import { Route as KnowledgeBaseSlugIndexRouteImport } from './routes/knowledge-base.$slug.index';
+import { Route as KnowledgeBaseSlugSectionIdRouteImport } from './routes/knowledge-base.$slug.$sectionId';
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -38,9 +41,9 @@ const SupportIndexRoute = SupportIndexRouteImport.update({
   path: '/support/',
   getParentRoute: () => rootRouteImport,
 } as any);
-const KnowledgeIndexRoute = KnowledgeIndexRouteImport.update({
-  id: '/knowledge/',
-  path: '/knowledge/',
+const KnowledgeBaseIndexRoute = KnowledgeBaseIndexRouteImport.update({
+  id: '/knowledge-base/',
+  path: '/knowledge-base/',
   getParentRoute: () => rootRouteImport,
 } as any);
 const IssuesIndexRoute = IssuesIndexRouteImport.update({
@@ -58,16 +61,35 @@ const SupportChatIdRoute = SupportChatIdRouteImport.update({
   path: '/support/$chatId',
   getParentRoute: () => rootRouteImport,
 } as any);
+const KnowledgeBaseSlugRoute = KnowledgeBaseSlugRouteImport.update({
+  id: '/knowledge-base/$slug',
+  path: '/knowledge-base/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const KnowledgeBaseSlugIndexRoute = KnowledgeBaseSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KnowledgeBaseSlugRoute,
+} as any);
+const KnowledgeBaseSlugSectionIdRoute =
+  KnowledgeBaseSlugSectionIdRouteImport.update({
+    id: '/$sectionId',
+    path: '/$sectionId',
+    getParentRoute: () => KnowledgeBaseSlugRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history': typeof HistoryIndexRoute;
   '/issues': typeof IssuesIndexRoute;
-  '/knowledge': typeof KnowledgeIndexRoute;
+  '/knowledge-base': typeof KnowledgeBaseIndexRoute;
   '/support': typeof SupportIndexRoute;
+  '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/knowledge-base/$slug/': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
@@ -76,19 +98,24 @@ export interface FileRoutesByTo {
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history': typeof HistoryIndexRoute;
   '/issues': typeof IssuesIndexRoute;
-  '/knowledge': typeof KnowledgeIndexRoute;
+  '/knowledge-base': typeof KnowledgeBaseIndexRoute;
   '/support': typeof SupportIndexRoute;
+  '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/knowledge-base/$slug': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history/': typeof HistoryIndexRoute;
   '/issues/': typeof IssuesIndexRoute;
-  '/knowledge/': typeof KnowledgeIndexRoute;
+  '/knowledge-base/': typeof KnowledgeBaseIndexRoute;
   '/support/': typeof SupportIndexRoute;
+  '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/knowledge-base/$slug/': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -96,11 +123,14 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/knowledge-base/$slug'
     | '/support/$chatId'
     | '/history'
     | '/issues'
-    | '/knowledge'
-    | '/support';
+    | '/knowledge-base'
+    | '/support'
+    | '/knowledge-base/$slug/$sectionId'
+    | '/knowledge-base/$slug/';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/'
@@ -109,28 +139,34 @@ export interface FileRouteTypes {
     | '/support/$chatId'
     | '/history'
     | '/issues'
-    | '/knowledge'
-    | '/support';
+    | '/knowledge-base'
+    | '/support'
+    | '/knowledge-base/$slug/$sectionId'
+    | '/knowledge-base/$slug';
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/register'
+    | '/knowledge-base/$slug'
     | '/support/$chatId'
     | '/history/'
     | '/issues/'
-    | '/knowledge/'
-    | '/support/';
+    | '/knowledge-base/'
+    | '/support/'
+    | '/knowledge-base/$slug/$sectionId'
+    | '/knowledge-base/$slug/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AuthRoute: typeof AuthRoute;
   RegisterRoute: typeof RegisterRoute;
+  KnowledgeBaseSlugRoute: typeof KnowledgeBaseSlugRouteWithChildren;
   SupportChatIdRoute: typeof SupportChatIdRoute;
   HistoryIndexRoute: typeof HistoryIndexRoute;
   IssuesIndexRoute: typeof IssuesIndexRoute;
-  KnowledgeIndexRoute: typeof KnowledgeIndexRoute;
+  KnowledgeBaseIndexRoute: typeof KnowledgeBaseIndexRoute;
   SupportIndexRoute: typeof SupportIndexRoute;
 }
 
@@ -164,11 +200,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    '/knowledge/': {
-      id: '/knowledge/';
-      path: '/knowledge';
-      fullPath: '/knowledge';
-      preLoaderRoute: typeof KnowledgeIndexRouteImport;
+    '/knowledge-base/': {
+      id: '/knowledge-base/';
+      path: '/knowledge-base';
+      fullPath: '/knowledge-base';
+      preLoaderRoute: typeof KnowledgeBaseIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/issues/': {
@@ -192,17 +228,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportChatIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/knowledge-base/$slug': {
+      id: '/knowledge-base/$slug';
+      path: '/knowledge-base/$slug';
+      fullPath: '/knowledge-base/$slug';
+      preLoaderRoute: typeof KnowledgeBaseSlugRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/knowledge-base/$slug/': {
+      id: '/knowledge-base/$slug/';
+      path: '/';
+      fullPath: '/knowledge-base/$slug/';
+      preLoaderRoute: typeof KnowledgeBaseSlugIndexRouteImport;
+      parentRoute: typeof KnowledgeBaseSlugRoute;
+    };
+    '/knowledge-base/$slug/$sectionId': {
+      id: '/knowledge-base/$slug/$sectionId';
+      path: '/$sectionId';
+      fullPath: '/knowledge-base/$slug/$sectionId';
+      preLoaderRoute: typeof KnowledgeBaseSlugSectionIdRouteImport;
+      parentRoute: typeof KnowledgeBaseSlugRoute;
+    };
   }
 }
+
+interface KnowledgeBaseSlugRouteChildren {
+  KnowledgeBaseSlugSectionIdRoute: typeof KnowledgeBaseSlugSectionIdRoute;
+  KnowledgeBaseSlugIndexRoute: typeof KnowledgeBaseSlugIndexRoute;
+}
+
+const KnowledgeBaseSlugRouteChildren: KnowledgeBaseSlugRouteChildren = {
+  KnowledgeBaseSlugSectionIdRoute: KnowledgeBaseSlugSectionIdRoute,
+  KnowledgeBaseSlugIndexRoute: KnowledgeBaseSlugIndexRoute,
+};
+
+const KnowledgeBaseSlugRouteWithChildren =
+  KnowledgeBaseSlugRoute._addFileChildren(KnowledgeBaseSlugRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   RegisterRoute: RegisterRoute,
+  KnowledgeBaseSlugRoute: KnowledgeBaseSlugRouteWithChildren,
   SupportChatIdRoute: SupportChatIdRoute,
   HistoryIndexRoute: HistoryIndexRoute,
   IssuesIndexRoute: IssuesIndexRoute,
-  KnowledgeIndexRoute: KnowledgeIndexRoute,
+  KnowledgeBaseIndexRoute: KnowledgeBaseIndexRoute,
   SupportIndexRoute: SupportIndexRoute,
 };
 export const routeTree = rootRouteImport

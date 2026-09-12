@@ -32,7 +32,7 @@ export default function Navbar() {
         </RouterLink>
         {isAdmin ? (
           <>
-            <NavLink to="/knowledge" icon={FaBook}>
+            <NavLink to="/knowledge-base" icon={FaBook}>
               База знаний
             </NavLink>
             <NavLink to="/history" icon={FaClockRotateLeft}>
@@ -47,7 +47,7 @@ export default function Navbar() {
             <NavLink to="/support" icon={FaHeadset}>
               Поддержка
             </NavLink>
-            <NavLink to="/knowledge" icon={FaBook}>
+            <NavLink to="/knowledge-base" icon={FaBook}>
               База знаний
             </NavLink>
           </>

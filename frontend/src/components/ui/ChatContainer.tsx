@@ -1,9 +1,9 @@
 import { Fragment, useState, type FormEvent } from 'react'
-import Button from '@/components/ui/Button'
 import ChatDateDivider from '@/components/ui/ChatDateDivider'
 import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
 import ChatRedirectDivider from '@/components/ui/ChatRedirectDivider'
+import { useFileAttachments } from '@/hooks/useFileAttachments'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
@@ -19,11 +19,14 @@ interface ChatContainerProps {
 export default function ChatContainer({ messages, onSend, disabled = false, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const trimmed = text.trim()
+  const { attachments, addFiles, removeFile, clearFiles } = useFileAttachments()
 
   const submit = () => {
     if (!trimmed || disabled) return
     onSend?.(trimmed)
     setText('')
+    // Attachments are local-only for now; dropped once the message is sent.
+    clearFiles()
   }
 
   // Also allow submitting via the "Отправить" button (native form submit).
@@ -58,7 +61,7 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="flex items-end gap-2">
+      <form onSubmit={handleSubmit}>
         <ChatInput
           value={text}
           onChange={setText}
@@ -66,11 +69,9 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
           placeholder={disabled ? 'Ожидайте ответа...' : 'Введите сообщение... (Shift+Enter — новая строка)'}
           disabled={disabled}
           aria-label="Сообщение"
-          action={
-            <Button type="submit" variant="primary" size="sm" disabled={disabled || !trimmed} className="h-9">
-              Отправить
-            </Button>
-          }
+          attachments={attachments}
+          onFilesAdded={addFiles}
+          onRemoveAttachment={removeFile}
         />
       </form>
     </div>
