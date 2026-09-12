@@ -56,6 +56,20 @@ class RecipientOut(Schema):
     operator: ActorOut | None = None
 
 
+class RatingIn(Schema):
+    stars: int = Field(strict=True, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class RatingOut(RatingIn):
+    id: UUID
+    chat_id: str
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    message_id: str | None = None
+
+
 class ChatOut(Schema):
     id: str
     title: str = "Новый чат"
@@ -71,6 +85,7 @@ class ChatOut(Schema):
     closed_at: datetime | None
     close_reason: CloseReason | None
     moderation_reason: str | None
+    rating: RatingOut | None = None
 
 
 class ChatPage(Schema):
@@ -83,19 +98,6 @@ class ChatPage(Schema):
 class MessageIn(Schema):
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
     client_message_id: UUID
-
-
-class RatingIn(Schema):
-    stars: int = Field(strict=True, ge=1, le=5)
-    comment: str | None = Field(default=None, max_length=2000)
-
-
-class RatingOut(RatingIn):
-    id: UUID
-    message_id: str
-    user_id: UUID
-    created_at: datetime
-    updated_at: datetime
 
 
 class MessageOut(Schema):
@@ -135,12 +137,12 @@ class CloseIn(Schema):
 
 
 class AdminRatingOut(RatingOut):
-    chat_id: str
     sender_type: SenderType
     sender_id: UUID | None = None
     sender_name: str
     support_line_id: int | None = None
-    message_text: str
+    chat_title: str = ""
+    message_text: str = ""
 
 
 class RatingPage(Schema):
@@ -148,4 +150,3 @@ class RatingPage(Schema):
     total: int
     offset: int
     limit: int
-

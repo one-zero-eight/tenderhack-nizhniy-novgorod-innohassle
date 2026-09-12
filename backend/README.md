@@ -49,7 +49,8 @@ The backend works in tandem with the neighboring ML service (`ml/`), which provi
    - Standard JSON clients continue to receive the complete `SendResult` payload synchronously.
 
 4. **Decoupled Ratings & Performance**:
-   - Customer feedback (`Rating`) stores denormalized sender and line metadata (`sender_type`, `sender_id`, `support_line_id`, `message_text`).
+   - Customer feedback (`Rating`) relates directly to the chat (`chat_id`), storing denormalized handler and line metadata (`sender_type`, `sender_id`, `support_line_id`, `chat_title`).
+   - Each chat record (`ChatOut`) includes its current rating (`rating: RatingOut | None`).
    - Reporting queries and administrative statistics run without expensive `JOIN` operations against message history.
 
 ---
@@ -270,15 +271,15 @@ sequenceDiagram
     User->>Backend: POST /chats/{id}/close {"reason": "resolved"}
     Backend-->>User: 200 OK {status: "closed", close_reason: "resolved"}
 
-    User->>Backend: PUT /messages/{message_id}/rating {"stars": 5, "comment": "Очень помогло!"}
-    Backend->>Backend: Verify message_id is an AI or Operator reply & user is chat owner
-    Backend->>DB: Upsert Rating row with denormalized sender & line info
-    Backend-->>User: 200 OK {id: "rating-uuid", stars: 5, comment: "..."}
+    User->>Backend: PUT /chats/{chat_id}/rating {"stars": 5, "comment": "Очень помогло!"}
+    Backend->>Backend: Verify user is chat owner
+    Backend->>DB: Upsert Rating row for chat with handler attribution & line info
+    Backend-->>User: 200 OK {id: "rating-uuid", chat_id: "...", stars: 5, comment: "..."}
 ```
 
-- Users can rate any delivered AI reply or operator response.
-- Rating attempts on user's own prompt messages are rejected with `422 Unprocessable Entity` (`MESSAGE_NOT_RATEABLE`).
-- Ratings are idempotent; sending updated stars or comments overwrites the existing rating record.
+- Users can rate their chat session anytime (e.g., after resolution or while reading answers).
+- Ratings are associated with the entire chat rather than individual messages.
+- Ratings are idempotent; sending updated stars or comments overwrites the existing rating record for the chat.
 
 ---
 
@@ -362,15 +363,16 @@ sequenceDiagram
 
 ---
 
-### Ratings & Feedback (`/messages`)
+### Ratings & Feedback (`/chats` / `/messages`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `PUT` | `/messages/{message_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | Submit or update star rating (1–5) and comment for an assistant/operator reply. |
+| `PUT` | `/chats/{chat_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | Submit or update star rating (1–5) and comment for a chat session. |
+| `PUT` | `/messages/{message_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | *(Compatibility alias)* Rate the chat corresponding to the given message. |
 
 #### Rating Payload
 ```json
-// PUT /messages/{message_id}/rating
+// PUT /chats/{chat_id}/rating
 {
   "stars": 5,                     // 1 to 5
   "comment": "Отличный и быстрый ответ!" // optional, max 2000 chars

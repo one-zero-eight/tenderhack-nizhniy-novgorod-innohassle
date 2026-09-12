@@ -84,7 +84,10 @@ async def support_lines(session: AsyncSession) -> list[SupportLineOut]:
     return [SupportLineOut.model_validate(row) for row in rows]
 
 
-async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
+_UNSET = object()
+
+
+async def chat_view(session: AsyncSession, chat: Chat, rating: Rating | None | object = _UNSET) -> ChatOut:
     line = await session.get(SupportLine, chat.support_line_id) if chat.support_line_id else None
     operator = await session.get(User, chat.operator_id) if chat.operator_id else None
     line_out = SupportLineOut.model_validate(line) if line else None
@@ -99,6 +102,13 @@ async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
         )
     else:
         recipient = RecipientOut(kind="ai", display_name="ИИ-помощник")
+
+    if rating is _UNSET:
+        rating_obj = await session.scalar(select(Rating).where(Rating.chat_id == chat.id))
+    else:
+        rating_obj = rating
+    rating_out = RatingOut.model_validate(rating_obj) if rating_obj else None
+
     return ChatOut(
         id=chat.id,
         title=chat.title,
@@ -114,18 +124,22 @@ async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
         closed_at=chat.closed_at,
         close_reason=chat.close_reason,
         moderation_reason=chat.moderation_reason,
+        rating=rating_out,
     )
+
+
+async def chat_views(session: AsyncSession, chats: list[Chat]) -> list[ChatOut]:
+    if not chats:
+        return []
+    ratings = list(await session.scalars(select(Rating).where(Rating.chat_id.in_([c.id for c in chats]))))
+    by_chat = {r.chat_id: r for r in ratings}
+    return [await chat_view(session, c, rating=by_chat.get(c.id)) for c in chats]
 
 
 async def message_views(session: AsyncSession, messages: list[Message]) -> list[MessageOut]:
     if not messages:
         return []
-    ratings = await session.scalars(select(Rating).where(Rating.message_id.in_([message.id for message in messages])))
-    by_message = {rating.message_id: RatingOut.model_validate(rating) for rating in ratings}
-    return [
-        MessageOut.model_validate(message).model_copy(update={"rating": by_message.get(message.id)})
-        for message in messages
-    ]
+    return [MessageOut.model_validate(message) for message in messages]
 
 
 async def submission_messages(session: AsyncSession, message: Message) -> list[MessageOut]:

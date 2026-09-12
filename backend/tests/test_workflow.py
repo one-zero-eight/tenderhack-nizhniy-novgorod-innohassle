@@ -75,15 +75,27 @@ async def test_answer_idempotency_ratings_and_stats(case):
     assert repeated.json()["messages"] == messages
     assert any("/ml-api/chat" in call[0] for call in case.ai.calls)
     assert (await case.send(chat, "Changed text", client_id=client_id)).status_code == 409
-    assert (await case.request("PUT", f"/messages/{messages[0]['id']}/rating", json={"stars": 5})).status_code == 422
     reply = messages[1]["id"]
-    assert (await case.request("PUT", f"/messages/{reply}/rating", login="user2", json={"stars": 5})).status_code == 404
+    assert (await case.request("PUT", f"/chats/{chat}/rating", login="user2", json={"stars": 5})).status_code == 404
     for stars in [0, 6, True, "5"]:
-        assert (await case.request("PUT", f"/messages/{reply}/rating", json={"stars": stars})).status_code == 422
+        assert (await case.request("PUT", f"/chats/{chat}/rating", json={"stars": stars})).status_code == 422
     assert (await case.request("POST", f"/chats/{chat}/close", json={"reason": "resolved"})).status_code == 200
-    first = await case.request("PUT", f"/messages/{reply}/rating", json={"stars": 5, "comment": "Good"})
-    updated = await case.request("PUT", f"/messages/{reply}/rating", json={"stars": 2, "comment": "Needs detail"})
+    first = await case.request("PUT", f"/chats/{chat}/rating", json={"stars": 5, "comment": "Good"})
+    assert first.status_code == 200
+    assert first.json()["chat_id"] == chat
+    updated = await case.request("PUT", f"/chats/{chat}/rating", json={"stars": 2, "comment": "Needs detail"})
     assert first.json()["id"] == updated.json()["id"]
+    assert updated.json()["stars"] == 2
+
+    # Check chat detail and list include rating
+    chat_detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert chat_detail["rating"]["stars"] == 2
+    assert chat_detail["rating"]["comment"] == "Needs detail"
+    assert chat_detail["rating"]["chat_id"] == chat
+
+    chats_list = (await case.request("GET", "/chats")).json()
+    assert chats_list["items"][0]["rating"]["stars"] == 2
+
     stats = (await case.request("GET", "/admin/stats", login="admin")).json()
     assert stats["chats"]["total"] == 1
     assert stats["chats"]["by_close_reason"] == {"resolved": 1}
@@ -100,7 +112,6 @@ async def test_answer_idempotency_ratings_and_stats(case):
     ).json()
     assert first_page["has_more"] is True
     assert second_page["items"][0]["id"] == reply
-    assert second_page["items"][0]["rating"]["stars"] == 2
     assert (await case.send(chat, "After closure")).status_code == 409
 
 
@@ -303,8 +314,7 @@ async def test_routing_outage_and_human_rating_attribution(case, caplog):
     assert "AI service unavailable for chat" in caplog.text
     await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 2})
     await case.request("POST", f"/operator/chats/{chat}/claim", login="operator2")
-    response = await case.send(chat, "Human reply", login="operator2")
-    message_id = response.json()["messages"][0]["id"]
+    await case.send(chat, "Human reply", login="operator2")
     assert (
         await case.request("POST", f"/chats/{chat}/close", login="operator2", json={"reason": "user_cancelled"})
     ).status_code == 403
@@ -312,7 +322,7 @@ async def test_routing_outage_and_human_rating_attribution(case, caplog):
         await case.request("POST", f"/chats/{chat}/close", login="operator2", json={"reason": "resolved"})
     ).status_code == 200
     ratings = await asyncio.gather(
-        *[case.request("PUT", f"/messages/{message_id}/rating", json={"stars": score}) for score in (4, 5)]
+        *[case.request("PUT", f"/chats/{chat}/rating", json={"stars": score}) for score in (4, 5)]
     )
     assert all(rating.status_code == 200 for rating in ratings)
     assert ratings[0].json()["id"] == ratings[1].json()["id"]
@@ -330,11 +340,10 @@ async def test_routing_outage_and_human_rating_attribution(case, caplog):
 
 
 async def test_admin_exact_star_filter(case):
-    chat = await case.chat()
     for stars in (1, 2, 5):
-        response = await case.send(chat)
-        reply = response.json()["messages"][1]["id"]
-        await case.request("PUT", f"/messages/{reply}/rating", json={"stars": stars})
+        chat = await case.chat()
+        await case.send(chat)
+        await case.request("PUT", f"/chats/{chat}/rating", json={"stars": stars})
     exact = await case.request("GET", "/admin/ratings?stars=2", login="admin")
     assert exact.status_code == 200
     assert exact.json()["total"] == 1

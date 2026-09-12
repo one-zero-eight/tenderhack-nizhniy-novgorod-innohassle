@@ -133,13 +133,12 @@ class Message(Base):
 class Rating(Base):
     __tablename__ = "ratings"
     __table_args__ = (
-        UniqueConstraint("message_id", "user_id", name="uq_ratings_message_user"),
+        UniqueConstraint("chat_id", name="uq_ratings_chat"),
         CheckConstraint("stars BETWEEN 1 AND 5", name="stars_range"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    message_id: Mapped[str] = mapped_column(String(64), index=True)
-    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"), index=True)
+    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"), unique=True, index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     stars: Mapped[int]
     comment: Mapped[str | None] = mapped_column(String(2000))
@@ -147,6 +146,8 @@ class Rating(Base):
     sender_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     sender_name: Mapped[str] = mapped_column(String(100), default="ИИ-помощник")
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
+    chat_title: Mapped[str] = mapped_column(String(200), default="")
+    message_id: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     message_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
