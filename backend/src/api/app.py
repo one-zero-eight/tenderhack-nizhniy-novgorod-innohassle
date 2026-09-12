@@ -8,6 +8,7 @@ from src.api.lifespan import lifespan
 from src.api.repositories.admin import router as admin_router
 from src.api.repositories.auth import router as auth_router
 from src.api.repositories.chats import router as chats_router
+from src.api.repositories.handrules import router as handrules_router
 from src.api.repositories.knowledge_base import router as kb_router
 from src.api.repositories.manul import router as manul_router
 from src.api.repositories.ml_assets import router as ml_assets_router
@@ -40,6 +41,7 @@ def create_app(settings: ApiSettings) -> FastAPI:
         ml_assets_router,
         kb_router,
         manul_router,
+        handrules_router,
     ):
         app.include_router(router)
     app.add_middleware(

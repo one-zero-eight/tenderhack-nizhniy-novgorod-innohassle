@@ -38,6 +38,7 @@ class FakeAI:
         self.chats: dict[str, dict] = {}
         self.chat_files: dict[str, list[dict]] = {}
         self.attachments: dict[str, dict] = {}
+        self.handrules: dict[str, dict] = {}
 
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         endpoint = request.url.path
@@ -245,6 +246,62 @@ class FakeAI:
             )
         if endpoint.startswith("/ml-api/knowledge-base/not-found"):
             return httpx.Response(404, json={"detail": "Not found"})
+
+        if request.method == "GET" and endpoint == "/ml-api/handrules":
+            limit = int(request.url.params.get("limit", 100))
+            rules = list(self.handrules.values())
+            rules.reverse()
+            return httpx.Response(200, json=rules[:limit])
+
+        if request.method == "POST" and endpoint == "/ml-api/handrules":
+            rule_id = f"rule-{len(self.handrules) + 1}"
+            now = "2026-09-12T00:00:00Z"
+            record = {
+                "id": rule_id,
+                "user_message": body.get("user_message", ""),
+                "instructions": body.get("instructions", ""),
+                "created_at": now,
+                "updated_at": now,
+            }
+            self.handrules[rule_id] = record
+            return httpx.Response(201, json=record)
+
+        if request.method == "GET" and endpoint == "/ml-api/handrules/search":
+            q = request.url.params.get("q", "").lower()
+            k = int(request.url.params.get("k", 3))
+            matches = [
+                r for r in self.handrules.values()
+                if any(w in r["user_message"].lower() for w in q.split())
+            ]
+            if not matches:
+                matches = list(self.handrules.values())
+            return httpx.Response(200, json=matches[:k])
+
+        if request.method == "GET" and endpoint.startswith("/ml-api/handrules/"):
+            rule_id = endpoint.split("/")[-1]
+            if rule_id in self.handrules:
+                return httpx.Response(200, json=self.handrules[rule_id])
+            return httpx.Response(404, json={"detail": "Правило не найдено"})
+
+        if request.method == "PATCH" and endpoint.startswith("/ml-api/handrules/"):
+            rule_id = endpoint.split("/")[-1]
+            if rule_id not in self.handrules:
+                return httpx.Response(404, json={"detail": "Правило не найдено"})
+            rule = self.handrules[rule_id]
+            if "user_message" in body and body["user_message"] is not None:
+                rule["user_message"] = body["user_message"]
+            if "instructions" in body and body["instructions"] is not None:
+                rule["instructions"] = body["instructions"]
+            rule["updated_at"] = "2026-09-12T00:00:01Z"
+            return httpx.Response(200, json=rule)
+
+        if request.method == "DELETE" and endpoint.startswith("/ml-api/handrules/"):
+            rule_id = endpoint.split("/")[-1]
+            if rule_id not in self.handrules:
+                return httpx.Response(404, json={"detail": "Правило не найдено"})
+            self.handrules.pop(rule_id)
+            return httpx.Response(204)
+
         raise AssertionError(f"Unexpected AI endpoint {endpoint}")
 
 

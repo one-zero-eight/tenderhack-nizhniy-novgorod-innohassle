@@ -270,3 +270,79 @@ async def get_manual_section(slug: str, section_id: str):
         "parent": "root",
         "manual": {"slug": slug, "title": "Инструкция по созданию оферты и СТЕ"},
     }
+
+
+_HANDRULES: dict[str, dict] = {}
+
+
+class HandRuleInPayload(BaseModel):
+    user_message: str = Field(min_length=1, max_length=4000)
+    instructions: str = Field(min_length=1, max_length=4000)
+
+
+class HandRulePatchPayload(BaseModel):
+    user_message: str | None = Field(default=None, min_length=1, max_length=4000)
+    instructions: str | None = Field(default=None, min_length=1, max_length=4000)
+
+
+@app.get("/ml-api/handrules")
+async def list_handrules_stub(limit: int = 100):
+    rules = list(_HANDRULES.values())
+    rules.reverse()
+    return rules[:limit]
+
+
+@app.post("/ml-api/handrules", status_code=201)
+async def create_handrule_stub(payload: HandRuleInPayload):
+    rule_id = f"rule-{uuid4().hex[:8]}"
+    now = datetime.now(UTC).isoformat()
+    record = {
+        "id": rule_id,
+        "user_message": payload.user_message,
+        "instructions": payload.instructions,
+        "created_at": now,
+        "updated_at": now,
+    }
+    _HANDRULES[rule_id] = record
+    return record
+
+
+@app.get("/ml-api/handrules/search")
+async def search_handrules_stub(q: str, k: int = 3):
+    matches = []
+    q_lower = q.lower()
+    for rule in _HANDRULES.values():
+        if any(word in rule["user_message"].lower() for word in q_lower.split()):
+            matches.append(rule)
+    if not matches:
+        matches = list(_HANDRULES.values())
+    return matches[:k]
+
+
+@app.get("/ml-api/handrules/{rule_id}")
+async def get_handrule_stub(rule_id: str):
+    if rule_id not in _HANDRULES:
+        raise HTTPException(404, "Правило не найдено")
+    return _HANDRULES[rule_id]
+
+
+@app.patch("/ml-api/handrules/{rule_id}")
+async def update_handrule_stub(rule_id: str, payload: HandRulePatchPayload):
+    if rule_id not in _HANDRULES:
+        raise HTTPException(404, "Правило не найдено")
+    rule = _HANDRULES[rule_id]
+    if payload.user_message is not None:
+        rule["user_message"] = payload.user_message
+    if payload.instructions is not None:
+        rule["instructions"] = payload.instructions
+    rule["updated_at"] = datetime.now(UTC).isoformat()
+    return rule
+
+
+@app.delete("/ml-api/handrules/{rule_id}", status_code=204)
+async def delete_handrule_stub(rule_id: str):
+    if rule_id not in _HANDRULES:
+        raise HTTPException(404, "Правило не найдено")
+    _HANDRULES.pop(rule_id)
+    return Response(status_code=204)
+
