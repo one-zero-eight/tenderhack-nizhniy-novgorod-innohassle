@@ -124,6 +124,8 @@ async def chat_view(session: AsyncSession, chat: Chat, rating: Rating | None | o
         closed_at=chat.closed_at,
         close_reason=chat.close_reason,
         moderation_reason=chat.moderation_reason,
+        topic=chat.topic,
+        subtopic=chat.subtopic,
         rating=rating_out,
     )
 

@@ -10,9 +10,17 @@ router = APIRouter(prefix="/operator/chats", tags=["operators"])
 
 @router.get("", response_model=ChatPage)
 async def operator_chats(
-    user: CurrentUser, service: Chats, status: ChatStatus | None = None, offset: Offset = 0, limit: Limit = 50
+    user: CurrentUser,
+    service: Chats,
+    status: ChatStatus | None = None,
+    topic: str | None = None,
+    subtopic: str | None = None,
+    offset: Offset = 0,
+    limit: Limit = 50,
 ) -> ChatPage:
-    return await service.list_chats(user, scope="operator", status=status, offset=offset, limit=limit)
+    return await service.list_chats(
+        user, scope="operator", status=status, topic=topic, subtopic=subtopic, offset=offset, limit=limit
+    )
 
 
 @router.post("/{chat_id}/claim", response_model=ChatOut)

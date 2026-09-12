@@ -105,6 +105,8 @@ class Chat(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     close_reason: Mapped[CloseReason | None] = mapped_column(enum_type(CloseReason))
     moderation_reason: Mapped[str | None] = mapped_column(String(40))
+    topic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    subtopic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
 
 class Message(Base):

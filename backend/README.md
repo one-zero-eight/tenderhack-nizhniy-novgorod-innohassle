@@ -333,7 +333,7 @@ sequenceDiagram
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `POST` | `/chats` | `user` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
-| `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `offset`, `limit`). |
+| `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `topic`, `subtopic`, `offset`, `limit`). |
 | `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Operator | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
 | `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Operator | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
 | `POST` | `/chats/{chat_id}/messages` | Owner / Assigned Operator | `MessageIn` | `SendResult` or SSE Stream | Send message. Emits SSE if `Accept: text/event-stream`, else JSON. |

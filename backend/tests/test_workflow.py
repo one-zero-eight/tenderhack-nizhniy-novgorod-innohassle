@@ -392,3 +392,96 @@ async def test_knowledge_base_proxy_endpoints(case):
 
     res_404 = await case.client.get("/ml-api/knowledge-base/not-found")
     assert res_404.status_code == 404
+
+
+async def test_chat_rating_returned_in_all_endpoints(case):
+    chat = await case.chat()
+    # 1. New chat has no rating
+    detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert detail["rating"] is None
+
+    # 2. Rate chat
+    rate_res = await case.request("PUT", f"/chats/{chat}/rating", json={"stars": 5, "comment": "Отличный ответ"})
+    assert rate_res.status_code == 200
+    assert rate_res.json()["stars"] == 5
+    assert rate_res.json()["sender_type"] == "ai"
+
+    # 3. GET /chats/{chat_id} returns rating
+    detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert detail["rating"]["stars"] == 5
+    assert detail["rating"]["comment"] == "Отличный ответ"
+    assert detail["rating"]["sender_type"] == "ai"
+
+    # 4. GET /chats returns rating
+    chats_list = (await case.request("GET", "/chats")).json()
+    assert chats_list["items"][0]["rating"]["stars"] == 5
+
+    # 5. POST /chats/{chat_id}/request-operator returns rating
+    req_op = (await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 1})).json()
+    assert req_op["status"] == "waiting_operator"
+    assert req_op["rating"]["stars"] == 5
+
+    # 6. GET /operator/chats returns rating
+    op_chats = (await case.request("GET", "/operator/chats", login="operator1")).json()
+    assert op_chats["items"][0]["rating"]["stars"] == 5
+
+    # 7. POST /operator/chats/{chat_id}/claim returns rating
+    claimed = (await case.request("POST", f"/operator/chats/{chat}/claim", login="operator1")).json()
+    assert claimed["status"] == "operator"
+    assert claimed["rating"]["stars"] == 5
+
+    # Re-rate chat with operator attribution
+    re_rate = await case.request("PUT", f"/chats/{chat}/rating", json={"stars": 4, "comment": "Оператор помог"})
+    assert re_rate.status_code == 200
+    assert re_rate.json()["stars"] == 4
+    assert re_rate.json()["sender_type"] == "operator"
+
+    # 8. POST /chats/{chat_id}/close returns rating
+    closed = (await case.request("POST", f"/chats/{chat}/close", json={"reason": "resolved"})).json()
+    assert closed["status"] == "closed"
+    assert closed["rating"]["stars"] == 4
+    assert closed["rating"]["comment"] == "Оператор помог"
+    assert closed["rating"]["sender_type"] == "operator"
+
+    # 9. GET /admin/chats returns rating
+    admin_chats = (await case.request("GET", "/admin/chats", login="admin")).json()
+    assert admin_chats["items"][0]["rating"]["stars"] == 4
+
+
+async def test_chat_topic_and_subtopic_sync_and_filtering(case):
+    chat = await case.chat()
+    # 1. Initial chat has None for topic and subtopic
+    detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert detail["topic"] is None
+    assert detail["subtopic"] is None
+
+    # 2. Simulate ML classifier assigning topic and subtopic
+    case.ai.chats[chat]["topic"] = "Закупки и котировочные сессии"
+    case.ai.chats[chat]["subtopic"] = "Создание оферты"
+
+    # 3. GET /chats/{chat} syncs and returns topic and subtopic
+    synced = (await case.request("GET", f"/chats/{chat}")).json()
+    assert synced["topic"] == "Закупки и котировочные сессии"
+    assert synced["subtopic"] == "Создание оферты"
+
+    # 4. GET /chats returns topic and subtopic
+    chat_list = (await case.request("GET", "/chats")).json()
+    assert chat_list["items"][0]["topic"] == "Закупки и котировочные сессии"
+    assert chat_list["items"][0]["subtopic"] == "Создание оферты"
+
+    # 5. Filter GET /chats by topic and subtopic
+    matched = (await case.request("GET", "/chats?topic=Закупки и котировочные сессии")).json()
+    assert matched["total"] == 1
+    unmatched = (await case.request("GET", "/chats?topic=Другое")).json()
+    assert unmatched["total"] == 0
+
+    sub_matched = (await case.request("GET", "/chats?subtopic=Создание оферты")).json()
+    assert sub_matched["total"] == 1
+    sub_unmatched = (await case.request("GET", "/chats?subtopic=Прочее")).json()
+    assert sub_unmatched["total"] == 0
+
+    # 6. Filter GET /admin/chats by topic
+    admin_matched = (await case.request("GET", "/admin/chats?topic=Закупки и котировочные сессии", login="admin")).json()
+    assert admin_matched["total"] == 1
+    admin_unmatched = (await case.request("GET", "/admin/chats?topic=Другое", login="admin")).json()
+    assert admin_unmatched["total"] == 0

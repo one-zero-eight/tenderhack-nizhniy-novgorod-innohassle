@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/ml-assets", tags=["assets"])

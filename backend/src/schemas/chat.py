@@ -69,6 +69,10 @@ class RatingOut(RatingIn):
     user_id: UUID
     created_at: datetime
     updated_at: datetime
+    sender_type: SenderType | None = None
+    sender_id: UUID | None = None
+    sender_name: str | None = None
+    support_line_id: int | None = None
 
 
 class ChatOut(Schema):
@@ -86,6 +90,8 @@ class ChatOut(Schema):
     closed_at: datetime | None
     close_reason: CloseReason | None
     moderation_reason: str | None
+    topic: str | None = None
+    subtopic: str | None = None
     rating: RatingOut | None = None
 
 

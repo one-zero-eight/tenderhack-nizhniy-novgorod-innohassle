@@ -53,12 +53,14 @@ class FakeAI:
                 "system_prompt": body.get("system_prompt") if body else None,
                 "redirect_line": None,
                 "redirect_reason": None,
+                "topic": None,
+                "subtopic": None,
                 "closed_at": None,
                 "created_at": "2026-09-12T00:00:00Z",
                 "updated_at": "2026-09-12T00:00:00Z",
                 "messages": [],
             }
-            return httpx.Response(201, json={"id": chat_id, "title": "Новый чат"})
+            return httpx.Response(201, json={"id": chat_id, "title": "Новый чат", "topic": None, "subtopic": None})
         if "/ml-api/chat/" in endpoint and endpoint.endswith("/message"):
             if self.answer_mode == "error":
                 return httpx.Response(503)

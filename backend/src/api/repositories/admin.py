@@ -28,6 +28,8 @@ async def chats(
     line_id: LineId = None,
     operator_id: UUID | None = None,
     user_id: UUID | None = None,
+    topic: str | None = None,
+    subtopic: str | None = None,
     offset: Offset = 0,
     limit: Limit = 50,
 ) -> ChatPage:
@@ -40,6 +42,8 @@ async def chats(
         line_id=line_id,
         operator_id=operator_id,
         user_id=user_id,
+        topic=topic,
+        subtopic=subtopic,
         since=since,
         until=until,
         offset=offset,

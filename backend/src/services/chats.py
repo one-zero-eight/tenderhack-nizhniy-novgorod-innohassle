@@ -67,6 +67,16 @@ def _extract_citations(tools: list[dict]) -> list[dict]:
     return citations
 
 
+def _sync_ml_metadata(chat: Chat, ml_data: dict) -> None:
+    new_title = ml_data.get("title")
+    if chat.title == "Новый чат" and new_title and new_title != "Новый чат":
+        chat.title = new_title
+    if ml_data.get("topic") is not None:
+        chat.topic = ml_data.get("topic")
+    if ml_data.get("subtopic") is not None:
+        chat.subtopic = ml_data.get("subtopic")
+
+
 class ChatService:
     # Client submission cache for idempotency: (chat_id, client_message_id) -> SendResult
     _submissions: dict[tuple[str, UUID], SendResult] = {}
@@ -101,12 +111,10 @@ class ChatService:
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
             # Sync title from ML service if it was updated from default
-            if chat.title == "Новый чат":
+            if chat.title == "Новый чат" or chat.topic is None or chat.subtopic is None:
                 try:
                     ml_data = await self.ai.get_chat(chat_id)
-                    new_title = ml_data.get("title")
-                    if new_title and new_title != "Новый чат":
-                        chat.title = new_title
+                    _sync_ml_metadata(chat, ml_data)
                 except Exception:
                     pass
             return await chat_view(session, chat)
@@ -122,6 +130,8 @@ class ChatService:
         line_id: int | None = None,
         operator_id: UUID | None = None,
         user_id: UUID | None = None,
+        topic: str | None = None,
+        subtopic: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> ChatPage:
@@ -147,6 +157,10 @@ class ChatService:
             filters.append(Chat.operator_id == operator_id)
         if user_id is not None:
             filters.append(Chat.user_id == user_id)
+        if topic is not None:
+            filters.append(Chat.topic == topic)
+        if subtopic is not None:
+            filters.append(Chat.subtopic == subtopic)
         if since is not None:
             filters.append(Chat.created_at >= since)
         if until is not None:
@@ -177,6 +191,7 @@ class ChatService:
             ai_messages: list[MessageOut] = []
             try:
                 ml_data = await self.ai.get_chat(chat_id)
+                _sync_ml_metadata(chat, ml_data)
                 for idx, m in enumerate(ml_data.get("messages", [])):
                     role = m.get("role", "user")
                     tools = m.get("tools", [])
@@ -315,14 +330,11 @@ class ChatService:
                     chat = await load_chat(session, chat_id, lock=True)
                     chat.ai_messages_count += 1
                     chat.updated_at = utcnow()
-                    if chat.title == "Новый чат":
-                        try:
-                            ml_data = await self.ai.get_chat(chat_id)
-                            new_title = ml_data.get("title")
-                            if new_title and new_title != "Новый чат":
-                                chat.title = new_title
-                        except Exception:
-                            pass
+                    try:
+                        ml_data = await self.ai.get_chat(chat_id)
+                        _sync_ml_metadata(chat, ml_data)
+                    except Exception:
+                        pass
             raw_data = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
             yield f"event: {event}\ndata: {raw_data}\n\n"
 
@@ -414,9 +426,7 @@ class ChatService:
                     user_msg_id = f"user-{payload.client_message_id.hex[:12]}"
                     try:
                         ml_data = await self.ai.get_chat(chat_id)
-                        new_title = ml_data.get("title")
-                        if chat.title == "Новый чат" and new_title and new_title != "Новый чат":
-                            chat.title = new_title
+                        _sync_ml_metadata(chat, ml_data)
                         msgs = ml_data.get("messages", [])
                         if len(msgs) >= 2:
                             user_msg_id = msgs[-2]["id"]
@@ -597,4 +607,3 @@ class ChatService:
                 rating.updated_at = utcnow()
             await session.flush()
             return RatingOut.model_validate(rating)
-

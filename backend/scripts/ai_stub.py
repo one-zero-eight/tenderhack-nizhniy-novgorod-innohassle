@@ -54,6 +54,8 @@ async def create_chat(payload: ChatIn | None = None):
         "system_prompt": payload.system_prompt if payload else None,
         "redirect_line": None,
         "redirect_reason": None,
+        "topic": None,
+        "subtopic": None,
         "closed_at": None,
         "created_at": now,
         "updated_at": now,
