@@ -24,6 +24,7 @@ services:
       API_SETTINGS__DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/postgres
       API_SETTINGS__APP_ROOT_PATH: "/api"
       API_SETTINGS__CORS_ALLOW_ORIGIN_REGEX: ".*"
+      API_SETTINGS__JWT_SECRET: "12345678901234567890123456789012"
     networks:
       - app_network
 
