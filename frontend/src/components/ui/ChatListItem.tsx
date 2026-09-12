@@ -17,24 +17,36 @@ export default function ChatListItem({ chat, isActive = false, onClick, classNam
       onClick={() => onClick?.(chat)}
       aria-current={isActive ? 'true' : undefined}
       className={cn(
-        'flex w-full justify-between p-4 border border-transparent text-left transition-colors',
-        'border-b-gray-200',
+        // Single row: flexible title, then fixed-width date, rating and status.
+        'flex w-full items-center gap-6 p-4 text-left',
+        'border-gray-blue border-b transition-colors',
         isActive ? 'bg-main-blue/10' : 'hover:bg-pale-blue/60',
         className,
       )}
     >
-      <span className="text-black truncate text-sm font-medium">{chat.title}</span>
-      <div className="flex gap-4 w-[50%]">
-        <span className="flex gap-2 items-center text-gray shrink-0 text-xs">
-          <FaCalendarDays />
-          {formatDateTime(chat.createdAt)}
-        </span>
-        <span className="flex items-center justify-between gap-2">
-          <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', CHAT_STATUS_CLASSES[chat.status])}>
-            {CHAT_STATUS_LABELS[chat.status]}
-          </span>
-        </span>
-      </div>
+      <span className="text-black min-w-0 flex-1 truncate text-sm font-medium" title={chat.title}>
+        {chat.title}
+      </span>
+
+      {/* <span className="flex w-16 shrink-0 justify-end">
+        {chat.rating && <StarRating stars={chat.rating.stars} comment={chat.rating.comment} showComment={false} />}
+      </span> */}
+
+      <span className="text-gray flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap">
+        <FaCalendarDays className="size-3" />
+        {formatDateTime(chat.createdAt)}
+      </span>
+
+
+      <span
+        className={cn(
+          'w-36 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-medium whitespace-nowrap',
+          CHAT_STATUS_CLASSES[chat.status],
+        )}
+      >
+        {CHAT_STATUS_LABELS[chat.status]}
+      </span>
+
     </button>
   )
 }

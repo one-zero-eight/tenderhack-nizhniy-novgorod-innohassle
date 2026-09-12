@@ -75,6 +75,194 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Profile
+         * @description Возвращает профиль текущего пользователя.
+         *     По умолчанию роль определяется из учётной записи пользователя (поставщик/заказчик),
+         *     либо может быть явно переопределена параметром role.
+         */
+        get: operations["get_my_profile_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sample Profile
+         * @description Демонстрационный профиль без авторизации.
+         *     Демонстрирует цепочку: Компания -> Закупка -> Предложения -> Контракт -> Документы.
+         */
+        get: operations["get_sample_profile_profile_sample_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update User Role
+         * @description Переключение роли пользователя между Поставщиком (seller) и Заказчиком (buyer).
+         */
+        patch: operations["update_user_role_profile_role_patch"];
+        trace?: never;
+    };
+    "/profile/procurements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create New Procurement
+         * @description [Заказчик] Создать новую закупку.
+         *     Компания заказчика публикует закупку с начальной ценой и документацией.
+         */
+        post: operations["create_new_procurement_profile_procurements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create New Offer
+         * @description [Поставщик] Подать предложение на участие в закупке.
+         *     Поставщик предлагает свою цену и условия исполнения.
+         */
+        post: operations["create_new_offer_profile_offers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/procurements/{procurement_id}/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Offer For Procurement
+         * @description [Поставщик] Подать предложение на конкретную закупку.
+         */
+        post: operations["create_offer_for_procurement_profile_procurements__procurement_id__offers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create New Contract
+         * @description [Заказчик] Сформировать контракт из выбранного предложения победителя.
+         *     Выбранное предложение переходит в статус победителя, закупка переходит в статус 'Контракт заключён',
+         *     и формируется государственный/коммерческий контракт со сторонами и условиями.
+         */
+        post: operations["create_new_contract_profile_contracts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create New Document
+         * @description Загрузить / добавить документ к закупке, предложению, контракту или компании.
+         */
+        post: operations["create_new_document_profile_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/contracts/{contract_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Contract
+         * @description Получить детальную информацию о контракте со сторонами, предметом, стоимостью,
+         *     статусом, сроком исполнения, ответственным, этапом и документами.
+         */
+        get: operations["get_contract_profile_contracts__contract_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/support-lines": {
         parameters: {
             query?: never;
@@ -213,7 +401,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/messages/{message_id}/rating": {
+    "/chats/{chat_id}/rating": {
         parameters: {
             query?: never;
             header?: never;
@@ -221,8 +409,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Rate */
-        put: operations["rate_messages__message_id__rating_put"];
+        /** Rate Chat */
+        put: operations["rate_chat_chats__chat_id__rating_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -230,15 +418,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/operator/chats": {
+    "/support/chats": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Operator Chats */
-        get: operations["operator_chats_operator_chats_get"];
+        /** Support Chats */
+        get: operations["support_chats_support_chats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -247,7 +435,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/operator/chats/{chat_id}/claim": {
+    "/support/chats/{chat_id}/claim": {
         parameters: {
             query?: never;
             header?: never;
@@ -257,7 +445,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Claim */
-        post: operations["claim_operator_chats__chat_id__claim_post"];
+        post: operations["claim_support_chats__chat_id__claim_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -400,6 +588,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/manul": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Manul
+         * @description Return the manul image.
+         */
+        get: operations["get_manul_manul_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -425,8 +633,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Message Id */
-            message_id: string;
+            /** Chat Id */
+            chat_id: string;
             /**
              * User Id
              * Format: uuid
@@ -442,8 +650,6 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /** Chat Id */
-            chat_id: string;
             sender_type: components["schemas"]["SenderType"];
             /** Sender Id */
             sender_id?: string | null;
@@ -451,8 +657,11 @@ export interface components {
             sender_name: string;
             /** Support Line Id */
             support_line_id?: number | null;
-            /** Message Text */
-            message_text: string;
+            /**
+             * Chat Title
+             * @default
+             */
+            chat_title: string;
         };
         /** ChatOut */
         ChatOut: {
@@ -491,6 +700,11 @@ export interface components {
             close_reason: components["schemas"]["CloseReason"] | null;
             /** Moderation Reason */
             moderation_reason: string | null;
+            /** Topic */
+            topic?: string | null;
+            /** Subtopic */
+            subtopic?: string | null;
+            rating?: components["schemas"]["RatingOut"] | null;
         };
         /** ChatPage */
         ChatPage: {
@@ -522,6 +736,129 @@ export interface components {
          * @enum {string}
          */
         CloseReason: CloseReason;
+        /** CompanyProfileOut */
+        CompanyProfileOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Full Name */
+            full_name: string;
+            /** Inn */
+            inn: string;
+            /** Kpp */
+            kpp: string;
+            /** Ogrn */
+            ogrn: string;
+            /** Address */
+            address: string;
+            /** Ceo */
+            ceo: string;
+            /** Phone */
+            phone: string;
+            /** Email */
+            email: string;
+            /** Website */
+            website?: string | null;
+            role: components["schemas"]["Role"];
+            /** Role Label */
+            role_label: string;
+            /** Documents */
+            documents?: components["schemas"]["DocumentOut"][];
+        };
+        /** ContractCreateIn */
+        ContractCreateIn: {
+            /** Offer Id */
+            offer_id: string;
+            /** Title */
+            title?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Execution Period */
+            execution_period?: string | null;
+            /** Responsible Person */
+            responsible_person?: string | null;
+            /** Execution Stage */
+            execution_stage?: string | null;
+            /** Documents */
+            documents?: components["schemas"]["DocumentCreateIn"][];
+        };
+        /** ContractOut */
+        ContractOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            parties: components["schemas"]["ContractPartiesOut"];
+            /** Subject */
+            subject: string;
+            /** Price */
+            price: number;
+            /**
+             * Currency
+             * @default RUB
+             */
+            currency: string;
+            /** Status */
+            status: string;
+            /** Execution Period */
+            execution_period: string;
+            /** Responsible Person */
+            responsible_person: string;
+            /** Execution Stage */
+            execution_stage: string;
+            /** Documents */
+            documents?: components["schemas"]["DocumentOut"][];
+        };
+        /** ContractPartiesOut */
+        ContractPartiesOut: {
+            customer: components["schemas"]["PartyOut"];
+            supplier: components["schemas"]["PartyOut"];
+        };
+        /** DocumentCreateIn */
+        DocumentCreateIn: {
+            /** Title */
+            title: string;
+            /**
+             * File Type
+             * @default application/pdf
+             */
+            file_type: string;
+            /**
+             * Size Bytes
+             * @default 1024
+             */
+            size_bytes: number;
+            /**
+             * Category
+             * @default procurement
+             * @enum {string}
+             */
+            category: DocumentCreateInCategory;
+            /** Target Id */
+            target_id?: string | null;
+        };
+        /** DocumentOut */
+        DocumentOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** File Type */
+            file_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /**
+             * Category
+             * @description Категория документа: procurement, contract, offer, company
+             */
+            category: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -581,7 +918,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            rating?: components["schemas"]["RatingOut"] | null;
         };
         /** MessagePage */
         MessagePage: {
@@ -591,6 +927,142 @@ export interface components {
             next_sequence: number;
             /** Has More */
             has_more: boolean;
+        };
+        /** OfferCreateIn */
+        OfferCreateIn: {
+            /** Procurement Id */
+            procurement_id: string;
+            /** Price */
+            price: number;
+            /** Details */
+            details: string;
+            /** Documents */
+            documents?: components["schemas"]["DocumentCreateIn"][];
+        };
+        /** OfferOut */
+        OfferOut: {
+            /** Id */
+            id: string;
+            /** Procurement Id */
+            procurement_id: string;
+            /** Procurement Title */
+            procurement_title: string;
+            /** Supplier Name */
+            supplier_name: string;
+            /** Supplier Inn */
+            supplier_inn: string;
+            /** Price */
+            price: number;
+            /** Status */
+            status: string;
+            /**
+             * Is Winner
+             * @default false
+             */
+            is_winner: boolean;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Details */
+            details: string;
+            /** Documents */
+            documents?: components["schemas"]["DocumentOut"][];
+        };
+        /** PartyOut */
+        PartyOut: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: PartyOutRole;
+            /** Role Label */
+            role_label: string;
+            /** Company Name */
+            company_name: string;
+            /** Inn */
+            inn: string;
+            /** Kpp */
+            kpp: string;
+            /** Representative */
+            representative: string;
+        };
+        /** ProcurementCreateIn */
+        ProcurementCreateIn: {
+            /** Title */
+            title: string;
+            /** Initial Price */
+            initial_price: number;
+            /**
+             * Currency
+             * @default RUB
+             */
+            currency: string;
+            /** Submission Deadline */
+            submission_deadline?: string | null;
+            /** Number */
+            number?: string | null;
+            /** Documents */
+            documents?: components["schemas"]["DocumentCreateIn"][];
+        };
+        /** ProcurementOut */
+        ProcurementOut: {
+            /** Id */
+            id: string;
+            /** Number */
+            number: string;
+            /** Title */
+            title: string;
+            /** Customer Name */
+            customer_name: string;
+            /** Customer Inn */
+            customer_inn: string;
+            /** Initial Price */
+            initial_price: number;
+            /**
+             * Currency
+             * @default RUB
+             */
+            currency: string;
+            /** Status */
+            status: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Submission Deadline
+             * Format: date-time
+             */
+            submission_deadline: string;
+            /** Documents */
+            documents?: components["schemas"]["DocumentOut"][];
+            /**
+             * Offers Count
+             * @default 0
+             */
+            offers_count: number;
+        };
+        /** ProfileViewOut */
+        ProfileViewOut: {
+            /** User Id */
+            user_id: string;
+            /** Display Name */
+            display_name: string;
+            role: components["schemas"]["Role"];
+            /** Type Label */
+            type_label: string;
+            company: components["schemas"]["CompanyProfileOut"];
+            /** Procurements */
+            procurements: components["schemas"]["ProcurementOut"][];
+            /** Offers */
+            offers: components["schemas"]["OfferOut"][];
+            /** Contracts */
+            contracts: components["schemas"]["ContractOut"][];
+            /** Documents */
+            documents: components["schemas"]["DocumentOut"][];
         };
         /** RatingIn */
         RatingIn: {
@@ -610,8 +1082,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Message Id */
-            message_id: string;
+            /** Chat Id */
+            chat_id: string;
             /**
              * User Id
              * Format: uuid
@@ -627,6 +1099,13 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            sender_type?: components["schemas"]["SenderType"] | null;
+            /** Sender Id */
+            sender_id?: string | null;
+            /** Sender Name */
+            sender_name?: string | null;
+            /** Support Line Id */
+            support_line_id?: number | null;
         };
         /** RatingPage */
         RatingPage: {
@@ -659,7 +1138,7 @@ export interface components {
             password: string;
             /** Display Name */
             display_name?: string | null;
-            /** @default user */
+            /** @default buyer */
             role: components["schemas"]["Role"];
             /** Support Line Id */
             support_line_id?: number | null;
@@ -707,6 +1186,11 @@ export interface components {
             /** Expires In */
             expires_in: number;
         };
+        /** UpdateRoleIn */
+        UpdateRoleIn: {
+            /** @default buyer */
+            role: components["schemas"]["Role"];
+        };
         /** UserOut */
         UserOut: {
             /**
@@ -720,7 +1204,7 @@ export interface components {
             display_name: string;
             role: components["schemas"]["Role"];
             /** Support Line Id */
-            support_line_id: number | null;
+            support_line_id?: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -743,11 +1227,23 @@ export type SchemaAdminRatingOut = components['schemas']['AdminRatingOut'];
 export type SchemaChatOut = components['schemas']['ChatOut'];
 export type SchemaChatPage = components['schemas']['ChatPage'];
 export type SchemaCloseIn = components['schemas']['CloseIn'];
+export type SchemaCompanyProfileOut = components['schemas']['CompanyProfileOut'];
+export type SchemaContractCreateIn = components['schemas']['ContractCreateIn'];
+export type SchemaContractOut = components['schemas']['ContractOut'];
+export type SchemaContractPartiesOut = components['schemas']['ContractPartiesOut'];
+export type SchemaDocumentCreateIn = components['schemas']['DocumentCreateIn'];
+export type SchemaDocumentOut = components['schemas']['DocumentOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaLoginIn = components['schemas']['LoginIn'];
 export type SchemaMessageIn = components['schemas']['MessageIn'];
 export type SchemaMessageOut = components['schemas']['MessageOut'];
 export type SchemaMessagePage = components['schemas']['MessagePage'];
+export type SchemaOfferCreateIn = components['schemas']['OfferCreateIn'];
+export type SchemaOfferOut = components['schemas']['OfferOut'];
+export type SchemaPartyOut = components['schemas']['PartyOut'];
+export type SchemaProcurementCreateIn = components['schemas']['ProcurementCreateIn'];
+export type SchemaProcurementOut = components['schemas']['ProcurementOut'];
+export type SchemaProfileViewOut = components['schemas']['ProfileViewOut'];
 export type SchemaRatingIn = components['schemas']['RatingIn'];
 export type SchemaRatingOut = components['schemas']['RatingOut'];
 export type SchemaRatingPage = components['schemas']['RatingPage'];
@@ -757,6 +1253,7 @@ export type SchemaRequestOperatorIn = components['schemas']['RequestOperatorIn']
 export type SchemaSendResult = components['schemas']['SendResult'];
 export type SchemaSupportLineOut = components['schemas']['SupportLineOut'];
 export type SchemaTokenOut = components['schemas']['TokenOut'];
+export type SchemaUpdateRoleIn = components['schemas']['UpdateRoleIn'];
 export type SchemaUserOut = components['schemas']['UserOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
@@ -869,6 +1366,301 @@ export interface operations {
             };
         };
     };
+    get_my_profile_profile_get: {
+        parameters: {
+            query?: {
+                /** @description Переопределить роль: seller (поставщик) или buyer (заказчик) */
+                role?: components["schemas"]["Role"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileViewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_profile_profile_sample_get: {
+        parameters: {
+            query?: {
+                /** @description Роль профиля: seller (поставщик) или buyer (заказчик) */
+                role?: components["schemas"]["Role"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileViewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_role_profile_role_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileViewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_new_procurement_profile_procurements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcurementCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcurementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_new_offer_profile_offers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfferCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfferOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_offer_for_procurement_profile_procurements__procurement_id__offers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                procurement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfferCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfferOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_new_contract_profile_contracts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_new_document_profile_documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_contract_profile_contracts__contract_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_support_lines_support_lines_get: {
         parameters: {
             query?: never;
@@ -893,6 +1685,8 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["ChatStatus"] | null;
+                topic?: string | null;
+                subtopic?: string | null;
                 offset?: number;
                 limit?: number;
             };
@@ -1182,12 +1976,12 @@ export interface operations {
             };
         };
     };
-    rate_messages__message_id__rating_put: {
+    rate_chat_chats__chat_id__rating_put: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                message_id: string;
+                chat_id: string;
             };
             cookie?: never;
         };
@@ -1217,10 +2011,12 @@ export interface operations {
             };
         };
     };
-    operator_chats_operator_chats_get: {
+    support_chats_support_chats_get: {
         parameters: {
             query?: {
                 status?: components["schemas"]["ChatStatus"] | null;
+                topic?: string | null;
+                subtopic?: string | null;
                 offset?: number;
                 limit?: number;
             };
@@ -1250,7 +2046,7 @@ export interface operations {
             };
         };
     };
-    claim_operator_chats__chat_id__claim_post: {
+    claim_support_chats__chat_id__claim_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1290,6 +2086,8 @@ export interface operations {
                 line_id?: number | null;
                 operator_id?: string | null;
                 user_id?: string | null;
+                topic?: string | null;
+                subtopic?: string | null;
                 offset?: number;
                 limit?: number;
             };
@@ -1529,6 +2327,24 @@ export interface operations {
             };
         };
     };
+    get_manul_manul_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
 }
 export enum ChatStatus {
     ai = "ai",
@@ -1545,6 +2361,16 @@ export enum CloseReason {
     user_cancelled = "user_cancelled",
     moderation = "moderation"
 }
+export enum DocumentCreateInCategory {
+    procurement = "procurement",
+    contract = "contract",
+    offer = "offer",
+    company = "company"
+}
+export enum PartyOutRole {
+    customer = "customer",
+    supplier = "supplier"
+}
 export enum RecipientOutKind {
     ai = "ai",
     support_queue = "support_queue",
@@ -1552,13 +2378,15 @@ export enum RecipientOutKind {
     none = "none"
 }
 export enum Role {
-    user = "user",
-    operator = "operator",
+    seller = "seller",
+    buyer = "buyer",
+    support = "support",
     admin = "admin"
 }
 export enum SenderType {
     user = "user",
     ai = "ai",
     operator = "operator",
+    support = "support",
     system = "system"
 }

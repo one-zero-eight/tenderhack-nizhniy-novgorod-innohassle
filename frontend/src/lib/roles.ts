@@ -3,16 +3,15 @@ import { Role } from '@/api/types'
 /**
  * Account type chosen at registration.
  *
- * This is a UI-level concept: the backend only knows `user` and `admin`
- * (the `operator` role is being removed). Both «Заказчик» and «Поставщик»
- * are regular `user` accounts and are distinguished only by this label.
+ * Maps directly onto the backend roles: «Заказчик» is `buyer`, «Поставщик» is
+ * `seller` and «Администратор» is `admin`.
  */
 export type AccountType = 'customer' | 'supplier' | 'admin'
 
 /** Backend role each account type maps to. */
 export const ACCOUNT_TYPE_ROLE: Record<AccountType, Role> = {
-  customer: Role.user,
-  supplier: Role.user,
+  customer: Role.buyer,
+  supplier: Role.seller,
   admin: Role.admin,
 }
 
@@ -26,10 +25,11 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 /** Account types offered during self-registration, in display order. */
 export const REGISTER_ACCOUNT_TYPES: AccountType[] = ['customer', 'supplier', 'admin']
 
-/** Labels for the backend `Role`, used for users created elsewhere. */
+/** Labels for the backend `Role`. */
 export const ROLE_LABELS: Record<Role, string> = {
-  [Role.user]: 'Пользователь',
-  [Role.operator]: 'Оператор',
+  [Role.buyer]: 'Заказчик',
+  [Role.seller]: 'Поставщик',
+  [Role.support]: 'Поддержка',
   [Role.admin]: 'Администратор',
 }
 

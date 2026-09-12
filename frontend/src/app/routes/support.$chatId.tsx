@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import ChatContainer from '@/components/ui/ChatContainer'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import StarRating from '@/components/ui/StarRating'
 import { requireUser } from '@/app/routes/-guards'
 import { useChat } from '@/hooks/useChat'
 import { useChatMessages } from '@/hooks/useChatMessages'
+import { useRateChat } from '@/hooks/useRateMessage'
 import { useStreamMessage } from '@/hooks/useStreamMessage'
 
 export const Route = createFileRoute('/support/$chatId')({
@@ -16,6 +18,7 @@ function ChatPage() {
   const { data: chat, isLoading, isError, error } = useChat(chatId)
   const { data: messages, isLoading: messagesLoading, isError: messagesError, error: messagesErr } = useChatMessages(chatId)
   const stream = useStreamMessage(chatId)
+  const rate = useRateChat(chatId)
 
   if (isLoading) {
     return (
@@ -38,23 +41,25 @@ function ChatPage() {
 
   const isClosed = chat.status === 'closed'
 
-  // Placeholder: the actual rating submission endpoint is not wired yet.
-  // Queries the backend later, e.g. `PUT /messages/{message_id}/rating`.
+  // The rating applies to the whole conversation.
   const handleRate = (stars: number, comment: string) => {
-    // TODO: send stars + comment for the last assistant/operator reply.
-    void stars
-    void comment
+    rate.mutate({ stars, comment })
   }
 
   return (
     // Fill the viewport below the 4rem navbar so the message list scrolls and
     // the composer stays pinned to the bottom of the screen.
-    <div className="mx-auto flex h-[calc(100vh-4rem)] w-full max-w-3xl flex-col gap-4 px-4 py-6">
+    <div className="mx-auto flex h-[calc(100vh-4rem)] w-full max-w-6xl flex-col gap-4 px-4 py-6">
       <div className="flex shrink-0 flex-col gap-1">
         <Link to="/support" className="text-gray hover:text-main-blue text-xs underline underline-offset-4">
           ← Все обращения
         </Link>
         <h1 className="text-black text-2xl font-bold">{chat.title}</h1>
+        {chat.rating && (
+          <span className="text-gray flex items-center gap-1 text-xs">
+            Оценка обращения: <StarRating stars={chat.rating.stars} comment={chat.rating.comment} />
+          </span>
+        )}
       </div>
 
       {messagesLoading ? (
@@ -68,6 +73,11 @@ function ChatPage() {
           {stream.error && (
             <p className="text-red shrink-0 text-center text-sm">
               {stream.error.message || 'Не удалось отправить сообщение'}
+            </p>
+          )}
+          {rate.isError && (
+            <p className="text-red shrink-0 text-center text-sm">
+              {rate.error?.message || 'Не удалось отправить оценку'}
             </p>
           )}
           <ChatContainer

@@ -1,6 +1,7 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
+import { Link } from '@tanstack/react-router'
 import { FaUser } from 'react-icons/fa'
-import { FaDoorOpen } from 'react-icons/fa6'
+import { FaDoorOpen, FaIdCard } from 'react-icons/fa6'
 import { useAuth } from '@/app/providers/auth-context'
 import { roleLabel } from '@/lib/roles'
 import { navButtonClasses } from './nav-button'
@@ -31,10 +32,19 @@ export default function LeaveButton() {
           </div>
         )}
         <MenuItem>
+          <Link
+            to="/profile"
+            className="text-black data-focus:bg-pale-blue/50 data-focus:text-main-blue flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-medium no-underline transition-colors"
+          >
+            <FaIdCard className="shrink-0" />
+            <span>Профиль</span>
+          </Link>
+        </MenuItem>
+        <MenuItem>
           <button
             type="button"
             onClick={logout}
-            className="text-black data-focus:bg-pale-blue/50 data-focus:text-main-blue flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-medium transition-colors"
+            className="text-black data-focus:bg-pale-blue/50 data-focus:text-main-blue flex w-full items-center justify-center gap-2 border-gray-blue border-t px-5 py-3 text-sm font-medium transition-colors"
           >
             <FaDoorOpen className="shrink-0" />
             <span>Выйти</span>

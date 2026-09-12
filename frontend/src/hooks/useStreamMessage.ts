@@ -99,7 +99,6 @@ export function useStreamMessage(chatId: string | undefined) {
         createdAt: now,
         isRedacted: false,
         replyToMessageId: null,
-        rating: null,
       }
 
       queryClient.setQueryData<MessageView[]>(key, (prev) =>

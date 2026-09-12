@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import Button from '@/components/ui/Button'
+import StarRating from '@/components/ui/StarRating'
 import { requireRole } from '@/app/routes/-guards'
 import { useAdminChats } from '@/hooks/useAdminChats'
 import { CHAT_STATUS_CLASSES, CHAT_STATUS_LABELS, SUPPORT_LINE_NAMES } from '@/lib/chat-view'
@@ -54,6 +55,7 @@ function HistoryPage() {
                 <th className="px-3 py-2 font-semibold">Статус</th>
                 <th className="px-3 py-2 font-semibold">Получатель</th>
                 <th className="px-3 py-2 font-semibold">Оператор</th>
+                <th className="px-3 py-2 font-semibold">Оценка</th>
                 <th className="px-3 py-2 font-semibold">Создано</th>
                 <th className="px-3 py-2 font-semibold">Обновлено</th>
               </tr>
@@ -82,6 +84,9 @@ function HistoryPage() {
                       : chat.recipient.display_name}
                   </td>
                   <td className="text-pale-black px-3 py-2 whitespace-nowrap">{chat.operator?.display_name ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {chat.rating ? <StarRating stars={chat.rating.stars} comment={chat.rating.comment} showComment={false} /> : <span className="text-gray">—</span>}
+                  </td>
                   <td className="text-gray px-3 py-2 whitespace-nowrap">{formatDateTime(chat.created_at)}</td>
                   <td className="text-gray px-3 py-2 whitespace-nowrap">{formatDateTime(chat.updated_at)}</td>
                 </tr>

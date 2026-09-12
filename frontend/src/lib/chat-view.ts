@@ -26,6 +26,8 @@ export interface ChatView {
   updatedAt: string
   closeReason: SchemaChatOut['close_reason']
   operator: SchemaActorOut | null
+  /** Rating left on the chat, when the backend provides one. */
+  rating: SchemaChatOut['rating']
 }
 
 export interface MessageView {
@@ -42,7 +44,6 @@ export interface MessageView {
   createdAt: string
   isRedacted: boolean
   replyToMessageId: string | null
-  rating: SchemaMessageOut['rating']
   /** Set while tokens are still streaming into this message. */
   isStreaming?: boolean
   /**
@@ -70,6 +71,7 @@ export function toChatView(chat: SchemaChatOut): ChatView {
     updatedAt: chat.updated_at,
     closeReason: chat.close_reason,
     operator: chat.operator,
+    rating: chat.rating ?? null,
   }
 }
 
@@ -91,7 +93,6 @@ export function toMessageView(message: SchemaMessageOut): MessageView {
     createdAt: message.created_at,
     isRedacted: message.is_redacted,
     replyToMessageId: message.reply_to_message_id ?? null,
-    rating: message.rating ?? null,
     redirectLine: leakedLine,
   }
 }
@@ -125,6 +126,7 @@ export const SENDER_LABELS: Record<SenderType, string> = {
   [SenderType.user]: 'Вы',
   [SenderType.ai]: 'ИИ-ассистент',
   [SenderType.operator]: 'Оператор',
+  [SenderType.support]: 'Поддержка',
   [SenderType.system]: 'Система',
 }
 

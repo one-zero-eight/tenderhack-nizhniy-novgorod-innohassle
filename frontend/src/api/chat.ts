@@ -1,5 +1,5 @@
 import { eventsFetch } from '@/api'
-import type { SchemaChatOut, SchemaChatPage, SchemaCloseIn, SchemaMessagePage, SchemaRatingIn, SchemaRatingOut, SchemaSendResult } from '@/api/types'
+import type { SchemaChatOut, SchemaChatPage, SchemaCloseIn, SchemaMessagePage, SchemaProfileViewOut, SchemaRatingIn, SchemaRatingOut, SchemaSendResult, Role } from '@/api/types'
 import { getToken } from '@/lib/auth-storage'
 import { postSse } from '@/lib/sse'
 
@@ -134,11 +134,26 @@ export async function requestOperator(chatId: string, supportLineId: number): Pr
   return unwrap(data, error)
 }
 
-export async function rateMessage(messageId: string, body: SchemaRatingIn): Promise<SchemaRatingOut> {
-  const { data, error } = await eventsFetch.PUT('/messages/{message_id}/rating', {
-    params: { path: { message_id: messageId } },
+/** Rates the conversation via `PUT /chats/{chat_id}/rating`. */
+export async function rateChat(chatId: string, body: SchemaRatingIn): Promise<SchemaRatingOut> {
+  const { data, error } = await eventsFetch.PUT('/chats/{chat_id}/rating', {
+    params: { path: { chat_id: chatId } },
     body,
   })
+  return unwrap(data, error)
+}
+
+/* -------------------------------------------------------------------- profile */
+
+/** Full profile of the signed-in user: company, procurements, offers, contracts. */
+export async function fetchProfile(): Promise<SchemaProfileViewOut> {
+  const { data, error } = await eventsFetch.GET('/profile')
+  return unwrap(data, error)
+}
+
+/** Switches the account between buyer and seller via `PATCH /profile/role`. */
+export async function updateUserRole(role: Role): Promise<SchemaProfileViewOut> {
+  const { data, error } = await eventsFetch.PATCH('/profile/role', { body: { role } })
   return unwrap(data, error)
 }
 
