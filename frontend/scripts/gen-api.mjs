@@ -9,7 +9,8 @@ const baseUrl =
   host === "localhost"
     ? "http://localhost:8080"
     : `https://${host}`;
-const specUrl = `${baseUrl}/api/openapi.json`;
+// const specUrl = `${baseUrl}/api/openapi.json`;
+const specUrl = `http://100.64.0.6:8000/openapi.json`;
 
 function fixHeaders(obj) {
   if (!obj || typeof obj !== "object") return;

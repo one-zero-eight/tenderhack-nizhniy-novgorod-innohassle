@@ -4,7 +4,7 @@ import { Link as RouterLink, Outlet, createRootRoute, useLocation } from '@tanst
 
 const RootLayout = () => {
   const { pathname } = useLocation()
-  const isAuthPage = pathname === '/auth'
+  const isAuthPage = pathname === '/auth' || pathname === '/register'
 
   return (
     <div className="bg-pale-blue/30 flex h-full min-h-screen flex-col">

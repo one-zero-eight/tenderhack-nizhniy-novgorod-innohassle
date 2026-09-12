@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root';
+import { Route as RegisterRouteImport } from './routes/register';
 import { Route as AuthRouteImport } from './routes/auth';
 import { Route as IndexRouteImport } from './routes/index';
 import { Route as SupportIndexRouteImport } from './routes/support.index';
 import { Route as SupportChatIdRouteImport } from './routes/support.$chatId';
 
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -38,12 +44,14 @@ const SupportChatIdRoute = SupportChatIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
+  '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/support': typeof SupportIndexRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
+  '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/support': typeof SupportIndexRoute;
 }
@@ -51,26 +59,41 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
+  '/register': typeof RegisterRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/support/': typeof SupportIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/auth' | '/support/$chatId' | '/support';
+  fullPaths: '/' | '/auth' | '/register' | '/support/$chatId' | '/support';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/' | '/auth' | '/support/$chatId' | '/support';
-  id: '__root__' | '/' | '/auth' | '/support/$chatId' | '/support/';
+  to: '/' | '/auth' | '/register' | '/support/$chatId' | '/support';
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/register'
+    | '/support/$chatId'
+    | '/support/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AuthRoute: typeof AuthRoute;
+  RegisterRoute: typeof RegisterRoute;
   SupportChatIdRoute: typeof SupportChatIdRoute;
   SupportIndexRoute: typeof SupportIndexRoute;
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/register': {
+      id: '/register';
+      path: '/register';
+      fullPath: '/register';
+      preLoaderRoute: typeof RegisterRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/auth': {
       id: '/auth';
       path: '/auth';
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  RegisterRoute: RegisterRoute,
   SupportChatIdRoute: SupportChatIdRoute,
   SupportIndexRoute: SupportIndexRoute,
 };

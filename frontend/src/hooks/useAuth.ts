@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eventsFetch } from '@/api'
-import type { SchemaLoginIn, SchemaUserOut } from '@/api/types'
+import type { SchemaLoginIn, SchemaRegisterIn, SchemaTokenOut, SchemaUserOut } from '@/api/types'
 import { clearAuth, getToken, setToken, setUser } from '@/lib/auth-storage'
 
 export const meQueryKey = ['auth', 'me'] as const
@@ -35,14 +35,15 @@ export function useMe() {
   })
 }
 
-async function login(credentials: SchemaLoginIn): Promise<SchemaUserOut> {
-  const { data: token, error } = await eventsFetch.POST('/auth/login', { body: credentials })
-  if (error || !token) throw error ?? new Error('Неверный логин или пароль')
-
-  // The token must be persisted before calling /auth/me so the request carries
-  // the Authorization header added by the API client middleware.
+/**
+ * Persists an access token, loads the profile, and caches it.
+ *
+ * The token must be stored before calling `/auth/me` so the request carries the
+ * Authorization header added by the API client middleware. On failure the
+ * session is cleared so a half-established login is not left behind.
+ */
+async function establishSession(token: SchemaTokenOut): Promise<SchemaUserOut> {
   setToken(token)
-
   try {
     const user = await fetchMe()
     setUser(user)
@@ -53,6 +54,12 @@ async function login(credentials: SchemaLoginIn): Promise<SchemaUserOut> {
   }
 }
 
+async function login(credentials: SchemaLoginIn): Promise<SchemaUserOut> {
+  const { data: token, error } = await eventsFetch.POST('/auth/login', { body: credentials })
+  if (error || !token) throw error ?? new Error('Неверный логин или пароль')
+  return establishSession(token)
+}
+
 /**
  * Authenticates the user and seeds the `me` query cache on success.
  */
@@ -60,6 +67,24 @@ export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation<SchemaUserOut, Error, SchemaLoginIn>({
     mutationFn: login,
+    onSuccess: (user) => queryClient.setQueryData(meQueryKey, user),
+  })
+}
+
+async function register(payload: SchemaRegisterIn): Promise<SchemaUserOut> {
+  const { data: token, error } = await eventsFetch.POST('/auth/register', { body: payload })
+  if (error || !token) throw error ?? new Error('Не удалось зарегистрироваться')
+  return establishSession(token)
+}
+
+/**
+ * Registers a new user. The endpoint returns a token directly, so the new user
+ * is signed in and the `me` cache seeded in the same step.
+ */
+export function useRegister() {
+  const queryClient = useQueryClient()
+  return useMutation<SchemaUserOut, Error, SchemaRegisterIn>({
+    mutationFn: register,
     onSuccess: (user) => queryClient.setQueryData(meQueryKey, user),
   })
 }

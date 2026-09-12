@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -56,6 +56,12 @@ function AuthPage() {
           {login.isPending ? 'Вход...' : 'Войти'}
         </Button>
       </form>
+      <p className="text-gray text-sm">
+        Нет аккаунта?{' '}
+        <Link to="/register" className="text-main-blue underline underline-offset-4">
+          Зарегистрироваться
+        </Link>
+      </p>
     </div>
   )
 }

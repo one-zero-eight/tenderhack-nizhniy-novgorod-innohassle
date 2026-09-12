@@ -24,6 +24,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -571,6 +588,19 @@ export interface components {
             support_line?: components["schemas"]["SupportLineOut"] | null;
             operator?: components["schemas"]["ActorOut"] | null;
         };
+        /** RegisterIn */
+        RegisterIn: {
+            /** Login */
+            login: string;
+            /** Password */
+            password: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** @default user */
+            role: components["schemas"]["Role"];
+            /** Support Line Id */
+            support_line_id?: number | null;
+        };
         /**
          * Role
          * @enum {string}
@@ -656,6 +686,7 @@ export type SchemaRatingIn = components['schemas']['RatingIn'];
 export type SchemaRatingOut = components['schemas']['RatingOut'];
 export type SchemaRatingPage = components['schemas']['RatingPage'];
 export type SchemaRecipientOut = components['schemas']['RecipientOut'];
+export type SchemaRegisterIn = components['schemas']['RegisterIn'];
 export type SchemaSendResult = components['schemas']['SendResult'];
 export type SchemaSupportLineOut = components['schemas']['SupportLineOut'];
 export type SchemaTokenOut = components['schemas']['TokenOut'];
@@ -681,6 +712,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    register_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
