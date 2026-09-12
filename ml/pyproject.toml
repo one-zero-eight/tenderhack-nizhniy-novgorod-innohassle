@@ -1,0 +1,30 @@
+[project]
+name = "portal-manuals-agent"
+version = "0.1.0"
+description = "RAG-агент по инструкциям Портала поставщиков + HTMX-админка"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "chromadb>=1.0.0",
+    "fastapi>=0.116.1",
+    "jinja2>=3.1.6",
+    "langfuse>=4.15.2",
+    "llama-index>=0.14.24",
+    "llama-index-embeddings-huggingface>=0.8.0",
+    "llama-index-llms-openai-like>=0.4.0",
+    "llama-index-retrievers-bm25>=0.8.0",
+    "llama-index-vector-stores-chroma>=0.6.0",
+    "mistune>=3.3.4",
+    "openinference-instrumentation-llama-index>=4.5.2",
+    "python-dotenv>=1.1.0",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.35.0",
+]
+
+[tool.ruff]
+line-length = 120
+exclude = [".venv", "jsons"]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP"]
+ignore = ["DTZ005"]

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}{{ manual.title }} — База знаний{% endblock %}
+
+{% block content %}
+<div class="page-band">
+  <nav class="crumbs">
+    <a href="/knowledge-base">База знаний</a>
+    <span class="crumb-sep">/</span>
+    <span>{{ manual.title }}</span>
+  </nav>
+</div>
+
+<div class="manual-layout">
+  <aside class="manual-toc">
+    <div class="manual-toc-head">Содержание</div>
+    <ul class="tree">
+      {% for node in toc %}
+        <li>
+          <div class="tree-node" id="section-{{ node.id }}">
+            <button
+              type="button"
+              class="tree-toggle{% if not node.has_children %} leaf{% endif %}"
+              {% if node.has_children %}
+                hx-get="/knowledge-base/{{ manual.slug }}/sections/{{ node.id }}"
+                hx-target="#subtree-{{ node.id }}"
+                hx-swap="innerHTML"
+              {% endif %}
+              onclick="this.classList.toggle('open');this.parentElement.querySelector('.tree-kids')?.classList.toggle('open')"
+            >
+              <span class="tree-caret" aria-hidden="true"></span>
+              <span class="tree-label">{{ node.title_line }}</span>
+            </button>
+            <div class="tree-kids" id="subtree-{{ node.id }}"></div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <section class="manual-body">
+    <div class="manual-placeholder">
+      <p>Выберите раздел слева — он раскроется в дереве вместе с подразделами.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

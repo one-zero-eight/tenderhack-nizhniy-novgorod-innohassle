@@ -1,0 +1,35 @@
+{% if chat %}
+<section class="chat">
+  <div id="messages">
+    {% for m in chat.messages %}
+      {% if m.role == "user" %}
+        {% with user_msg=m %}{% include "message_user.html" %}{% endwith %}
+      {% else %}
+        {% with assistant_msg=m %}{% include "message_assistant.html" %}{% endwith %}
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if chat.is_closed %}
+  <div class="redirect-banner" sse-swap="none">
+    <div class="redirect-title">Вопрос переведён на линию поддержки {{ chat.redirect_line_title }}</div>
+    {% if chat.redirect_reason %}<div class="redirect-reason">{{ chat.redirect_reason }}</div>{% endif %}
+    <div class="redirect-note">Скоро вам ответит специалист. Чат закрыт — новые сообщения отправлять нельзя.</div>
+  </div>
+  {% else %}
+  <form
+    class="composer"
+    hx-post="/chats/{{ chat.id }}/messages"
+    hx-target="#messages"
+    hx-swap="beforeend scroll:bottom"
+    hx-on::after-request="this.reset()"
+  >
+    <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>
+    <button type="submit" class="btn-primary">Отправить</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<section class="empty">
+  <p>Создайте чат, чтобы спросить по инструкциям Портала поставщиков — закупки, оферты, контракты, электронное исполнение.</p>
+</section>
+{% endif %}

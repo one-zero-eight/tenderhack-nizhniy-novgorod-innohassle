@@ -1,0 +1,19 @@
+<div class="chat-item{% if chat.id == active_id %} active{% endif %}" id="chat-item-{{ chat.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
+  <button
+    type="button"
+    class="chat-open"
+    hx-get="/chats/{{ chat.id }}"
+    hx-target="#chat-panel"
+    hx-swap="innerHTML"
+    hx-push-url="true"
+  >{{ chat.title }}</button>
+  <button
+    type="button"
+    class="chat-del"
+    title="Удалить"
+    hx-delete="/chats/{{ chat.id }}"
+    hx-target="#chat-list"
+    hx-swap="outerHTML"
+    hx-confirm="Удалить этот чат?"
+  >×</button>
+</div>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Поддержка — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="support-layout">
+  <aside class="sidebar">
+    <div class="sidebar-head">Чаты</div>
+    <button type="button" class="btn-primary new-chat" id="new-chat-toggle"
+      onclick="document.getElementById('new-chat-form').classList.toggle('open')"
+    >Новый чат</button>
+    <form
+      class="new-chat-form"
+      id="new-chat-form"
+      hx-post="/chats"
+      hx-target="#chat-list"
+      hx-swap="outerHTML"
+      hx-on::after-request="if(event.detail.successful){this.reset();this.classList.remove('open')}"
+    >
+      <label for="system_prompt">Системный промпт</label>
+      <textarea
+        id="system_prompt"
+        name="system_prompt"
+        rows="3"
+        placeholder="Введите роль, регион, организацию"
+      ></textarea>
+      <button type="submit" class="btn-primary">Создать</button>
+    </form>
+    {% include "chat_list.html" %}
+  </aside>
+  <div id="chat-panel">
+    {% include "chat_panel.html" %}
+  </div>
+</div>
+{% endblock %}

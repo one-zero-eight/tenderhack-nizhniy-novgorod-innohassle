@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Портал поставщиков{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap"
+  >
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.3/dist/sse.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">Портал поставщиков</div>
+    <nav class="tabs" aria-label="Разделы">
+      <a
+        class="tab{% if tab == 'support' %} active{% endif %}"
+        href="/"
+        {% if tab == 'support' %}aria-current="page"{% endif %}
+      >Поддержка</a>
+      <a
+        class="tab{% if tab == 'knowledge' %} active{% endif %}"
+        href="/knowledge-base"
+        {% if tab == 'knowledge' %}aria-current="page"{% endif %}
+      >База знаний</a>
+    </nav>
+  </header>  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    document.body.addEventListener("htmx:sseMessage", (e) => {
+      if (e.detail.type === "panel") {
+        document.getElementById("chat-panel").innerHTML = e.detail.data;
+      }
+      const el = document.getElementById("messages");
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    document.body.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && e.target.matches("textarea[name=message]")) {
+        e.preventDefault();
+        e.target.form.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

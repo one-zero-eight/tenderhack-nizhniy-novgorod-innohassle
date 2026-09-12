@@ -1,0 +1,22 @@
+# venv и кэши
+.venv/
+__pycache__/
+.ruff_cache/
+
+# секреты
+.env
+
+# артефакты индексации и загрузок HF
+chroma_db/
+storage/
+.cache/
+
+# база чатов
+chats.sqlite3
+chats.sqlite3-wal
+chats.sqlite3-shm
+
+raw/
+raw-md/
+
+.DS_Store
