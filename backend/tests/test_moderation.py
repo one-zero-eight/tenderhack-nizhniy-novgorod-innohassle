@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 from types import SimpleNamespace
 
@@ -92,7 +93,7 @@ async def test_timeout_or_cancellation_keeps_worker_bounded_and_loop_responsive(
         calls.append(text)
         started.set()
         release.wait(timeout=3)
-        return 0.0
+        return {"obscenity": 0.0, "insult": 0.0}
 
     moderator._score = slow
     moderator.settings.moderation_timeout = 0.1
@@ -136,7 +137,54 @@ async def test_insult_category_can_be_disabled(moderator):
     moderator._model = lambda **kwargs: SimpleNamespace(logits=logits)
     assert await moderator.is_blocked("hello")
     moderator._label_ids = [2]
+    moderator.settings.moderation_block_labels = ["obscenity"]
     assert not await moderator.is_blocked("hello")
+
+
+@pytest.fixture
+def moderation_logs(caplog, monkeypatch):
+    # Application logging writes to its own handler without propagating to pytest's root handler.
+    monkeypatch.setattr(logging.getLogger("src"), "propagate", True)
+    caplog.set_level(logging.INFO, logger="src.services.moderation")
+    return caplog
+
+
+async def test_logs_decisions_and_category_scores(moderator, moderation_logs):
+    assert not await moderator.is_blocked("hello")
+    allowed = moderation_logs.records[-1].getMessage()
+    assert "result=allowed" in allowed
+    assert "threshold=0.800000" in allowed
+    assert '"obscenity":' in allowed
+    assert '"insult":' in allowed
+    assert "reasons=all_enabled_categories_below_threshold" in allowed
+
+    assert await moderator.is_blocked("curse")
+    blocked = moderation_logs.records[-1].getMessage()
+    assert "result=blocked" in blocked
+    assert "reasons=obscenity" in blocked
+    assert "hello" not in moderation_logs.text
+    assert "curse" not in moderation_logs.text
+
+
+async def test_logs_all_categories_at_threshold(moderator, moderation_logs):
+    moderator._model = lambda **kwargs: SimpleNamespace(logits=torch.zeros((1, 5)))
+    moderator.settings.moderation_threshold = 0.5
+    assert await moderator.is_blocked("hello")
+    message = moderation_logs.records[-1].getMessage()
+    assert 'scores={"insult": 0.5, "obscenity": 0.5}' in message
+    assert "reasons=obscenity,insult" in message
+
+
+async def test_logs_unavailable_reason_without_input(moderator, moderation_logs):
+    def broken(**kwargs):
+        raise RuntimeError("sensitive message text")
+
+    moderator._model = broken
+    with pytest.raises(ModerationUnavailable):
+        await moderator.is_blocked("hello")
+    assert "result=unavailable reason=RuntimeError" in moderation_logs.text
+    assert "sensitive message text" not in moderation_logs.text
+    assert "hello" not in moderation_logs.text
 
 
 async def test_sentence_scoring_prevents_dilution(moderator):

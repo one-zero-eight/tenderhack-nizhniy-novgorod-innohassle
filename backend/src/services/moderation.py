@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -45,7 +46,7 @@ class RubertModerator:
         self._max_length = min(512, self._model.config.max_position_embeddings, self._tokenizer.model_max_length)
         self._score("Здравствуйте")
 
-    def _score(self, text: str) -> float:
+    def _score(self, text: str) -> dict[str, float]:
         import torch  # noqa: PLC0415 - keep ML imports out of API/CLI module initialization
 
         if self._model is None or self._tokenizer is None:
@@ -64,7 +65,7 @@ class RubertModerator:
         )
         # Overflow metadata is for the tokenizer, not a model input.
         inputs = {name: encoded[name] for name in self._tokenizer.model_input_names if name in encoded}
-        highest = 0.0
+        scores = dict.fromkeys(self.settings.moderation_block_labels, 0.0)
         with torch.inference_mode():
             # Bound memory even when a 4,000-character message produces many chunks.
             for start in range(0, len(inputs["input_ids"]), 4):
@@ -73,8 +74,10 @@ class RubertModerator:
                 logits = self._model(**batch).logits[:, self._label_ids]
                 if not torch.isfinite(logits).all():
                     raise ValueError("Non-finite moderation output")
-                highest = max(highest, torch.sigmoid(logits).max().item())
-        return highest
+                highest = torch.sigmoid(logits).amax(dim=0).tolist()
+                for label, score in zip(scores, highest, strict=True):
+                    scores[label] = max(scores[label], score)
+        return scores
 
     async def is_blocked(self, text: str) -> bool:
         try:
@@ -95,11 +98,22 @@ class RubertModerator:
                 future.add_done_callback(finished)
                 # A timeout cannot stop native inference. Keep the slot occupied until it
                 # really finishes, preventing an unbounded executor queue on repeated retries.
-                score = await asyncio.shield(future)
-                return score >= self.settings.moderation_threshold
+                scores = await asyncio.shield(future)
+                threshold = self.settings.moderation_threshold
+                reasons = [label for label, score in scores.items() if score >= threshold]
+                blocked = bool(reasons)
+                logger.info(
+                    "Local moderation result=%s score=%.6f threshold=%.6f scores=%s reasons=%s",
+                    "blocked" if blocked else "allowed",
+                    max(scores.values()),
+                    threshold,
+                    json.dumps({label: round(score, 6) for label, score in scores.items()}, sort_keys=True),
+                    ",".join(reasons) if reasons else "all_enabled_categories_below_threshold",
+                )
+                return blocked
         except Exception as exc:
             # Do not log user text or exception details that could include it.
-            logger.warning("Local moderation unavailable (%s)", type(exc).__name__)
+            logger.warning("Local moderation result=unavailable reason=%s", type(exc).__name__)
             raise ModerationUnavailable from exc
 
     async def close(self) -> None:
