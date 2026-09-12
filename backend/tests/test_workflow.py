@@ -114,10 +114,10 @@ async def test_block_closes_and_redacts_before_answering(case):
     assert result["chat"]["close_reason"] == "moderation"
     assert result["messages"][0]["is_redacted"] is True
     assert "forbidden text" not in str(result)
-    assert case.ai.calls == []
+    assert [c for c in case.ai.calls if "/message" in c[0]] == []
     repeated = await case.send(chat, "[block] forbidden text", client_id=client_id)
     assert repeated.json()["messages"] == result["messages"]
-    assert case.ai.calls == []
+    assert [c for c in case.ai.calls if "/message" in c[0]] == []
     assert len(case.moderator.calls) == 1
     assert (await case.send(chat, "[block] different", client_id=client_id)).status_code == 409
 
@@ -145,7 +145,7 @@ async def test_closing_during_local_moderation_does_not_publish(case):
     finally:
         case.moderator.release.set()
     assert (await pending).status_code == 409
-    assert case.ai.calls == []
+    assert [c for c in case.ai.calls if "/message" in c[0]] == []
     transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
     assert all(message["sender_type"] == "system" for message in transcript)
 
@@ -155,10 +155,10 @@ async def test_waiting_chat_uses_only_local_moderation(case):
     await case.request("POST", f"/chats/{chat}/request-operator", json={"support_line_id": 1})
     assert (await case.send(chat)).status_code == 200
     assert len(case.moderator.calls) == 1
-    assert case.ai.calls == []
+    assert [c for c in case.ai.calls if "/message" in c[0]] == []
     blocked = await case.send(chat, "[block]")
     assert blocked.json()["chat"]["close_reason"] == "moderation"
-    assert case.ai.calls == []
+    assert [c for c in case.ai.calls if "/message" in c[0]] == []
 
 
 @pytest.mark.parametrize("invalid_line", [0, 4])

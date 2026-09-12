@@ -57,7 +57,8 @@ class RecipientOut(Schema):
 
 
 class ChatOut(Schema):
-    id: UUID
+    id: str
+    title: str = "Новый чат"
     user_id: UUID
     status: ChatStatus
     recipient: RecipientOut
@@ -91,25 +92,25 @@ class RatingIn(Schema):
 
 class RatingOut(RatingIn):
     id: UUID
-    message_id: UUID
+    message_id: str
     user_id: UUID
     created_at: datetime
     updated_at: datetime
 
 
 class MessageOut(Schema):
-    id: UUID
-    chat_id: UUID
+    id: str
+    chat_id: str
     sequence: int
     sender_type: SenderType
-    sender_id: UUID | None
+    sender_id: UUID | None = None
     sender_name: str
-    support_line_id: int | None
+    support_line_id: int | None = None
     text: str
     citations: list[dict] = Field(default_factory=list)
     tool_calls: list[dict] = Field(default_factory=list)
-    reply_to_message_id: UUID | None
-    is_redacted: bool
+    reply_to_message_id: str | None = None
+    is_redacted: bool = False
     created_at: datetime
     rating: RatingOut | None = None
 
@@ -134,11 +135,11 @@ class CloseIn(Schema):
 
 
 class AdminRatingOut(RatingOut):
-    chat_id: UUID
+    chat_id: str
     sender_type: SenderType
-    sender_id: UUID | None
+    sender_id: UUID | None = None
     sender_name: str
-    support_line_id: int | None
+    support_line_id: int | None = None
     message_text: str
 
 
@@ -147,3 +148,4 @@ class RatingPage(Schema):
     total: int
     offset: int
     limit: int
+

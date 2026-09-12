@@ -22,8 +22,10 @@ async def test_create_chat_success():
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
         client = AIClient(http, settings())
-        chat_id = await client.create_chat()
+        chat_id, title = await client.create_chat()
         assert chat_id == "ml-chat-123"
+        assert title == "Новый чат"
+
 
 
 async def test_send_message_sse_success():
@@ -91,7 +93,7 @@ async def test_development_stub_matches_client_contract(monkeypatch):
     monkeypatch.delenv("API_SETTINGS__AI_SERVICE_TOKEN", raising=False)
     async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
         client = AIClient(http, settings())
-        chat_id = await client.create_chat()
+        chat_id, _ = await client.create_chat()
         assert chat_id.startswith("stub-chat-")
         answer = await client.send_message(chat_id, "ordinary message")
         assert "Демонстрационный ответ" in answer.content
@@ -105,8 +107,9 @@ async def test_stub_requires_configured_internal_token(monkeypatch):
         with pytest.raises(AIUnavailable):
             await client.create_chat()
         http.headers["Authorization"] = "Bearer stub-service-token"
-        chat_id = await client.create_chat()
+        chat_id, _ = await client.create_chat()
         assert chat_id.startswith("stub-chat-")
+
 
 
 async def test_send_message_sse_tool_call_and_redirect():

@@ -1,7 +1,7 @@
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import StreamingResponse
 
 from src.api.repositories.dependencies import Chats, CurrentUser, Storage
 from src.db.models import ChatStatus
@@ -23,6 +23,13 @@ router = APIRouter(tags=["chats"])
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 
+SSE_MEDIA_TYPE = "text/event-stream"
+SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
 
 @router.get("/support-lines", response_model=list[SupportLineOut])
 async def list_support_lines(user: CurrentUser, storage: Storage) -> list[SupportLineOut]:
@@ -43,34 +50,56 @@ async def list_chats(
 
 
 @router.get("/chats/{chat_id}", response_model=ChatOut)
-async def get_chat(chat_id: UUID, user: CurrentUser, service: Chats) -> ChatOut:
+async def get_chat(chat_id: str, user: CurrentUser, service: Chats) -> ChatOut:
     return await service.get(chat_id, user)
 
 
 @router.get("/chats/{chat_id}/messages", response_model=MessagePage)
 async def get_messages(
-    chat_id: UUID, user: CurrentUser, service: Chats, after_sequence: Annotated[int, Query(ge=0)] = 0, limit: Limit = 50
+    chat_id: str, user: CurrentUser, service: Chats, after_sequence: Annotated[int, Query(ge=0)] = 0, limit: Limit = 50
 ) -> MessagePage:
     return await service.messages(chat_id, user, after_sequence, limit)
 
 
 @router.post("/chats/{chat_id}/messages", response_model=SendResult)
-async def send_message(chat_id: UUID, payload: MessageIn, user: CurrentUser, service: Chats) -> SendResult:
+async def send_message(
+    chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats, request: Request
+):
+    accept = request.headers.get("accept", "")
+    if "text/event-stream" in accept:
+        return StreamingResponse(
+            service.send_stream(chat_id, user, payload),
+            media_type=SSE_MEDIA_TYPE,
+            headers=SSE_HEADERS,
+        )
     return await service.send(chat_id, user, payload)
+
+
+@router.post("/chats/{chat_id}/message")
+@router.post("/chats/{chat_id}/stream")
+async def stream_message(
+    chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats
+) -> StreamingResponse:
+    return StreamingResponse(
+        service.send_stream(chat_id, user, payload),
+        media_type=SSE_MEDIA_TYPE,
+        headers=SSE_HEADERS,
+    )
 
 
 @router.post("/chats/{chat_id}/request-operator", response_model=ChatOut)
 async def request_operator(
-    chat_id: UUID, payload: RequestOperatorIn, user: CurrentUser, service: Chats
+    chat_id: str, payload: RequestOperatorIn, user: CurrentUser, service: Chats
 ) -> ChatOut:
     return await service.request_operator(chat_id, user, payload.support_line_id)
 
 
 @router.post("/chats/{chat_id}/close", response_model=ChatOut)
-async def close(chat_id: UUID, payload: CloseIn, user: CurrentUser, service: Chats) -> ChatOut:
+async def close(chat_id: str, payload: CloseIn, user: CurrentUser, service: Chats) -> ChatOut:
     return await service.close(chat_id, user, payload.reason)
 
 
 @router.put("/messages/{message_id}/rating", response_model=RatingOut, tags=["ratings"])
-async def rate(message_id: UUID, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
+async def rate(message_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
     return await service.rate(message_id, user, payload)
+

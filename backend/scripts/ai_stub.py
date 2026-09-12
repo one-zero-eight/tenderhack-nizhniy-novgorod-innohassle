@@ -41,17 +41,33 @@ async def health():
     }
 
 
+_CHATS: dict[str, dict] = {}
+
+
 @app.post("/ml-api/chat", status_code=201)
 async def create_chat(payload: ChatIn | None = None):
     chat_id = f"stub-chat-{uuid4().hex[:8]}"
     now = datetime.now(UTC).isoformat()
-    return {
+    record = {
         "id": chat_id,
         "title": "Новый чат",
         "system_prompt": payload.system_prompt if payload else None,
+        "redirect_line": None,
+        "redirect_reason": None,
+        "closed_at": None,
         "created_at": now,
         "updated_at": now,
+        "messages": [],
     }
+    _CHATS[chat_id] = record
+    return record
+
+
+@app.get("/ml-api/chat/{chat_id}")
+async def get_chat(chat_id: str):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    return _CHATS[chat_id]
 
 
 @app.post("/ml-api/chat/{chat_id}/message")
@@ -68,6 +84,20 @@ async def send_message(chat_id: str, payload: MessageIn):
     msg_id = f"msg-{uuid4().hex[:8]}"
     content = "Демонстрационный ответ. Подключите AI-сервис для ответа по базе знаний."
 
+    if chat_id in _CHATS:
+        _CHATS[chat_id]["messages"].append({
+            "id": f"msg-user-{len(_CHATS[chat_id]['messages']) + 1}",
+            "role": "user",
+            "content": payload.message,
+            "tools": [],
+        })
+        _CHATS[chat_id]["messages"].append({
+            "id": msg_id,
+            "role": "assistant",
+            "content": content,
+            "tools": [],
+        })
+
     async def sse_generator():
         start_data = json.dumps({"message_id": msg_id})
         yield f"event: start\ndata: {start_data}\n\n"
@@ -83,6 +113,7 @@ async def send_message(chat_id: str, payload: MessageIn):
 
 @app.delete("/ml-api/chat/{chat_id}", status_code=204)
 async def delete_chat(chat_id: str):
+    _CHATS.pop(chat_id, None)
     return None
 
 

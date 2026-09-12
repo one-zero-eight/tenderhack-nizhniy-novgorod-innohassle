@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
+import json
 import logging
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,7 @@ from src.schemas.chat import (
     ChatOut,
     ChatPage,
     MessageIn,
+    MessageOut,
     MessagePage,
     RatingIn,
     RatingOut,
@@ -33,14 +36,12 @@ from src.services.moderation import ModerationUnavailable, Moderator
 
 logger = logging.getLogger(__name__)
 
-BOT_STATES = (ChatStatus.AI,)
-
 
 def invalidate_pending(chat: Chat) -> None:
     chat.updated_at = utcnow()
 
 
-def close_chat(session: AsyncSession, chat: Chat, reason: CloseReason, *, reply_to: UUID | None = None) -> None:
+def close_chat(session: AsyncSession, chat: Chat, reason: CloseReason, *, reply_to: str | None = None) -> None:
     invalidate_pending(chat)
     chat.status = ChatStatus.CLOSED
     chat.close_reason = reason
@@ -53,25 +54,61 @@ def close_chat(session: AsyncSession, chat: Chat, reason: CloseReason, *, reply_
     append_message(session, chat, text, reply_to=reply_to)
 
 
+def _extract_citations(tools: list[dict]) -> list[dict]:
+    citations = []
+    for tool in tools:
+        if tool.get("name") == "open":
+            args = tool.get("kwargs") or tool.get("arguments") or {}
+            if isinstance(args, dict):
+                manual = args.get("manual")
+                section_id = args.get("section_id")
+                if manual and section_id:
+                    citations.append({"manual": str(manual), "section_id": str(section_id)})
+    return citations
+
+
 class ChatService:
+    # Client submission cache for idempotency: (chat_id, client_message_id) -> SendResult
+    _submissions: dict[tuple[str, UUID], SendResult] = {}
+    _client_digests: dict[tuple[str, UUID], str] = {}
+    _submission_locks: dict[tuple[str, UUID], asyncio.Lock] = {}
+
     def __init__(self, storage: AbstractSQLAlchemyStorage, ai: AIClient, moderator: Moderator):
         self.storage = storage
         self.ai = ai
         self.moderator = moderator
 
+    @classmethod
+    def _get_submission_lock(cls, key: tuple[str, UUID]) -> asyncio.Lock:
+        lock = cls._submission_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            cls._submission_locks[key] = lock
+        return lock
+
     async def create(self, user: User) -> ChatOut:
         if user.role != Role.USER:
             fail(403, "USER_REQUIRED", "Only users can open chats")
+        ml_chat_id, title = await self.ai.create_chat()
         async with self.storage.create_session() as session, session.begin():
-            chat = Chat(user_id=user.id)
+            chat = Chat(id=ml_chat_id, title=title, user_id=user.id)
             session.add(chat)
             await session.flush()
             return await chat_view(session, chat)
 
-    async def get(self, chat_id: UUID, user: User) -> ChatOut:
+    async def get(self, chat_id: str, user: User) -> ChatOut:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
+            # Sync title from ML service if it was updated from default
+            if chat.title == "Новый чат":
+                try:
+                    ml_data = await self.ai.get_chat(chat_id)
+                    new_title = ml_data.get("title")
+                    if new_title and new_title != "Новый чат":
+                        chat.title = new_title
+                except Exception:
+                    pass
             return await chat_view(session, chat)
 
     async def list_chats(
@@ -131,51 +168,84 @@ class ChatService:
                 items=[await chat_view(session, row) for row in rows], total=total, offset=offset, limit=limit
             )
 
-    async def messages(self, chat_id: UUID, user: User, after_sequence: int, limit: int) -> MessagePage:
+    async def messages(self, chat_id: str, user: User, after_sequence: int = 0, limit: int = 50) -> MessagePage:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
-            rows = list(
+
+            # 1. Load AI messages from ML service
+            ai_messages: list[MessageOut] = []
+            try:
+                ml_data = await self.ai.get_chat(chat_id)
+                for idx, m in enumerate(ml_data.get("messages", [])):
+                    role = m.get("role", "user")
+                    tools = m.get("tools", [])
+                    sender_type = SenderType.USER if role == "user" else SenderType.AI
+                    name = user.display_name if sender_type == SenderType.USER else "ИИ-помощник"
+                    sender_id = user.id if sender_type == SenderType.USER else None
+                    ai_messages.append(
+                        MessageOut(
+                            id=m["id"],
+                            chat_id=chat_id,
+                            sequence=idx + 1,
+                            sender_type=sender_type,
+                            sender_id=sender_id,
+                            sender_name=name,
+                            text=m.get("content", ""),
+                            citations=_extract_citations(tools),
+                            tool_calls=tools,
+                            is_redacted=False,
+                            created_at=chat.created_at,
+                        )
+                    )
+            except Exception:
+                pass
+
+            # 2. Load operator / system messages from Postgres
+            pg_messages = list(
                 await session.scalars(
                     select(Message)
-                    .where(
-                        Message.chat_id == chat_id,
-                        Message.sequence > after_sequence,
-                    )
+                    .where(Message.chat_id == chat_id)
                     .order_by(Message.sequence)
-                    .limit(limit + 1)
                 )
             )
-            selected = rows[:limit]
+
+            # Assign sequences to PG messages so they cleanly follow AI messages
+            offset_seq = len(ai_messages)
+            pg_views = []
+            for pm in pg_messages:
+                view = MessageOut.model_validate(pm)
+                view.sequence = offset_seq + pm.sequence
+                pg_views.append(view)
+
+            all_messages = ai_messages + pg_views
+
+            # 3. Join ratings
+            ratings = list(
+                await session.scalars(
+                    select(Rating).where(Rating.chat_id == chat_id)
+                )
+            )
+            by_message = {r.message_id: RatingOut.model_validate(r) for r in ratings}
+            for m in all_messages:
+                if m.id in by_message:
+                    m.rating = by_message[m.id]
+
+            # 4. Filter by after_sequence and paginate
+            filtered = [m for m in all_messages if m.sequence > after_sequence]
+            selected = filtered[:limit]
             return MessagePage(
-                items=await message_views(session, selected),
+                items=selected,
                 next_sequence=selected[-1].sequence if selected else after_sequence,
-                has_more=len(rows) > limit,
+                has_more=len(filtered) > limit,
             )
 
-    async def _existing(
-        self, session: AsyncSession, chat: Chat, user: User, payload: MessageIn, digest: str
-    ) -> SendResult | None:
-        existing = await session.scalar(
-            select(Message).where(
-                Message.chat_id == chat.id,
-                Message.client_message_id == payload.client_message_id,
-            )
-        )
-        if existing is None:
-            return None
-        if existing.sender_id != user.id or existing.input_hash != digest:
-            fail(409, "MESSAGE_ID_REUSED", "This client_message_id was already used for a different message")
-        return SendResult(chat=await chat_view(session, chat), messages=await submission_messages(session, existing))
-
-    async def send(self, chat_id: UUID, user: User, payload: MessageIn) -> SendResult:
+    async def send_stream(self, chat_id: str, user: User, payload: MessageIn):
+        """Streams SSE events directly to client from ML service, updating backend state as needed."""
         digest = hashlib.sha256(payload.text.encode()).hexdigest()
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
-            existing = await self._existing(session, chat, user, payload, digest)
-            if existing:
-                return existing
             if chat.status == ChatStatus.CLOSED:
                 fail(409, "CHAT_CLOSED", "This chat is closed")
 
@@ -186,107 +256,267 @@ class ChatService:
             except ModerationUnavailable:
                 fail(503, "MODERATION_UNAVAILABLE", "Message not delivered. Please retry moderation later")
 
+        if blocked:
+            async with self.storage.create_session() as session, session.begin():
+                chat = await load_chat(session, chat_id, lock=True)
+                msg = append_message(
+                    session,
+                    chat,
+                    "[Сообщение удалено из-за нецензурной лексики]",
+                    sender_type=SenderType.USER,
+                    sender=user,
+                    client_message_id=payload.client_message_id,
+                    input_hash=digest,
+                    is_redacted=True,
+                )
+                close_chat(session, chat, CloseReason.MODERATION, reply_to=msg.id)
+            err_data = json.dumps({"message": "Message blocked by moderation"}, ensure_ascii=False)
+            yield f"event: error\ndata: {err_data}\n\n"
+            done_data = json.dumps({"message_id": "blocked", "content": "[Сообщение удалено из-за нецензурной лексики]"}, ensure_ascii=False)
+            yield f"event: done\ndata: {done_data}\n\n"
+            return
+
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
-            check_writer(chat, user)
-            existing = await self._existing(session, chat, user, payload, digest)
-            if existing:
-                return existing
             if chat.status == ChatStatus.CLOSED:
-                fail(409, "CHAT_CLOSED", "This chat was closed while the message was being checked")
-            message = append_message(
-                session,
-                chat,
-                "[Сообщение удалено из-за нецензурной лексики]" if blocked else payload.text,
-                sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
-                sender=user,
-                client_message_id=payload.client_message_id,
-                input_hash=digest,
-                is_redacted=blocked,
-            )
+                fail(409, "CHAT_CLOSED", "This chat is closed")
+            if chat.status != ChatStatus.AI:
+                # Operator chat mode
+                msg = append_message(
+                    session,
+                    chat,
+                    payload.text,
+                    sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                    sender=user,
+                    client_message_id=payload.client_message_id,
+                    input_hash=digest,
+                )
+                start_data = json.dumps({"message_id": msg.id})
+                yield f"event: start\ndata: {start_data}\n\n"
+                done_data = json.dumps({"message_id": msg.id, "content": msg.text})
+                yield f"event: done\ndata: {done_data}\n\n"
+                return
+
+        # AI mode: stream from ML service
+        async for event, data in self.ai.stream_message(chat_id, payload.text):
+            if event == "redirect":
+                raw_line = str(data.get("line", "1")).upper().lstrip("L")
+                try:
+                    line_id = int(raw_line)
+                except ValueError:
+                    line_id = 1
+                reason = data.get("reason")
+                async with self.storage.create_session() as session, session.begin():
+                    chat = await load_chat(session, chat_id, lock=True)
+                    line = await session.get(SupportLine, line_id) or await session.get(SupportLine, 1)
+                    chat.status = ChatStatus.WAITING_OPERATOR
+                    chat.support_line_id = line.id if line else 1
+                    chat.handed_off_at = utcnow()
+                    chat.updated_at = utcnow()
+                    reason_str = f"причина: {reason}" if reason else "по рекомендации ИИ"
+                    line_name = line.name if line else f"Линия {line_id}"
+                    append_message(
+                        session,
+                        chat,
+                        f"Обращение автоматически перенаправлено в «{line_name}» ({reason_str}). Ожидайте подключения оператора.",
+                        sender_type=SenderType.SYSTEM,
+                    )
+            elif event == "done":
+                async with self.storage.create_session() as session, session.begin():
+                    chat = await load_chat(session, chat_id, lock=True)
+                    chat.ai_messages_count += 1
+                    chat.updated_at = utcnow()
+                    if chat.title == "Новый чат":
+                        try:
+                            ml_data = await self.ai.get_chat(chat_id)
+                            new_title = ml_data.get("title")
+                            if new_title and new_title != "Новый чат":
+                                chat.title = new_title
+                        except Exception:
+                            pass
+            raw_data = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+            yield f"event: {event}\ndata: {raw_data}\n\n"
+
+    async def send(self, chat_id: str, user: User, payload: MessageIn) -> SendResult:
+        """JSON fallback for non-SSE requests."""
+        cache_key = (chat_id, payload.client_message_id)
+        digest = hashlib.sha256(payload.text.encode()).hexdigest()
+
+        lock = self._get_submission_lock(cache_key)
+        async with lock:
+            if cache_key in self._submissions:
+                if self._client_digests.get(cache_key) != digest:
+                    fail(409, "MESSAGE_ID_REUSED", "This client_message_id was already used for a different message")
+                return self._submissions[cache_key]
+
+            async with self.storage.create_session() as session, session.begin():
+                chat = await load_chat(session, chat_id, lock=True)
+                check_writer(chat, user)
+                if chat.status == ChatStatus.CLOSED:
+                    fail(409, "CHAT_CLOSED", "This chat is closed")
+
+            blocked = False
+            if user.role == Role.USER:
+                try:
+                    blocked = await self.moderator.is_blocked(payload.text)
+                except ModerationUnavailable:
+                    fail(503, "MODERATION_UNAVAILABLE", "Message not delivered. Please retry moderation later")
+
             if blocked:
-                close_chat(session, chat, CloseReason.MODERATION, reply_to=message.id)
-                return SendResult(
-                    chat=await chat_view(session, chat), messages=await submission_messages(session, message)
-                )
+                async with self.storage.create_session() as session, session.begin():
+                    chat = await load_chat(session, chat_id, lock=True)
+                    msg = append_message(
+                        session,
+                        chat,
+                        "[Сообщение удалено из-за нецензурной лексики]",
+                        sender_type=SenderType.USER,
+                        sender=user,
+                        client_message_id=payload.client_message_id,
+                        input_hash=digest,
+                        is_redacted=True,
+                    )
+                    close_chat(session, chat, CloseReason.MODERATION, reply_to=msg.id)
+                    res = SendResult(
+                        chat=await chat_view(session, chat),
+                        messages=await submission_messages(session, msg),
+                    )
+                    self._submissions[cache_key] = res
+                    self._client_digests[cache_key] = digest
+                    return res
 
-            if user.role != Role.USER or chat.status != ChatStatus.AI:
-                return SendResult(
-                    chat=await chat_view(session, chat), messages=await submission_messages(session, message)
-                )
+            async with self.storage.create_session() as session, session.begin():
+                chat = await load_chat(session, chat_id, lock=True)
+                if chat.status == ChatStatus.CLOSED:
+                    fail(409, "CHAT_CLOSED", "This chat is closed")
+                if chat.status != ChatStatus.AI:
+                    # Operator mode
+                    msg = append_message(
+                        session,
+                        chat,
+                        payload.text,
+                        sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                        sender=user,
+                        client_message_id=payload.client_message_id,
+                        input_hash=digest,
+                    )
+                    res = SendResult(
+                        chat=await chat_view(session, chat),
+                        messages=await submission_messages(session, msg),
+                    )
+                    self._submissions[cache_key] = res
+                    self._client_digests[cache_key] = digest
+                    return res
 
-            message_id = message.id
-            ml_chat_id = chat.ml_chat_id
-
-        answer = None
-        try:
-            if not ml_chat_id:
-                ml_chat_id = await self.ai.create_chat()
-            answer = await self.ai.send_message(ml_chat_id, payload.text)
-        except AIUnavailable as exc:
-            logger.warning(
-                "AI service unavailable for chat %s (user %s): %s. Falling back to system message.",
-                chat_id,
-                user.id,
-                exc,
-            )
+            # AI Mode
             answer = None
+            try:
+                answer = await self.ai.send_message(chat_id, payload.text)
+            except AIUnavailable as exc:
+                logger.warning("AI service unavailable for chat %s (user %s): %s", chat_id, user.id, exc)
+                answer = None
 
-        async with self.storage.create_session() as session, session.begin():
-            chat = await load_chat(session, chat_id, lock=True)
-            if ml_chat_id and chat.ml_chat_id is None:
-                chat.ml_chat_id = ml_chat_id
-
-            if chat.status == ChatStatus.AI:
+            async with self.storage.create_session() as session, session.begin():
+                chat = await load_chat(session, chat_id, lock=True)
+                if chat.status == ChatStatus.CLOSED:
+                    fail(409, "CHAT_CLOSED", "This chat is closed")
                 if answer is not None:
+                    chat.ai_messages_count += 1
+                    chat.updated_at = utcnow()
+                    user_msg_id = f"user-{payload.client_message_id.hex[:12]}"
+                    try:
+                        ml_data = await self.ai.get_chat(chat_id)
+                        new_title = ml_data.get("title")
+                        if chat.title == "Новый чат" and new_title and new_title != "Новый чат":
+                            chat.title = new_title
+                        msgs = ml_data.get("messages", [])
+                        if len(msgs) >= 2:
+                            user_msg_id = msgs[-2]["id"]
+                    except Exception:
+                        pass
+
+                    user_msg = MessageOut(
+                        id=user_msg_id,
+                        chat_id=chat_id,
+                        sequence=1,
+                        sender_type=SenderType.USER,
+                        sender_id=user.id,
+                        sender_name=user.display_name,
+                        text=payload.text,
+                        is_redacted=False,
+                        created_at=utcnow(),
+                    )
+
                     if answer.redirect_line:
-                        line = await session.get(SupportLine, answer.redirect_line)
-                        if line is None:
-                            line = await session.get(SupportLine, 1)
+                        line = await session.get(SupportLine, answer.redirect_line) or await session.get(SupportLine, 1)
                         chat.status = ChatStatus.WAITING_OPERATOR
                         chat.support_line_id = line.id if line else 1
                         chat.handed_off_at = utcnow()
                         chat.updated_at = utcnow()
-                        if answer.content.strip():
-                            append_message(
-                                session,
-                                chat,
-                                answer.content,
-                                sender_type=SenderType.AI,
-                                reply_to=message_id,
-                                citations=answer.citations,
-                                tool_calls=answer.tool_calls,
-                            )
-                        reason_str = f"причина: {answer.redirect_reason}" if answer.redirect_reason else "по рекомендации ИИ"
-                        line_name = line.name if line else f"Линия {answer.redirect_line}"
-                        append_message(
+                        sys_msg = append_message(
                             session,
                             chat,
-                            f"Обращение автоматически перенаправлено в «{line_name}» ({reason_str}). Ожидайте подключения оператора.",
+                            f"Обращение автоматически перенаправлено в «{line.name if line else f'Линия {answer.redirect_line}'}» "
+                            f"({f'причина: {answer.redirect_reason}' if answer.redirect_reason else 'по рекомендации ИИ'}). Ожидайте подключения оператора.",
                             sender_type=SenderType.SYSTEM,
                         )
-                    else:
-                        append_message(
-                            session,
-                            chat,
-                            answer.content,
+                        sys_view = MessageOut.model_validate(sys_msg)
+                        ai_msg = MessageOut(
+                            id=answer.message_id,
+                            chat_id=chat_id,
+                            sequence=2,
                             sender_type=SenderType.AI,
-                            reply_to=message_id,
+                            sender_id=None,
+                            sender_name="ИИ-помощник",
+                            text=answer.content,
                             citations=answer.citations,
                             tool_calls=answer.tool_calls,
+                            is_redacted=False,
+                            created_at=utcnow(),
                         )
+                        messages = [user_msg, ai_msg, sys_view] if answer.content.strip() else [user_msg, sys_view]
+                    else:
+                        ai_msg = MessageOut(
+                            id=answer.message_id,
+                            chat_id=chat_id,
+                            sequence=2,
+                            sender_type=SenderType.AI,
+                            sender_id=None,
+                            sender_name="ИИ-помощник",
+                            text=answer.content,
+                            citations=answer.citations,
+                            tool_calls=answer.tool_calls,
+                            is_redacted=False,
+                            created_at=utcnow(),
+                        )
+                        messages = [user_msg, ai_msg]
                 else:
-                    append_message(
+                    # Outage: append fallback system notice to Postgres
+                    sys_msg = append_message(
                         session,
                         chat,
                         "ИИ-помощник временно недоступен. Вы можете перенаправить запрос оператору.",
                         sender_type=SenderType.SYSTEM,
-                        reply_to=message_id,
                     )
-            message = await session.get(Message, message_id)
-            return SendResult(chat=await chat_view(session, chat), messages=await submission_messages(session, message))
+                    user_msg = MessageOut(
+                        id=f"user-{payload.client_message_id.hex[:12]}",
+                        chat_id=chat_id,
+                        sequence=1,
+                        sender_type=SenderType.USER,
+                        sender_id=user.id,
+                        sender_name=user.display_name,
+                        text=payload.text,
+                        is_redacted=False,
+                        created_at=utcnow(),
+                    )
+                    sys_view = MessageOut.model_validate(sys_msg)
+                    messages = [user_msg, sys_view]
 
-    async def request_operator(self, chat_id: UUID, user: User, line_id: int) -> ChatOut:
+                res = SendResult(chat=await chat_view(session, chat), messages=messages)
+                self._submissions[cache_key] = res
+                self._client_digests[cache_key] = digest
+                return res
+
+    async def request_operator(self, chat_id: str, user: User, line_id: int) -> ChatOut:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
@@ -305,7 +535,7 @@ class ChatService:
             append_message(session, chat, f"Обращение передано в «{line.name}». Ожидайте подключения оператора.")
             return await chat_view(session, chat)
 
-    async def claim(self, chat_id: UUID, user: User) -> ChatOut:
+    async def claim(self, chat_id: str, user: User) -> ChatOut:
         if user.role != Role.OPERATOR:
             fail(403, "OPERATOR_REQUIRED", "Operator access required")
         async with self.storage.create_session() as session, session.begin():
@@ -323,7 +553,7 @@ class ChatService:
             append_message(session, chat, f"К диалогу подключился оператор {user.display_name}.")
             return await chat_view(session, chat)
 
-    async def close(self, chat_id: UUID, user: User, reason: str) -> ChatOut:
+    async def close(self, chat_id: str, user: User, reason: str) -> ChatOut:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
@@ -333,21 +563,104 @@ class ChatService:
                 close_chat(session, chat, CloseReason(reason))
             return await chat_view(session, chat)
 
-    async def rate(self, message_id: UUID, user: User, payload: RatingIn) -> RatingOut:
+    async def rate(self, message_id: str, user: User, payload: RatingIn) -> RatingOut:
         async with self.storage.create_session() as session, session.begin():
-            message = await session.get(Message, message_id)
-            if message is None:
-                fail(404, "MESSAGE_NOT_FOUND", "Message not found")
-            chat = await load_chat(session, message.chat_id, lock=True)
-            check_read_access(chat, user)
-            check_owner(chat, user)
-            if message.sender_type not in (SenderType.AI, SenderType.OPERATOR) or message.is_redacted:
-                fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
+            # 1. Check if message exists in Postgres Message table
+            pg_message = await session.get(Message, message_id)
+            if pg_message is not None:
+                chat = await load_chat(session, pg_message.chat_id, lock=True)
+                check_read_access(chat, user)
+                check_owner(chat, user)
+                if pg_message.sender_type not in (SenderType.AI, SenderType.OPERATOR) or pg_message.is_redacted:
+                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
+                target_chat_id = pg_message.chat_id
+                sender_type = pg_message.sender_type
+                sender_id = pg_message.sender_id
+                sender_name = pg_message.sender_name
+                support_line_id = pg_message.support_line_id
+                msg_text = pg_message.text
+            else:
+                # 2. Check user's chats in ML service
+                user_chats = list(
+                    await session.scalars(
+                        select(Chat).where(Chat.user_id == user.id).order_by(Chat.updated_at.desc())
+                    )
+                )
+                found_chat = None
+                found_msg = None
+                for c in user_chats:
+                    try:
+                        ml_data = await self.ai.get_chat(c.id)
+                        for m in ml_data.get("messages", []):
+                            if m.get("id") == message_id:
+                                found_chat = c
+                                found_msg = m
+                                break
+                    except Exception:
+                        continue
+                    if found_chat:
+                        break
+
+                if found_chat is None and message_id.startswith("user-"):
+                    for (c_id, _), cached_res in self._submissions.items():
+                        for m in cached_res.messages:
+                            if m.id == message_id:
+                                c = await session.get(Chat, c_id)
+                                if c and c.user_id == user.id:
+                                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
+                                elif c and c.user_id != user.id:
+                                    fail(404, "CHAT_NOT_FOUND", "Chat not found")
+
+                if found_chat is None:
+                    # Message not found for this user
+                    # If message exists in another user's chat, check if any chat has it
+                    all_chats = list(await session.scalars(select(Chat).where(Chat.user_id != user.id)))
+                    other_found = False
+                    for c in all_chats:
+                        try:
+                            ml_data = await self.ai.get_chat(c.id)
+                            for m in ml_data.get("messages", []):
+                                if m.get("id") == message_id:
+                                    other_found = True
+                                    break
+                        except Exception:
+                            continue
+                        if other_found:
+                            break
+                    if other_found:
+                        fail(404, "CHAT_NOT_FOUND", "Chat not found")
+                    fail(404, "MESSAGE_NOT_FOUND", "Message not found")
+
+                chat = found_chat
+                check_read_access(chat, user)
+                check_owner(chat, user)
+                if found_msg.get("role") != "assistant":
+                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
+
+                target_chat_id = chat.id
+                sender_type = SenderType.AI
+                sender_id = None
+                sender_name = "ИИ-помощник"
+                support_line_id = chat.support_line_id
+                msg_text = found_msg.get("content", "")
+
+            # 3. Upsert Rating
             rating = await session.scalar(
                 select(Rating).where(Rating.message_id == message_id, Rating.user_id == user.id)
             )
             if rating is None:
-                rating = Rating(message_id=message_id, user_id=user.id, **payload.model_dump())
+                rating = Rating(
+                    message_id=message_id,
+                    chat_id=target_chat_id,
+                    user_id=user.id,
+                    stars=payload.stars,
+                    comment=payload.comment,
+                    sender_type=sender_type,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    support_line_id=support_line_id,
+                    message_text=msg_text,
+                )
                 session.add(rating)
             else:
                 rating.stars, rating.comment, rating.updated_at = payload.stars, payload.comment, utcnow()

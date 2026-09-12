@@ -35,6 +35,7 @@ class FakeAI:
         self.hold: str | None = None
         self.started = asyncio.Event()
         self.release = asyncio.Event()
+        self.chats: dict[str, dict] = {}
 
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         endpoint = request.url.path
@@ -45,24 +46,63 @@ class FakeAI:
             await self.release.wait()
         if endpoint == "/health":
             return httpx.Response(200, json={"status": "ready", "mode": "stub"})
-        if endpoint == "/ml-api/chat":
-            return httpx.Response(201, json={"id": "test-ml-chat-1", "title": "Новый чат"})
+        if request.method == "POST" and endpoint == "/ml-api/chat":
+            chat_id = f"test-ml-chat-{len(self.chats) + 1}"
+            self.chats[chat_id] = {
+                "id": chat_id,
+                "title": "Новый чат",
+                "system_prompt": body.get("system_prompt") if body else None,
+                "redirect_line": None,
+                "redirect_reason": None,
+                "closed_at": None,
+                "created_at": "2026-09-12T00:00:00Z",
+                "updated_at": "2026-09-12T00:00:00Z",
+                "messages": [],
+            }
+            return httpx.Response(201, json={"id": chat_id, "title": "Новый чат"})
         if "/ml-api/chat/" in endpoint and endpoint.endswith("/message"):
             if self.answer_mode == "error":
                 return httpx.Response(503)
             if self.answer_mode == "timeout":
                 raise httpx.ReadTimeout("Simulated timeout")
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            turn_num = len(self.chats[chat_id]["messages"]) // 2 + 1 if chat_id in self.chats else 1
+            msg_id = f"msg-{turn_num}"
+            if chat_id in self.chats:
+                self.chats[chat_id]["messages"].append({
+                    "id": f"msg-user-{len(self.chats[chat_id]['messages']) + 1}",
+                    "role": "user",
+                    "content": body.get("message", ""),
+                    "tools": [],
+                })
+                self.chats[chat_id]["messages"].append({
+                    "id": msg_id,
+                    "role": "assistant",
+                    "content": "A supported answer",
+                    "tools": [],
+                })
             sse_text = (
-                "event: start\ndata: {\"message_id\": \"msg-1\"}\n\n"
-                "event: done\ndata: {\"message_id\": \"msg-1\", \"content\": \"A supported answer\"}\n\n"
+                f"event: start\ndata: {{\"message_id\": \"{msg_id}\"}}\n\n"
+                f"event: done\ndata: {{\"message_id\": \"{msg_id}\", \"content\": \"A supported answer\"}}\n\n"
             )
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
                 text=sse_text,
             )
-        if "/ml-api/chat/" in endpoint:
+        if request.method == "GET" and endpoint.startswith("/ml-api/chat/"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            if chat_id in self.chats:
+                return httpx.Response(200, json=self.chats[chat_id])
+            return httpx.Response(404, json={"detail": "Not found"})
+        if request.method == "DELETE" and endpoint.startswith("/ml-api/chat/"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            self.chats.pop(chat_id, None)
             return httpx.Response(204)
+
         if endpoint == "/ml-api/knowledge-base":
             return httpx.Response(
                 200,

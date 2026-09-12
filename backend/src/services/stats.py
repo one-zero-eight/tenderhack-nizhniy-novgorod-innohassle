@@ -38,16 +38,15 @@ class StatsService:
         if stars_lte is not None:
             filters.append(Rating.stars <= stars_lte)
         if sender_type is not None:
-            filters.append(Message.sender_type == sender_type)
+            filters.append(Rating.sender_type == sender_type)
         if line_id is not None:
-            filters.append(Message.support_line_id == line_id)
+            filters.append(Rating.support_line_id == line_id)
         if operator_id is not None:
-            filters.extend([Message.sender_type == SenderType.OPERATOR, Message.sender_id == operator_id])
+            filters.extend([Rating.sender_type == SenderType.OPERATOR, Rating.sender_id == operator_id])
         async with self.storage.create_session() as session:
-            total = await session.scalar(select(func.count()).select_from(Rating).join(Message).where(*filters))
-            rows = await session.execute(
-                select(Rating, Message)
-                .join(Message)
+            total = await session.scalar(select(func.count()).select_from(Rating).where(*filters))
+            rows = await session.scalars(
+                select(Rating)
                 .where(*filters)
                 .order_by(
                     Rating.created_at.desc(),
@@ -65,14 +64,14 @@ class StatsService:
                     comment=rating.comment,
                     created_at=rating.created_at,
                     updated_at=rating.updated_at,
-                    chat_id=message.chat_id,
-                    sender_type=message.sender_type,
-                    sender_id=message.sender_id,
-                    sender_name=message.sender_name,
-                    support_line_id=message.support_line_id,
-                    message_text=message.text,
+                    chat_id=rating.chat_id,
+                    sender_type=rating.sender_type,
+                    sender_id=rating.sender_id,
+                    sender_name=rating.sender_name,
+                    support_line_id=rating.support_line_id,
+                    message_text=rating.message_text,
                 )
-                for rating, message in rows
+                for rating in rows
             ]
             return RatingPage(items=items, total=total, offset=offset, limit=limit)
 
@@ -110,19 +109,21 @@ class StatsService:
                     )
                 ).all()
             )
-            activity = dict(
-                (
-                    await session.execute(
-                        select(Message.sender_type, func.count())
-                        .where(
-                            *activity_filters,
-                            Message.sender_type.in_([SenderType.AI, SenderType.OPERATOR]),
-                            Message.is_redacted.is_(False),
-                        )
-                        .group_by(Message.sender_type)
-                    )
-                ).all()
+            ai_activity = (
+                await session.scalar(
+                    select(func.coalesce(func.sum(Chat.ai_messages_count), 0)).where(*chat_filters)
+                )
             )
+            operator_activity = (
+                await session.scalar(
+                    select(func.count(Message.id)).where(
+                        *activity_filters,
+                        Message.sender_type == SenderType.OPERATOR,
+                        Message.is_redacted.is_(False),
+                    )
+                )
+            )
+            activity = {"ai": int(ai_activity or 0), "operator": int(operator_activity or 0)}
             count, average = (
                 await session.execute(select(func.count(Rating.id), func.avg(Rating.stars)).where(*rating_filters))
             ).one()
@@ -135,18 +136,19 @@ class StatsService:
             )
             groups = {}
             for label, column in [
-                ("by_sender_type", Message.sender_type),
-                ("by_operator", Message.sender_id),
-                ("by_support_line", Message.support_line_id),
+                ("by_sender_type", Rating.sender_type),
+                ("by_operator", Rating.sender_id),
+                ("by_support_line", Rating.support_line_id),
             ]:
-                query = select(column, func.count(Rating.id), func.avg(Rating.stars)).select_from(Rating).join(Message)
+                query = select(column, func.count(Rating.id), func.avg(Rating.stars)).select_from(Rating)
                 filters = list(rating_filters)
                 if label == "by_operator":
-                    filters.append(Message.sender_type == SenderType.OPERATOR)
+                    filters.append(Rating.sender_type == SenderType.OPERATOR)
                 groups[label] = [
                     {"key": str(key) if key is not None else None, "count": n, "average": float(avg)}
                     for key, n, avg in (await session.execute(query.where(*filters).group_by(column))).all()
                 ]
+
             waiting = dict(
                 (
                     await session.execute(

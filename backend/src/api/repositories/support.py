@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from fastapi import APIRouter
 
 from src.api.repositories.chats import Limit, Offset
@@ -18,5 +16,6 @@ async def operator_chats(
 
 
 @router.post("/{chat_id}/claim", response_model=ChatOut)
-async def claim(chat_id: UUID, user: CurrentUser, service: Chats) -> ChatOut:
+async def claim(chat_id: str, user: CurrentUser, service: Chats) -> ChatOut:
     return await service.claim(chat_id, user)
+

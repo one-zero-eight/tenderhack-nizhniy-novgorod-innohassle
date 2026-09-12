@@ -8,7 +8,7 @@ from src.schemas.chat import ActorOut, ChatOut, MessageOut, RatingOut, Recipient
 from src.services.errors import fail
 
 
-async def load_chat(session: AsyncSession, chat_id: UUID, *, lock: bool = False) -> Chat:
+async def load_chat(session: AsyncSession, chat_id: str, *, lock: bool = False) -> Chat:
     query = select(Chat).where(Chat.id == chat_id)
     if lock:
         query = query.with_for_update()
@@ -49,7 +49,7 @@ def append_message(
     sender: User | None = None,
     client_message_id: UUID | None = None,
     input_hash: str | None = None,
-    reply_to: UUID | None = None,
+    reply_to: str | None = None,
     is_redacted: bool = False,
     citations: list[dict] | None = None,
     tool_calls: list[dict] | None = None,
@@ -59,7 +59,7 @@ def append_message(
     chat.updated_at = utcnow()
     name = sender.display_name if sender else ("ИИ-помощник" if sender_type == SenderType.AI else "Система")
     message = Message(
-        id=uuid4(),
+        id=uuid4().hex,
         chat_id=chat.id,
         sequence=chat.next_sequence,
         text=text,
@@ -101,6 +101,7 @@ async def chat_view(session: AsyncSession, chat: Chat) -> ChatOut:
         recipient = RecipientOut(kind="ai", display_name="ИИ-помощник")
     return ChatOut(
         id=chat.id,
+        title=chat.title,
         user_id=chat.user_id,
         status=chat.status,
         recipient=recipient,
@@ -139,7 +140,7 @@ async def submission_messages(session: AsyncSession, message: Message) -> list[M
     return await message_views(session, list(rows))
 
 
-async def latest_question(session: AsyncSession, chat_id: UUID) -> Message | None:
+async def latest_question(session: AsyncSession, chat_id: str) -> Message | None:
     return await session.scalar(
         select(Message)
         .where(
@@ -150,3 +151,4 @@ async def latest_question(session: AsyncSession, chat_id: UUID) -> Message | Non
         .order_by(Message.sequence.desc())
         .limit(1)
     )
+

@@ -89,13 +89,14 @@ class Chat(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(100), default="Новый чат")
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     status: Mapped[ChatStatus] = mapped_column(enum_type(ChatStatus), default=ChatStatus.AI)
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
     operator_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
-    ml_chat_id: Mapped[str | None] = mapped_column(String(100))
     next_sequence: Mapped[int] = mapped_column(default=0)
+    ai_messages_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     handed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -112,8 +113,8 @@ class Message(Base):
         UniqueConstraint("chat_id", "client_message_id", name="uq_messages_chat_client_id"),
     )
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    chat_id: Mapped[UUID] = mapped_column(ForeignKey("chats.id"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid4().hex)
+    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"))
     sequence: Mapped[int]
     sender_type: Mapped[SenderType] = mapped_column(enum_type(SenderType))
     sender_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
@@ -122,7 +123,7 @@ class Message(Base):
     text: Mapped[str] = mapped_column(Text)
     citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
     tool_calls: Mapped[list[dict]] = mapped_column(JSON, default=list)
-    reply_to_message_id: Mapped[UUID | None] = mapped_column(ForeignKey("messages.id"), index=True)
+    reply_to_message_id: Mapped[str | None] = mapped_column(String(64), index=True)
     client_message_id: Mapped[UUID | None]
     input_hash: Mapped[str | None] = mapped_column(String(64))
     is_redacted: Mapped[bool] = mapped_column(default=False)
@@ -137,9 +138,16 @@ class Rating(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id"))
+    message_id: Mapped[str] = mapped_column(String(64), index=True)
+    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"), index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     stars: Mapped[int]
     comment: Mapped[str | None] = mapped_column(String(2000))
+    sender_type: Mapped[SenderType] = mapped_column(enum_type(SenderType), default=SenderType.AI)
+    sender_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    sender_name: Mapped[str] = mapped_column(String(100), default="ИИ-помощник")
+    support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
+    message_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
