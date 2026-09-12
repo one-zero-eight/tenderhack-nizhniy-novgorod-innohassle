@@ -20,9 +20,21 @@ export async function requireAuth(): Promise<SchemaUserOut> {
 
 /**
  * Route guard that additionally restricts access to the given roles.
+ * Users lacking the role are sent to the page appropriate for them: admins to
+ * the history view, everyone else to support.
  */
 export async function requireRole(roles: readonly SchemaUserOut['role'][]): Promise<SchemaUserOut> {
   const user = await requireAuth()
-  if (!roles.includes(user.role)) throw redirect({ to: '/support' })
+  if (!roles.includes(user.role)) throw redirect({ to: user.role === 'admin' ? '/history' : '/support' })
+  return user
+}
+
+/**
+ * Guard for regular-user pages. Admins do not participate in chats and are
+ * always sent to the history view instead.
+ */
+export async function requireUser(): Promise<SchemaUserOut> {
+  const user = await requireAuth()
+  if (user.role === 'admin') throw redirect({ to: '/history' })
   return user
 }

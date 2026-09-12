@@ -2,13 +2,13 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import Button from '@/components/ui/Button'
 import ChatList from '@/components/ui/ChatList'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
-import { requireAuth } from '@/app/routes/-guards'
+import { requireUser } from '@/app/routes/-guards'
 import { useCreateChat } from '@/hooks/useChat'
 import { useChats } from '@/hooks/useChats'
 import type { ChatView } from '@/lib/chat-view'
 
 export const Route = createFileRoute('/support/')({
-  beforeLoad: requireAuth,
+  beforeLoad: requireUser,
   component: SupportPage,
 })
 

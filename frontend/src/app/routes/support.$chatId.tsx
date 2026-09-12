@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import ChatContainer from '@/components/ui/ChatContainer'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
-import { requireAuth } from '@/app/routes/-guards'
+import { requireUser } from '@/app/routes/-guards'
 import { useChat } from '@/hooks/useChat'
 import { useChatMessages } from '@/hooks/useChatMessages'
 import { useStreamMessage } from '@/hooks/useStreamMessage'
 
 export const Route = createFileRoute('/support/$chatId')({
-  beforeLoad: requireAuth,
+  beforeLoad: requireUser,
   component: ChatPage,
 })
 

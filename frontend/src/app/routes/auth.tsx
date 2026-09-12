@@ -5,6 +5,7 @@ import Input from '@/components/ui/Input'
 import { useLogin } from '@/hooks/useAuth'
 import { getStoredUser, getToken } from '@/lib/auth-storage'
 import { homePath } from '@/lib/roles'
+import { Role } from '@/api/types'
 
 export const Route = createFileRoute('/auth')({
   beforeLoad: () => {
@@ -29,7 +30,16 @@ function AuthPage() {
       { login: loginValue.trim(), password },
       // Full reload so the app boots with the new session (no stale cached
       // account/token state anywhere in memory).
-      { onSuccess: (user) => window.location.assign(homePath(user.role)) },
+      { onSuccess: (data) => {
+        switch (data.role) {
+          case Role.admin:
+            window.location.assign('/history')
+            break
+          default:
+            window.location.assign('/support')
+            break
+        }
+      }},
     )
   }
 

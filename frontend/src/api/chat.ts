@@ -66,6 +66,38 @@ export async function fetchChat(chatId: string): Promise<SchemaChatOut> {
   return unwrap(data, error)
 }
 
+/** Filters accepted by the admin chat history endpoint. */
+export interface AdminChatFilters {
+  from?: string | null
+  to?: string | null
+  status?: SchemaChatOut['status'] | null
+  line_id?: number | null
+  operator_id?: string | null
+  offset?: number
+  limit?: number
+}
+
+/**
+ * Lists every chat in the system (admin only) for the history view.
+ * Newest first; paginated via `offset`/`limit`.
+ */
+export async function fetchAdminChats(filters: AdminChatFilters = {}): Promise<SchemaChatPage> {
+  const { data, error } = await eventsFetch.GET('/admin/chats', {
+    params: {
+      query: {
+        from: filters.from ?? undefined,
+        to: filters.to ?? undefined,
+        status: filters.status ?? undefined,
+        line_id: filters.line_id ?? undefined,
+        operator_id: filters.operator_id ?? undefined,
+        offset: filters.offset,
+        limit: filters.limit,
+      },
+    },
+  })
+  return unwrap(data, error)
+}
+
 export async function createChat(): Promise<SchemaChatOut> {
   const { data, error } = await eventsFetch.POST('/chats', { body: {} as never })
   return unwrap(data, error)

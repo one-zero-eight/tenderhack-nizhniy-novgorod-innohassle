@@ -17,6 +17,8 @@ interface ChatContainerProps {
   onSend?: (text: string) => void
   onRate?: (stars: number, comment: string) => void
   disabled?: boolean
+  /** Hides the composer entirely (e.g. the read-only admin history view). */
+  readOnly?: boolean
   /** Short status shown while the assistant runs a tool (searching, reading…). */
   toolStatus?: string | null
   className?: string
@@ -37,7 +39,7 @@ const COMMANDS: ChatCommand[] = [
   },
 ]
 
-export default function ChatContainer({ messages, onSend, onRate, disabled = false, toolStatus, className }: ChatContainerProps) {
+export default function ChatContainer({ messages, onSend, onRate, disabled = false, readOnly = false, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const [showRating, setShowRating] = useState(false)
   const trimmed = text.trim()
@@ -108,7 +110,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
           </div>
         )}
       </div>
-
+      {!readOnly && (
       <form onSubmit={handleSubmit} className="shrink-0">
         <ChatInput
           value={text}
@@ -123,7 +125,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
           commands={COMMANDS}
         />
       </form>
-
+      )}
       {showRating && (
         <RatingInput onSubmit={submitRating} onClose={() => setShowRating(false)} disabled={disabled} />
       )}

@@ -18,6 +18,7 @@ import { Route as IssuesIndexRouteImport } from './routes/issues.index';
 import { Route as HistoryIndexRouteImport } from './routes/history.index';
 import { Route as SupportChatIdRouteImport } from './routes/support.$chatId';
 import { Route as KnowledgeBaseSlugRouteImport } from './routes/knowledge-base.$slug';
+import { Route as HistoryChatIdRouteImport } from './routes/history.$chatId';
 import { Route as KnowledgeBaseSlugIndexRouteImport } from './routes/knowledge-base.$slug.index';
 import { Route as KnowledgeBaseSlugSectionIdRouteImport } from './routes/knowledge-base.$slug.$sectionId';
 
@@ -66,6 +67,11 @@ const KnowledgeBaseSlugRoute = KnowledgeBaseSlugRouteImport.update({
   path: '/knowledge-base/$slug',
   getParentRoute: () => rootRouteImport,
 } as any);
+const HistoryChatIdRoute = HistoryChatIdRouteImport.update({
+  id: '/history/$chatId',
+  path: '/history/$chatId',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const KnowledgeBaseSlugIndexRoute = KnowledgeBaseSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/history/$chatId': typeof HistoryChatIdRoute;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history': typeof HistoryIndexRoute;
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/history/$chatId': typeof HistoryChatIdRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history': typeof HistoryIndexRoute;
   '/issues': typeof IssuesIndexRoute;
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/history/$chatId': typeof HistoryChatIdRoute;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/history/': typeof HistoryIndexRoute;
@@ -123,6 +132,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/history/$chatId'
     | '/knowledge-base/$slug'
     | '/support/$chatId'
     | '/history'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/history/$chatId'
     | '/support/$chatId'
     | '/history'
     | '/issues'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/history/$chatId'
     | '/knowledge-base/$slug'
     | '/support/$chatId'
     | '/history/'
@@ -162,6 +174,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AuthRoute: typeof AuthRoute;
   RegisterRoute: typeof RegisterRoute;
+  HistoryChatIdRoute: typeof HistoryChatIdRoute;
   KnowledgeBaseSlugRoute: typeof KnowledgeBaseSlugRouteWithChildren;
   SupportChatIdRoute: typeof SupportChatIdRoute;
   HistoryIndexRoute: typeof HistoryIndexRoute;
@@ -235,6 +248,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KnowledgeBaseSlugRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/history/$chatId': {
+      id: '/history/$chatId';
+      path: '/history/$chatId';
+      fullPath: '/history/$chatId';
+      preLoaderRoute: typeof HistoryChatIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/knowledge-base/$slug/': {
       id: '/knowledge-base/$slug/';
       path: '/';
@@ -269,6 +289,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   RegisterRoute: RegisterRoute,
+  HistoryChatIdRoute: HistoryChatIdRoute,
   KnowledgeBaseSlugRoute: KnowledgeBaseSlugRouteWithChildren,
   SupportChatIdRoute: SupportChatIdRoute,
   HistoryIndexRoute: HistoryIndexRoute,
