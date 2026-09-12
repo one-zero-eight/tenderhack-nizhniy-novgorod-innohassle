@@ -1,4 +1,24 @@
+{# Сообщение пользователя. Вложения показываем над текстом: картинку — превью,
+   документ — ссылкой на скачивание. Оригиналы живут в attachments/ и не удаляются
+   при отправке, поэтому блок остаётся и в истории чата. #}
 <article class="msg user">
   <div class="who">Вы</div>
-  <div class="body">{{ user_msg.content }}</div>
+  {% if user_msg.attachments %}
+  <ul class="msg-attachments">
+    {% for f in user_msg.attachments %}
+    <li class="attachment{% if f.kind == 'image' %} image{% endif %}">
+      {% if f.kind == "image" %}
+      <a href="{{ f.url }}" target="_blank" rel="noopener">
+        <img class="attachment-thumb" src="{{ f.url }}" alt="{{ f.filename }}">
+      </a>
+      {% else %}
+      <span class="attachment-kind">MD</span>
+      {% endif %}
+      <a class="attachment-name" href="{{ f.url }}" target="_blank" rel="noopener" title="{{ f.filename }}">{{ f.filename }}</a>
+      <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if user_msg.content %}<div class="body">{{ user_msg.content }}</div>{% endif %}
 </article>

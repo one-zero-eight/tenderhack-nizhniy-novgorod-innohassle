@@ -1,0 +1,31 @@
+{# Идентификация: без пароля, только имя. Создаёт куку username. #}
+{% extends "base.html" %}
+
+{% block title %}Вход — Портал поставщиков{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block content %}
+<section class="auth">
+  <h1 class="auth-title">Как вас зовут?</h1>
+  <p class="auth-note">
+    Имя нужно, чтобы ваши обращения не смешивались с чужими. Пароль не спрашиваем —
+    это демонстрационный стенд.
+  </p>
+  {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+  <form class="auth-form" method="post" action="/login">
+    <label class="field-label" for="username">Имя</label>
+    <input
+      type="text"
+      id="username"
+      name="username"
+      placeholder="Например, Иван Петров"
+      maxlength="64"
+      required
+      autofocus
+      value="{{ username or '' }}"
+    >
+    <button type="submit" class="btn-primary">Войти</button>
+  </form>
+</section>
+{% endblock %}

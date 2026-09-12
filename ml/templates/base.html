@@ -15,19 +15,41 @@
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.3/dist/sse.min.js"></script>
 </head>
 <body hx-ext="sse">
+  {#
+    Общий хедер для всех страниц, включая админку. Название всегда одно,
+    заголовок страницы живёт в хлебных крошках, а не здесь.
+    Слева — основные разделы, справа (прижата к краю) — админка.
+    Страница управляет только подсветкой активной вкладки через `tab`.
+  #}
   <header class="topbar">
-    <div class="topbar-title">Портал поставщиков</div>
-    <nav class="tabs" aria-label="Разделы">
+    <div class="topbar-left">
+      <div class="topbar-title">Портал поставщиков</div>
+      {% block nav %}
+      <nav class="tabs" aria-label="Разделы">
+        <a
+          class="tab{% if tab == 'support' %} active{% endif %}"
+          href="/"
+          {% if tab == 'support' %}aria-current="page"{% endif %}
+        >Поддержка</a>
+        <a
+          class="tab{% if tab == 'knowledge' %} active{% endif %}"
+          href="/knowledge-base"
+          {% if tab == 'knowledge' %}aria-current="page"{% endif %}
+        >База знаний</a>
+        <a
+          class="tab{% if tab == 'profile' %} active{% endif %}"
+          href="/profile"
+          {% if tab == 'profile' %}aria-current="page"{% endif %}
+        >Профиль</a>
+      </nav>
+      {% endblock %}
+    </div>
+    <nav class="tabs tabs-end" aria-label="Администрирование">
       <a
-        class="tab{% if tab == 'support' %} active{% endif %}"
-        href="/"
-        {% if tab == 'support' %}aria-current="page"{% endif %}
-      >Поддержка</a>
-      <a
-        class="tab{% if tab == 'knowledge' %} active{% endif %}"
-        href="/knowledge-base"
-        {% if tab == 'knowledge' %}aria-current="page"{% endif %}
-      >База знаний</a>
+        class="tab{% if tab == 'admin' %} active{% endif %}"
+        href="/admin/"
+        {% if tab == 'admin' %}aria-current="page"{% endif %}
+      >Админка</a>
     </nav>
   </header>
   <main class="page">

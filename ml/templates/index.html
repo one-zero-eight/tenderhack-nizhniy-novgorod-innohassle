@@ -3,20 +3,5 @@
 {% block title %}Поддержка — Портал поставщиков{% endblock %}
 
 {% block content %}
-<div class="support-layout">
-  <aside class="sidebar">
-    <div class="sidebar-head">Чаты</div>
-    <button
-      type="button"
-      class="btn-primary new-chat"
-      hx-post="/chats"
-      hx-target="body"
-      hx-swap="outerHTML"
-    >Новый чат</button>
-    {% include "chat_list.html" %}
-  </aside>
-  <div id="chat-panel">
-    {% include "chat_panel.html" %}
-  </div>
-</div>
+  {% include "support_layout.html" %}
 {% endblock %}

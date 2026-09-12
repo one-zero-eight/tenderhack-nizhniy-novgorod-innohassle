@@ -1,3 +1,4 @@
+{# Список мануалов. Общий для / (публичная часть). Ждёт: manuals, base. #}
 {% extends "base.html" %}
 
 {% block title %}База знаний — Портал поставщиков{% endblock %}
@@ -5,7 +6,7 @@
 {% block content %}
 <div class="page-band">
   <nav class="crumbs">
-    <a href="/knowledge-base" aria-current="page">База знаний</a>
+    <span>База знаний</span>
     <span class="crumb-sep">/</span>
     <span>Мануалы: {{ manuals | length }}</span>
   </nav>
@@ -15,7 +16,7 @@
   <ul class="kb-grid">
     {% for m in manuals %}
       <li class="kb-card">
-        <a class="kb-link" href="/knowledge-base/{{ m.slug }}">
+        <a class="kb-link" href="{{ base }}/knowledge-base/{{ m.slug }}">
           <span class="kb-title">{{ m.title }}</span>
           <span class="kb-meta">{{ m.sections }} разделов</span>
           <span class="kb-slug">{{ m.slug }}</span>

@@ -1,0 +1,19 @@
+{# База для /admin: чаты сгруппированы по темам и подтемам, без отправки сообщений
+   и без удаления. Базы знаний в админке нет. #}
+{% extends "base.html" %}
+
+{% block title %}Админка — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="support-layout">
+  <aside class="sidebar">
+    <div class="sidebar-head">Чаты по темам</div>
+    {% include "admin_chat_tree.html" %}
+  </aside>
+  <div id="chat-panel">
+    {% with readonly = true %}
+      {% include "chat_panel.html" %}
+    {% endwith %}
+  </div>
+</div>
+{% endblock %}

@@ -11,6 +11,9 @@ chroma_db/
 storage/
 .cache/
 
+# оригиналы загруженных вложений
+attachments/
+
 # база чатов
 chats.sqlite3
 chats.sqlite3-wal

@@ -1,3 +1,6 @@
+{# Панель чата: переписка + вложения + композер. Общая для / и /admin.
+   Ждёт: chat, base (префикс роутов: "" или "/admin").
+   readonly=true — только чтение: без формы отправки (для /admin). #}
 {% if chat %}
 <section class="chat">
   {% if chat.is_closed %}
@@ -16,21 +19,90 @@
       {% endif %}
     {% endfor %}
   </div>
-  {% if not chat.is_closed %}
+  {% if not chat.is_closed and not readonly %}
+  {# Прикреплённые файлы над вводом. На отправке они уходят в контекст и остаются
+     в истории сообщения — здесь список становится пустым после полного перерендера. #}
+  {% set files = chat_files(chat.id) %}
+  {% if files %}
+  <div class="attachments">
+    <ul class="attachments-list">
+      {% for f in files %}
+      <li class="attachment{% if f.is_image %} image{% endif %}">
+        {% if f.is_image %}
+        <img class="attachment-thumb" src="{{ f.url }}" alt="">
+        {% else %}
+        <span class="attachment-kind">MD</span>
+        {% endif %}
+        <span class="attachment-name" title="{{ f.filename }}">{{ f.filename }}</span>
+        <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+        <button
+          type="button"
+          class="attachment-del"
+          title="Убрать файл"
+          aria-label="Убрать файл"
+          hx-delete="{{ base }}/chats/{{ chat.id }}/files/{{ f.id }}"
+          hx-target="body"
+          hx-swap="outerHTML"
+        >×</button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   <form
     class="composer"
-    hx-post="/chats/{{ chat.id }}/messages"
+    hx-post="{{ base }}/chats/{{ chat.id }}/messages"
     hx-target="body"
     hx-swap="outerHTML"
     hx-on::after-request="this.reset()"
   >
-    <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>
+    <div class="composer-body">
+      <div id="upload-error" class="upload-error"></div>
+      <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>
+      <div class="composer-tools">
+        {# Один файл за раз, лимит — 10 МБ (см. attachments.MAX_FILE_SIZE). #}
+        <label class="attach-btn" title="Прикрепить файл или картинку (до {{ max_upload_mb }} МБ)">
+          <input
+            type="file"
+            name="file"
+            hx-post="{{ base }}/chats/{{ chat.id }}/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="body"
+            hx-swap="outerHTML"
+            hx-trigger="change"
+          >
+          Прикрепить файл
+        </label>
+        <span class="composer-hint">картинка или документ, до {{ max_upload_mb }} МБ</span>
+      </div>
+    </div>
     <button type="submit" class="btn-primary">Отправить</button>
   </form>
+  {% elif readonly %}
+  {# Админка только смотрит, но приложенные файлы видеть должна. #}
+  {% set files = chat_files(chat.id) %}
+  {% if files %}
+  <div class="attachments readonly">
+    <ul class="attachments-list">
+      {% for f in files %}
+      <li class="attachment{% if f.is_image %} image{% endif %}">
+        {% if f.is_image %}
+        <img class="attachment-thumb" src="{{ f.url }}" alt="">
+        {% else %}
+        <span class="attachment-kind">MD</span>
+        {% endif %}
+        <span class="attachment-name" title="{{ f.filename }}">{{ f.filename }}</span>
+        <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <div class="readonly-note">Режим просмотра: из админки сообщения не отправляются.</div>
   {% endif %}
 </section>
 {% else %}
 <section class="empty">
-  <p>Создайте чат, чтобы спросить по инструкциям Портала поставщиков — закупки, оферты, контракты, электронное исполнение.</p>
+  <p>Выберите чат в списке слева — он сгруппирован по теме и подтеме обращения.</p>
 </section>
 {% endif %}

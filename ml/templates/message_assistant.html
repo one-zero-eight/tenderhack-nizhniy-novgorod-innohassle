@@ -1,18 +1,15 @@
 {# Сообщение ассистента. Если ответ ещё генерируется, элемент подключается к SSE-стриму;
-   stream отдаёт весь накопленный текст, поэтому переподключение при смене чата безопасно. #}
-<article class="msg assistant"{% if chat.message_is_streaming(assistant_msg) %} hx-ext="sse" sse-connect="/chats/{{ chat.id }}/messages/{{ assistant_msg.id }}/stream" sse-close="done"{% endif %}>
+   stream отдаёт весь накопленный текст, поэтому переподключение при смене чата безопасно.
+   Вызовы инструментов показываются только в админке — на публичной странице они лишние. #}
+<article class="msg assistant"{% if chat.message_is_streaming(assistant_msg) %} hx-ext="sse" sse-connect="{{ base }}/chats/{{ chat.id }}/messages/{{ assistant_msg.id }}/stream" sse-close="done"{% endif %}>
   <div class="who">Ассистент</div>
+  {% if readonly %}
   <div class="tools" sse-swap="tool" hx-swap="beforeend">
-    {% for t in assistant_msg.tools %}
-      <details class="tool{% if t.error %} error{% endif %}">
-        <summary>
-          <span class="tool-name">{{ t.name }}</span>
-          <span class="tool-status">{% if t.output is none %}вызов{% elif t.error %}ошибка{% else %}готово{% endif %}</span>
-        </summary>
-        {% if t.kwargs %}<code>{{ t.kwargs | tojson }}</code>{% endif %}
-        {% if t.output %}<pre>{{ t.output[:800] }}</pre>{% endif %}
-      </details>
+    {# Показываем только завершённые вызовы: сам вызов и статус не нужны. #}
+    {% for t in assistant_msg.tools if t.output is not none %}
+      <div class="tool{% if t.error %} error{% endif %}" title="{{ t.output[:200] }}">{{ tool_label(t) }}</div>
     {% endfor %}
   </div>
+  {% endif %}
   <div class="body markdown" sse-swap="token" hx-swap="innerHTML">{% if chat.message_is_streaming(assistant_msg) and not assistant_msg.content %}<div class="pending" aria-label="Модель отвечает"><span></span><span></span><span></span></div>{% else %}{{ assistant_msg.content | markdown }}{% endif %}</div>
 </article>
