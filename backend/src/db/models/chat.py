@@ -13,8 +13,9 @@ def utcnow() -> datetime:
 
 
 class Role(StrEnum):
-    USER = "user"
-    OPERATOR = "operator"
+    SELLER = "seller"
+    BUYER = "buyer"
+    SUPPORT = "support"
     ADMIN = "admin"
 
 
@@ -29,6 +30,7 @@ class SenderType(StrEnum):
     USER = "user"
     AI = "ai"
     OPERATOR = "operator"
+    SUPPORT = "support"
     SYSTEM = "system"
 
 
@@ -60,15 +62,27 @@ class SupportLine(Base):
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("role != 'operator' OR support_line_id IS NOT NULL", name="operator_line_required"),
+        CheckConstraint("role != 'support' OR support_line_id IS NOT NULL", name="support_line_required"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     login: Mapped[str] = mapped_column(String(100), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(100))
-    role: Mapped[Role] = mapped_column(enum_type(Role))
+    role: Mapped[Role] = mapped_column(enum_type(Role), default=Role.BUYER)
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
+
+    @property
+    def is_customer(self) -> bool:
+        return self.role in (Role.SELLER, Role.BUYER)
+
+    @property
+    def is_support(self) -> bool:
+        return self.role == Role.SUPPORT
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == Role.ADMIN
 
 
 class Chat(Base):
@@ -104,6 +118,8 @@ class Chat(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     close_reason: Mapped[CloseReason | None] = mapped_column(enum_type(CloseReason))
     moderation_reason: Mapped[str | None] = mapped_column(String(40))
+    topic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    subtopic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
 
 class Message(Base):
@@ -133,13 +149,12 @@ class Message(Base):
 class Rating(Base):
     __tablename__ = "ratings"
     __table_args__ = (
-        UniqueConstraint("message_id", "user_id", name="uq_ratings_message_user"),
+        UniqueConstraint("chat_id", name="uq_ratings_chat"),
         CheckConstraint("stars BETWEEN 1 AND 5", name="stars_range"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    message_id: Mapped[str] = mapped_column(String(64), index=True)
-    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"), index=True)
+    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"), unique=True, index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     stars: Mapped[int]
     comment: Mapped[str | None] = mapped_column(String(2000))
@@ -147,7 +162,7 @@ class Rating(Base):
     sender_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     sender_name: Mapped[str] = mapped_column(String(100), default="ИИ-помощник")
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
-    message_text: Mapped[str] = mapped_column(Text, default="")
+    chat_title: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

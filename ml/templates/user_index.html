@@ -1,0 +1,10 @@
+{# Публичная страница пользователя: только свои чаты и база знаний. #}
+{% extends "base.html" %}
+
+{% block title %}Поддержка — Портал поставщиков{% endblock %}
+
+{% block content %}
+  {% set base = "" %}
+  {% set new_chat_title = "Новый чат" %}
+  {% include "support_layout.html" %}
+{% endblock %}

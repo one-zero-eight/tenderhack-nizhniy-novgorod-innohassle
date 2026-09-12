@@ -1,0 +1,62 @@
+{# Дерево чатов админки: темы и подтемы свёрнуты, внутри — чаты.
+   Ждёт: topic_tree, active_id. Открытые ветки запоминает браузер (см. script внизу). #}
+<div id="chat-list" class="topic-tree">
+  {% for group in topic_tree %}
+    <details class="topic" {% if active_topic == group.topic %}open{% endif %}>
+      <summary class="topic-head">
+        <span class="topic-name">{{ group.topic }}</span>
+        <span class="topic-count">{{ group.count }}</span>
+      </summary>
+
+      {% for sub in group.subtopics %}
+        <details class="subtopic" {% if active_subtopic == sub.subtopic %}open{% endif %}>
+          <summary class="subtopic-head">
+            <span class="subtopic-name">{{ sub.subtopic }}</span>
+            <span class="subtopic-count">{{ sub.count }}</span>
+          </summary>
+
+          <div class="chat-items">
+            {% for chat in sub.chats %}
+              <a
+                class="chat-item{% if chat.id == active_id %} active{% endif %}"
+                id="chat-item-{{ chat.id }}"
+                href="/admin/chats/{{ chat.id }}"
+                hx-get="/admin/chats/{{ chat.id }}"
+                hx-target="body"
+                hx-swap="outerHTML"
+                hx-push-url="true"
+              >
+                <span class="chat-open">{{ chat.title }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        </details>
+      {% endfor %}
+    </details>
+  {% endfor %}
+  {% if not topic_tree %}
+    <p class="muted">Пока нет чатов</p>
+  {% endif %}
+</div>
+
+<script>
+  // Запоминаем, какие ветки раскрыты: полная перерисовка страницы при выборе чата
+  // сбрасывала бы состояние <details>.
+  (function () {
+    const KEY = "admin-open-topics";
+    const tree = document.getElementById("chat-list");
+    if (!tree) return;
+    const state = JSON.parse(sessionStorage.getItem(KEY) || "{}");
+
+    const remember = (el, id) => {
+      state[id] = el.open;
+      sessionStorage.setItem(KEY, JSON.stringify(state));
+    };
+
+    tree.querySelectorAll("details").forEach((el) => {
+      const id = el.querySelector("summary").textContent.trim();
+      if (state[id] !== undefined) el.open = state[id];
+      el.addEventListener("toggle", () => remember(el, id));
+    });
+  })();
+</script>

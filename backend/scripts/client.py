@@ -107,31 +107,28 @@ def run_session(client: httpx.Client):
                 print(f"🔒 Chat closed: {chat['close_reason']}")
                 break
 
-            for message in send_data["messages"]:
-                if message["sender_type"] not in ("ai", "operator") or message.get("is_redacted"):
-                    continue
-                # Prompt for rating
-                do_rate = prompt("Rate this answer? (y/n)", "y").lower()
-                if do_rate in ("y", "yes"):
-                    while True:
-                        stars_str = prompt("Stars (1-5)", "5")
-                        try:
-                            stars = int(stars_str)
-                        except ValueError:
-                            stars = 0
-                        if 1 <= stars <= 5:
-                            break
-                        print("Enter a whole number from 1 to 5.")
-                    comment = prompt("Comment (optional)", "")
-                    rate_resp = client.put(
-                        f"/messages/{message['id']}/rating",
-                        headers=headers,
-                        json={"stars": stars, "comment": comment or None},
-                    )
-                    if rate_resp.status_code == 200:
-                        print("⭐ Rating saved successfully!")
-                    else:
-                        print("❌ Rating failed:", rate_resp.text)
+            # Prompt for rating
+            do_rate = prompt("Rate this chat? (y/n)", "y").lower()
+            if do_rate in ("y", "yes"):
+                while True:
+                    stars_str = prompt("Stars (1-5)", "5")
+                    try:
+                        stars = int(stars_str)
+                    except ValueError:
+                        stars = 0
+                    if 1 <= stars <= 5:
+                        break
+                    print("Enter a whole number from 1 to 5.")
+                comment = prompt("Comment (optional)", "")
+                rate_resp = client.put(
+                    f"/chats/{chat['id']}/rating",
+                    headers=headers,
+                    json={"stars": stars, "comment": comment or None},
+                )
+                if rate_resp.status_code == 200:
+                    print("⭐ Rating saved successfully!")
+                else:
+                    print("❌ Rating failed:", rate_resp.text)
         except httpx.HTTPStatusError as exc:
             print("❌ Error:", exc.response.status_code, exc.response.text)
             if exc.response.status_code == 409 and exc.response.json().get("detail", {}).get("code") == "CHAT_CLOSED":

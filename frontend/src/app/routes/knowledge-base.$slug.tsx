@@ -38,7 +38,7 @@ function ManualLayout() {
         </div>
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          <aside className="border-gray-blue w-full shrink-0 overflow-y-auto border bg-white p-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:w-80">
+          <aside className="border-gray-blue w-full shrink-0 overflow-y-auto border bg-white p-3 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:w-80">
             <h2 className="text-black mb-3 text-sm font-bold">{manual?.title}</h2>
             <KnowledgeSidebar slug={slug} sections={manual?.sections ?? []} activeSectionId={sectionId} />
           </aside>

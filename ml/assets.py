@@ -1,7 +1,11 @@
-"""Отдача картинок мануалов: GET /ml-assets/image/<slug>/<filename>.
+"""Отдача картинок мануалов и загруженных вложений.
 
-Картинки лежат рядом с json мануала: jsons/<slug>/image-N.png (см. process.py).
-Путь собирается вручную и проверяется на выход за пределы jsons/.
+* `GET /ml-assets/image/<slug>/<filename>` — картинки из инструкций
+  (лежат рядом с json мануала: jsons/<slug>/image-N.png, см. process.py).
+  Путь собирается вручную и проверяется на выход за пределы jsons/.
+* `GET /attachments/<id>` — оригиналы файлов, загруженных пользователем
+  (см. attachments.py). Работает и после отправки вложения в модель: файл живёт
+  в `attachments/`, пока жив чат.
 """
 
 from __future__ import annotations
@@ -9,12 +13,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path as PathParam, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, status
+from fastapi import Path as PathParam
+from fastapi.responses import FileResponse, Response
 
+import attachments as attachment_service
 from manuals import JSONS_DIR
 
-router = APIRouter(prefix="/ml-assets", tags=["ml-assets"])
+router = APIRouter(tags=["ml-assets"])
 
 # Расширение -> media type. Набор фиксирован: process.py кладёт только картинки.
 MEDIA_TYPES = {
@@ -43,7 +49,7 @@ def resolve_image(slug: str, filename: str) -> Path:
 
 
 @router.get(
-    "/image/{slug}/{filename}",
+    "/ml-assets/image/{slug}/{filename}",
     summary="Картинка мануала",
     description=(
         "Отдаёт картинку из инструкции. Такие ссылки агент отдаёт в тексте разделов "
@@ -67,4 +73,37 @@ async def get_image(
         path,
         media_type=MEDIA_TYPES[path.suffix.lower()],
         headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get(
+    "/attachments/{file_id}",
+    response_class=Response,
+    response_model=None,
+    summary="Скачать загруженный файл",
+    description=(
+        "Отдаёт оригинал файла, который пользователь загрузил в чат. Работает и после "
+        "отправки сообщения: оригиналы лежат в папке `attachments/` до удаления чата, "
+        "в отличие от таблицы `chat_files`, которая чистится при отправке.\n\n"
+        "Эту ссылку агент/интерфейс использует для картинок в истории чата."
+    ),
+    responses={
+        200: {"description": "Файл", "content": {"application/octet-stream": {}}},
+        404: {"description": "Вложение не найдено"},
+    },
+)
+async def get_attachment(
+    file_id: Annotated[str, PathParam(description="Идентификатор вложения")],
+) -> Response:
+    found = attachment_service.read_original(file_id)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+    data, content_type, filename = found
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": attachment_service.content_disposition(filename),
+            "Cache-Control": "public, max-age=86400",
+        },
     )

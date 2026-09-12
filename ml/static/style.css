@@ -65,15 +65,26 @@ strong {
    Шапка на всю ширину + вкладки-навигация
    ========================================================================= */
 
+/* Шапка: два контейнера, разведённые по краям (space-between).
+   Слева — название и основные вкладки, справа — админка у самого края. */
 .topbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 2.5rem;
   background: var(--bg-band);
   border-bottom: 1px solid var(--line);
   padding: 0 1.75rem;
   height: 3.5rem;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 2.5rem;
+  min-width: 0;
+  align-self: stretch;
 }
 
 .topbar-title {
@@ -639,59 +650,25 @@ select:disabled {
 .tool {
   background: var(--pale-blue);
   border: 1px solid var(--line);
+  border-left: 3px solid var(--main-blue);
   padding: 0.4rem 0.65rem;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.8125rem;
+  color: var(--black);
 }
 
-.tool summary {
-  cursor: pointer;
-  display: flex;
-  gap: 0.6rem;
-  align-items: baseline;
+.tool.error {
+  border-left-color: var(--red);
 }
 
-.tool-name {
-  font-weight: 700;
+/* Подпись выполненного инструмента: у read — ссылка на прочитанный документ. */
+.tool-doc {
   color: var(--main-blue);
+  font-weight: 600;
+  text-decoration: none;
 }
 
-/* Статус — точка + uppercase подпись, как в референсе Status. */
-.tool-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--font);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--green);
-}
-
-.tool-status::before {
-  content: "";
-  width: 0.5rem;
-  height: 0.5rem;
-  background: var(--green);
-  flex: 0 0 auto;
-}
-
-.tool.error .tool-status {
-  color: var(--red);
-}
-
-.tool.error .tool-status::before {
-  background: var(--red);
-}
-
-.tool code,
-.tool pre {
-  display: block;
-  margin: 0.45rem 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
+.tool-doc:hover {
+  text-decoration: underline;
 }
 
 /* =========================================================================
@@ -703,9 +680,14 @@ select:disabled {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.65rem;
+  align-items: end;
   padding: 1rem 1.75rem 1.35rem;
   border-top: 1px solid var(--line);
   background: var(--white);
+}
+
+.composer-body {
+  min-width: 0;
 }
 
 .composer textarea {
@@ -719,6 +701,185 @@ select:disabled {
 .composer button {
   align-self: end;
   white-space: nowrap;
+}
+
+/* =========================================================================
+   Вложения чата: список над композером и кнопка «Прикрепить файл»
+   ========================================================================= */
+
+.attachments {
+  flex: 0 0 auto;
+  padding: 0.7rem 1.75rem 0.75rem;
+  border-top: 1px solid var(--line);
+  background: var(--bg-band);
+}
+
+.attachments-head {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pale-black);
+  margin-bottom: 0.5rem;
+}
+
+.attachments-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: 22rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.3rem;
+  background: var(--white);
+  border: 1px solid var(--gray-blue);
+  font-size: 0.8125rem;
+}
+
+.attachment-thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--line);
+}
+
+/* В сообщении превью крупнее: там на него смотрят, а не только сверяют имя. */
+.msg-attachments .attachment-thumb {
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+/* Документ вместо превью — ярлык в квадрате того же размера, что и миниатюра. */
+.attachment-kind {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  background: var(--pale-blue);
+  color: var(--main-blue);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.attachment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--black);
+}
+
+a.attachment-name {
+  color: var(--main-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+a.attachment-name:hover {
+  color: var(--red);
+}
+
+/* Вложения внутри сообщения пользователя: над текстом, в той же плашке,
+   но без крестика — после отправки файл только читают. */
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.55rem;
+  padding: 0;
+  list-style: none;
+}
+
+.msg-attachments .attachment {
+  background: var(--white);
+}
+
+.attachment-size {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  color: var(--pale-black);
+}
+
+.attachment-del {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--pale-black);
+  font-size: 0.9375rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attachment-del:hover {
+  color: var(--red);
+}
+
+/* Админка: список только для просмотра — без крестиков. */
+.attachments.readonly .attachment {
+  padding-right: 0.55rem;
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Кнопка «Прикрепить файл» — обводка, как у .btn-outline, но через label.
+   Нативный input спрятан, клик по label открывает выбор файла. */
+.attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 1.15rem;
+  margin: 0;
+  background: var(--white);
+  color: var(--main-blue);
+  border: 1px solid var(--main-blue);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attach-btn:hover {
+  background: var(--pale-blue);
+}
+
+.attach-btn input[type="file"] {
+  display: none;
+}
+
+.composer-hint {
+  font-size: 0.6875rem;
+  color: var(--pale-black);
+}
+
+/* Ошибка загрузки: текст вместо файла, сам чат при этом не перерисовывается. */
+.upload-error {
+  font-size: 0.8125rem;
+  color: var(--red);
+}
+
+.upload-error:not(:empty) {
+  margin-bottom: 0.5rem;
 }
 
 /* =========================================================================
@@ -1016,6 +1177,193 @@ select:disabled {
   padding-left: 0.85em;
   border-left: 3px solid var(--line);
   color: var(--pale-black);
+}
+
+/* =========================================================================
+   Публичная часть: идентификация и профиль
+   ========================================================================= */
+
+/* Одна колонка по центру: страницы-формы, без сайдбара. */
+.auth,
+.profile {
+  margin: auto;
+  width: 100%;
+  max-width: 30rem;
+  padding: 3rem 1.15rem;
+}
+
+.auth-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.auth-note,
+.profile-hint {
+  color: var(--pale-black);
+  font-size: 0.8125rem;
+  margin: 0 0 1.25rem;
+}
+
+.auth-error {
+  border-left: 3px solid var(--red);
+  background: var(--pale-blue);
+  color: var(--black);
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+}
+
+.auth-form button {
+  margin-top: 1rem;
+}
+
+.profile-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pale-black);
+}
+
+.profile-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.35rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-bg);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.radio:hover {
+  border-color: var(--gray-blue);
+}
+
+.radio input {
+  accent-color: var(--red);
+  margin: 0;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+/* =========================================================================
+   Админка: дерево чатов по темам и подтемам
+   ========================================================================= */
+
+.topic-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Свёрнутые ветки: сводка — строка с названием и счётчиком. */
+.topic > summary,
+.subtopic > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  list-style: none;
+  user-select: none;
+}
+
+.topic > summary::-webkit-details-marker,
+.subtopic > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Стрелка-указатель: без закруглений, просто треугольник из границ. */
+.topic > summary::before,
+.subtopic > summary::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 0.3rem solid var(--pale-black);
+  border-top: 0.22rem solid transparent;
+  border-bottom: 0.22rem solid transparent;
+  transition: transform 0.12s ease;
+}
+
+.topic[open] > .topic-head::before,
+.subtopic[open] > .subtopic-head::before {
+  transform: rotate(90deg);
+}
+
+.topic > summary:hover,
+.subtopic > summary:hover {
+  background: var(--pale-blue);
+}
+
+.topic-name {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--main-blue);
+  flex: 1 1 auto;
+}
+
+.subtopic > summary {
+  padding-left: 1.35rem;
+}
+
+.subtopic-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--black);
+  flex: 1 1 auto;
+}
+
+.topic-count,
+.subtopic-count {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--pale-black);
+}
+
+/* Чаты внутри подтемы: отступ, чтобы читалась вложенность. */
+.chat-items {
+  padding-left: 1.35rem;
+}
+
+.chat-items .chat-item {
+  padding-left: 0.65rem;
+}
+
+.readonly-note {
+  padding: 0.85rem 1.15rem 1.1rem;
+  color: var(--pale-black);
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Правая группа вкладок: прижата к краю самим space-between в .topbar. */
+.tabs-end {
+  flex: 0 0 auto;
 }
 
 /* =========================================================================

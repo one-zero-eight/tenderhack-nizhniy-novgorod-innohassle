@@ -17,16 +17,17 @@ async def register(payload: RegisterIn, storage: Storage, settings: Settings) ->
         existing = await session.scalar(select(User.id).where(User.login == payload.login))
         if existing:
             fail(409, "LOGIN_TAKEN", "A user with this login already exists")
-        if payload.role == Role.OPERATOR and not payload.support_line_id:
-            fail(400, "OPERATOR_LINE_REQUIRED", "Operators must specify a support line ID")
+        role = payload.role
+        if role == Role.SUPPORT and not payload.support_line_id:
+            fail(400, "SUPPORT_LINE_REQUIRED", "Support staff must specify a support line ID")
         display_name = payload.display_name or payload.login
         hashed = await run_in_threadpool(hash_password, payload.password)
         user = User(
             login=payload.login,
             password_hash=hashed,
             display_name=display_name,
-            role=payload.role,
-            support_line_id=payload.support_line_id if payload.role == Role.OPERATOR else None,
+            role=role,
+            support_line_id=payload.support_line_id if role == Role.SUPPORT else None,
         )
         session.add(user)
         await session.flush()

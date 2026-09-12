@@ -44,9 +44,15 @@ async def create_chat(user: CurrentUser, service: Chats) -> ChatOut:
 
 @router.get("/chats", response_model=ChatPage)
 async def list_chats(
-    user: CurrentUser, service: Chats, status: ChatStatus | None = None, offset: Offset = 0, limit: Limit = 50
+    user: CurrentUser,
+    service: Chats,
+    status: ChatStatus | None = None,
+    topic: str | None = None,
+    subtopic: str | None = None,
+    offset: Offset = 0,
+    limit: Limit = 50,
 ) -> ChatPage:
-    return await service.list_chats(user, status=status, offset=offset, limit=limit)
+    return await service.list_chats(user, status=status, topic=topic, subtopic=subtopic, offset=offset, limit=limit)
 
 
 @router.get("/chats/{chat_id}", response_model=ChatOut)
@@ -99,6 +105,6 @@ async def close(chat_id: str, payload: CloseIn, user: CurrentUser, service: Chat
     return await service.close(chat_id, user, payload.reason)
 
 
-@router.put("/messages/{message_id}/rating", response_model=RatingOut, tags=["ratings"])
-async def rate(message_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
-    return await service.rate(message_id, user, payload)
+@router.put("/chats/{chat_id}/rating", response_model=RatingOut, tags=["ratings"])
+async def rate_chat(chat_id: str, payload: RatingIn, user: CurrentUser, service: Chats) -> RatingOut:
+    return await service.rate(chat_id, user, payload)

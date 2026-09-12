@@ -1,10 +1,12 @@
+{# Список чатов в сайдбаре. Общий для / (свои чаты) и /admin (все чаты).
+   Ждёт: chats, active_id, base (префикс роутов: "" или "/admin"). #}
 <div id="chat-list">
   {% for chat in chats %}
     <a
       class="chat-item{% if chat.id == active_id %} active{% endif %}"
       id="chat-item-{{ chat.id }}"
-      href="/chats/{{ chat.id }}"
-      hx-get="/chats/{{ chat.id }}"
+      href="{{ base }}/chats/{{ chat.id }}"
+      hx-get="{{ base }}/chats/{{ chat.id }}"
       hx-target="body"
       hx-swap="outerHTML"
       hx-push-url="true"
@@ -14,7 +16,7 @@
         type="button"
         class="chat-del"
         title="Удалить"
-        hx-delete="/chats/{{ chat.id }}"
+        hx-delete="{{ base }}/chats/{{ chat.id }}"
         hx-target="body"
         hx-swap="outerHTML"
         hx-confirm="Удалить этот чат?"

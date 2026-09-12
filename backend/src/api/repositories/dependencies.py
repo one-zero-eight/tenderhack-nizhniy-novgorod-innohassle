@@ -5,7 +5,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.config_schema import ApiSettings
-from src.db.models import Role, User
+from src.db.models import User
 from src.db.storage import AbstractSQLAlchemyStorage
 from src.services.auth import decode_token
 from src.services.chats import ChatService
@@ -53,9 +53,16 @@ Settings = Annotated[ApiSettings, Depends(get_settings)]
 
 
 async def get_admin(user: CurrentUser) -> User:
-    if user.role != Role.ADMIN:
+    if not user.is_admin:
         fail(403, "ADMIN_REQUIRED", "Admin access required")
     return user
 
 
+async def get_support(user: CurrentUser) -> User:
+    if not user.is_support:
+        fail(403, "SUPPORT_REQUIRED", "Support access required")
+    return user
+
+
 Admin = Annotated[User, Depends(get_admin)]
+Support = Annotated[User, Depends(get_support)]

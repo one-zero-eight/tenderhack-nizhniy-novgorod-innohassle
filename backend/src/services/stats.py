@@ -58,18 +58,17 @@ class StatsService:
             items = [
                 AdminRatingOut(
                     id=rating.id,
-                    message_id=rating.message_id,
+                    chat_id=rating.chat_id,
                     user_id=rating.user_id,
                     stars=rating.stars,
                     comment=rating.comment,
                     created_at=rating.created_at,
                     updated_at=rating.updated_at,
-                    chat_id=rating.chat_id,
                     sender_type=rating.sender_type,
                     sender_id=rating.sender_id,
                     sender_name=rating.sender_name,
                     support_line_id=rating.support_line_id,
-                    message_text=rating.message_text,
+                    chat_title=rating.chat_title or "",
                 )
                 for rating in rows
             ]

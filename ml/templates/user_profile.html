@@ -1,0 +1,42 @@
+{# Профиль: имя из куки + выбор роли. Роль уходит в вопрос к агенту, не в промпт. #}
+{% extends "base.html" %}
+
+{% block title %}Профиль — Портал поставщиков{% endblock %}
+
+{% block content %}
+<section class="profile">
+  <div class="profile-row">
+    <span class="profile-label">Имя</span>
+    <span class="profile-value">{{ username }}</span>
+  </div>
+
+  <form class="profile-form" method="post" action="/profile">
+    <div class="field-label">Кто вы на Портале поставщиков</div>
+    <p class="profile-hint">
+      Агент подставляет роль в вопрос, чтобы не переспрашивать. Если не указывать —
+      он будет уточнять по ходу разговора.
+    </p>
+
+    <label class="radio">
+      <input type="radio" name="role" value="none" {% if not role %}checked{% endif %}>
+      <span>Не указано</span>
+    </label>
+    <label class="radio">
+      <input type="radio" name="role" value="supplier" {% if role == "supplier" %}checked{% endif %}>
+      <span>Поставщик</span>
+    </label>
+    <label class="radio">
+      <input type="radio" name="role" value="customer" {% if role == "customer" %}checked{% endif %}>
+      <span>Заказчик</span>
+    </label>
+
+    <div class="profile-actions">
+      <button type="submit" class="btn-primary">Сохранить</button>
+      <button type="submit" class="btn-outline" form="logout-form">Выйти из профиля</button>
+    </div>
+  </form>
+
+  {# Отдельная форма: кнопка «Выйти» в неё попадает через form="logout-form". #}
+  <form id="logout-form" method="post" action="/logout"></form>
+</section>
+{% endblock %}

@@ -1,3 +1,4 @@
+name: "tenderhack-nn-backend"
 services:
   api:
     build: &backend-build

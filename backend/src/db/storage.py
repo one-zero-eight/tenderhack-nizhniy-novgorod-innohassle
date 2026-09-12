@@ -44,6 +44,8 @@ class SQLAlchemyStorage(AbstractSQLAlchemyStorage):
             # PostgreSQL releases this transaction-scoped lock on commit or rollback.
             await conn.execute(text("SELECT pg_advisory_xact_lock(734921680214)"))
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS topic VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS subtopic VARCHAR(255)"))
             # Required reference data, created atomically with the schema at startup.
             # Preserve any names and descriptions configured in an existing database.
             await conn.execute(

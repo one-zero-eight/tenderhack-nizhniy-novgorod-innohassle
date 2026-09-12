@@ -49,7 +49,8 @@ The backend works in tandem with the neighboring ML service (`ml/`), which provi
    - Standard JSON clients continue to receive the complete `SendResult` payload synchronously.
 
 4. **Decoupled Ratings & Performance**:
-   - Customer feedback (`Rating`) stores denormalized sender and line metadata (`sender_type`, `sender_id`, `support_line_id`, `message_text`).
+   - Customer feedback (`Rating`) relates directly to the chat (`chat_id`), storing denormalized handler and line metadata (`sender_type`, `sender_id`, `support_line_id`, `chat_title`).
+   - Each chat record (`ChatOut`) includes its current rating (`rating: RatingOut | None`).
    - Reporting queries and administrative statistics run without expensive `JOIN` operations against message history.
 
 ---
@@ -177,9 +178,9 @@ sequenceDiagram
     Backend->>Backend: 1. Update Chat status to 'waiting_operator'<br/>2. Assign support_line_id = 1<br/>3. Append System Notice to PostgreSQL
     Backend-->>User: SSE stream closes (or JSON SendResult with updated recipient)
 
-    Note over Operator, Backend: Operator takes over chat
-    Operator->>Backend: GET /operator/chats (filter by line 1)
-    Operator->>Backend: POST /operator/chats/{id}/claim
+    Note over Operator, Backend: Support specialist takes over chat
+    Operator->>Backend: GET /support/chats (filter by line 1)
+    Operator->>Backend: POST /support/chats/{id}/claim
     Backend-->>Operator: Chat claimed (status: 'operator')
 ```
 
@@ -207,10 +208,10 @@ sequenceDiagram
     User->>Backend: POST /chats/{id}/request-operator {"support_line_id": 2}
     Backend-->>User: 200 OK {status: "waiting_operator", recipient: {kind: "support_queue", ...}}
 
-    Operator->>Backend: GET /operator/chats?status=waiting_operator
+    Operator->>Backend: GET /support/chats?status=waiting_operator
     Backend-->>Operator: 200 OK {items: [{id: "{id}", status: "waiting_operator", ...}]}
 
-    Operator->>Backend: POST /operator/chats/{id}/claim
+    Operator->>Backend: POST /support/chats/{id}/claim
     Backend-->>Operator: 200 OK {status: "operator", operator: {id: "operator-uuid", display_name: "Оператор"}}
 
     Operator->>Backend: POST /chats/{id}/messages {"text": "Здравствуйте! Чем могу помочь?", "client_message_id": "uuid-2"}
@@ -223,7 +224,7 @@ sequenceDiagram
 ```
 
 1. **Request Operator**: `POST /chats/{chat_id}/request-operator` transitions the chat from `ai` to `waiting_operator`.
-2. **Claiming**: Only operators assigned to the matching `support_line_id` can claim the chat (`POST /operator/chats/{chat_id}/claim`).
+2. **Claiming**: Only support staff assigned to the matching `support_line_id` can claim the chat (`POST /support/chats/{chat_id}/claim`).
 3. **Transcript Merging**: The backend merges AI turns from SQLite with human messages from PostgreSQL so both participants see the full conversational context.
 
 ---
@@ -270,15 +271,15 @@ sequenceDiagram
     User->>Backend: POST /chats/{id}/close {"reason": "resolved"}
     Backend-->>User: 200 OK {status: "closed", close_reason: "resolved"}
 
-    User->>Backend: PUT /messages/{message_id}/rating {"stars": 5, "comment": "Очень помогло!"}
-    Backend->>Backend: Verify message_id is an AI or Operator reply & user is chat owner
-    Backend->>DB: Upsert Rating row with denormalized sender & line info
-    Backend-->>User: 200 OK {id: "rating-uuid", stars: 5, comment: "..."}
+    User->>Backend: PUT /chats/{chat_id}/rating {"stars": 5, "comment": "Очень помогло!"}
+    Backend->>Backend: Verify user is chat owner
+    Backend->>DB: Upsert Rating row for chat with handler attribution & line info
+    Backend-->>User: 200 OK {id: "rating-uuid", chat_id: "...", stars: 5, comment: "..."}
 ```
 
-- Users can rate any delivered AI reply or operator response.
-- Rating attempts on user's own prompt messages are rejected with `422 Unprocessable Entity` (`MESSAGE_NOT_RATEABLE`).
-- Ratings are idempotent; sending updated stars or comments overwrites the existing rating record.
+- Users can rate their chat session anytime (e.g., after resolution or while reading answers).
+- Ratings are associated with the entire chat rather than individual messages.
+- Ratings are idempotent; sending updated stars or comments overwrites the existing rating record for the chat.
 
 ---
 
@@ -288,7 +289,7 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Public | `RegisterIn` | `TokenOut` | Register a new user or operator. Returns Bearer token. |
+| `POST` | `/auth/register` | Public | `RegisterIn` | `TokenOut` | Register a new user (`seller`/`buyer`) or support specialist. Returns Bearer token. |
 | `POST` | `/auth/login` | Public | `LoginIn` | `TokenOut` | Authenticate with login and password. |
 | `GET` | `/auth/me` | Authenticated | None | `UserOut` | Retrieve profile and role of current user. |
 
@@ -299,8 +300,8 @@ sequenceDiagram
   "login": "supplier_ivan",
   "password": "strongpassword123",
   "display_name": "Иван Петров",
-  "role": "user",                  // "user" | "operator" | "admin"
-  "support_line_id": null          // Required if role == "operator" (1, 2, or 3)
+  "role": "seller",                // "seller" | "buyer" | "support" | "admin"
+  "support_line_id": null          // Required if role == "support" (1, 2, or 3)
 }
 
 // POST /auth/login
@@ -319,6 +320,20 @@ sequenceDiagram
 
 ---
 
+### User Profiles (`/profile`)
+
+| Method | Endpoint | Role Required | Request Body | Response Body | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/profile` | Authenticated | Query (`role`) | `ProfileViewOut` | Get current user's profile view (seller or buyer data model). |
+| `GET` | `/profile/sample` | Public | Query (`role`) | `ProfileViewOut` | Sample demonstration profile with related procurements, offers, and contracts. |
+| `PATCH` | `/profile/role` | Authenticated | `UpdateRoleIn` | `ProfileViewOut` | Switch active role / profile view between `seller` and `buyer`. |
+| `POST` | `/profile/procurements` | Authenticated | `ProcurementCreateIn` | `ProcurementOut` | Create a new procurement. |
+| `POST` | `/profile/offers` | Authenticated | `OfferCreateIn` | `OfferOut` | Submit an offer for a procurement. |
+| `POST` | `/profile/contracts` | Authenticated | `ContractCreateIn` | `ContractOut` | Create a contract. |
+| `POST` | `/profile/documents` | Authenticated | `DocumentCreateIn` | `DocumentOut` | Attach a document. |
+
+---
+
 ### Support Lines (`/support-lines`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
@@ -331,15 +346,15 @@ sequenceDiagram
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/chats` | `user` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
-| `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `offset`, `limit`). |
-| `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Operator | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
-| `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Operator | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
-| `POST` | `/chats/{chat_id}/messages` | Owner / Assigned Operator | `MessageIn` | `SendResult` or SSE Stream | Send message. Emits SSE if `Accept: text/event-stream`, else JSON. |
-| `POST` | `/chats/{chat_id}/stream` | Owner / Assigned Operator | `MessageIn` | SSE Stream | Explicit SSE streaming message submission endpoint. |
-| `POST` | `/chats/{chat_id}/message` | Owner / Assigned Operator | `MessageIn` | SSE Stream | Alternate explicit SSE streaming message submission endpoint. |
+| `POST` | `/chats` | `seller` / `buyer` | None | `ChatOut` (201) | Create a new chat session. Eagerly registers in ML service. |
+| `GET` | `/chats` | Authenticated | Query params | `ChatPage` | List chats belonging to the user (`status`, `topic`, `subtopic`, `offset`, `limit`). |
+| `GET` | `/chats/{chat_id}` | Owner / Admin / Assigned Support | None | `ChatOut` | Retrieve single chat state and current recipient metadata. |
+| `GET` | `/chats/{chat_id}/messages` | Owner / Admin / Assigned Support | Query params | `MessagePage` | Retrieve merged message history (`after_sequence`, `limit`). |
+| `POST` | `/chats/{chat_id}/messages` | Owner / Assigned Support | `MessageIn` | `SendResult` or SSE Stream | Send message. Emits SSE if `Accept: text/event-stream`, else JSON. |
+| `POST` | `/chats/{chat_id}/stream` | Owner / Assigned Support | `MessageIn` | SSE Stream | Explicit SSE streaming message submission endpoint. |
+| `POST` | `/chats/{chat_id}/message` | Owner / Assigned Support | `MessageIn` | SSE Stream | Alternate explicit SSE streaming message submission endpoint. |
 | `POST` | `/chats/{chat_id}/request-operator` | Owner | `RequestOperatorIn` | `ChatOut` | Request transfer to a human support line (`1`, `2`, or `3`). |
-| `POST` | `/chats/{chat_id}/close` | Owner / Assigned Operator | `CloseIn` | `ChatOut` | Close chat session (`"resolved"` or `"user_cancelled"`). |
+| `POST` | `/chats/{chat_id}/close` | Owner / Assigned Support | `CloseIn` | `ChatOut` | Close chat session (`"resolved"` or `"user_cancelled"`). |
 
 #### Chat Request Payloads
 ```json
@@ -362,15 +377,15 @@ sequenceDiagram
 
 ---
 
-### Ratings & Feedback (`/messages`)
+### Ratings & Feedback (`/chats`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `PUT` | `/messages/{message_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | Submit or update star rating (1–5) and comment for an assistant/operator reply. |
+| `PUT` | `/chats/{chat_id}/rating` | Chat Owner | `RatingIn` | `RatingOut` | Submit or update star rating (1–5) and comment for a chat session. |
 
 #### Rating Payload
 ```json
-// PUT /messages/{message_id}/rating
+// PUT /chats/{chat_id}/rating
 {
   "stars": 5,                     // 1 to 5
   "comment": "Отличный и быстрый ответ!" // optional, max 2000 chars
@@ -379,12 +394,12 @@ sequenceDiagram
 
 ---
 
-### Operator Desk (`/operator`)
+### Support Desk (`/support`)
 
 | Method | Endpoint | Role Required | Request Body | Response Body | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/operator/chats` | `operator` | Query params | `ChatPage` | View active and waiting chats routed to operator's support line. |
-| `POST` | `/operator/chats/{chat_id}/claim` | `operator` | None | `ChatOut` | Assign waiting chat to current operator (`status: operator`). |
+| `GET` | `/support/chats` | `support` | Query params | `ChatPage` | View active and waiting chats routed to specialist's support line. |
+| `POST` | `/support/chats/{chat_id}/claim` | `support` | None | `ChatOut` | Assign waiting chat to current support specialist (`status: operator`). |
 
 ---
 

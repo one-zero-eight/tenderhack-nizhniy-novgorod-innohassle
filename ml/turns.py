@@ -18,6 +18,7 @@ import contextlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
+import attachments as attachment_service
 import chat as chat_service
 from storage import MessageRecord, get_storage
 
@@ -80,31 +81,41 @@ class TurnManager:
         self,
         chat_id: str,
         assistant_message: MessageRecord,
-        on_event: Callable[[str, str], str] | None = None,
+        on_event: Callable[[str, str], str | None] | None = None,
+        user_role: str | None = None,
+        files: list[attachment_service.ChatFile] | None = None,
     ) -> Turn:
         """Запускает генерацию в фоне. Возвращает Turn, к которому можно подключаться.
 
         on_event превращает пару (event, payload) из chat.stream_answer в SSE-строку,
         которую увидят клиенты. Так HTML-рендеринг остаётся в app.py, а не в слое чатов.
+        files — вложения, ожидающие отправки вместе с этим ходом.
         """
         turn = Turn(chat_id=chat_id, message_id=assistant_message.id)
         self._turns[assistant_message.id] = turn
         self._by_chat[chat_id] = assistant_message.id
-        turn.task = asyncio.create_task(self._run(turn, assistant_message, on_event))
+        turn.task = asyncio.create_task(self._run(turn, assistant_message, on_event, user_role, files))
         return turn
 
     async def _run(
         self,
         turn: Turn,
         assistant_message: MessageRecord,
-        on_event: Callable[[str, str], str] | None,
+        on_event: Callable[[str, str], str | None] | None,
+        user_role: str | None = None,
+        files: list[attachment_service.ChatFile] | None = None,
     ) -> None:
         try:
-            async for chunk in chat_service.stream_answer(turn.chat_id, assistant_message):
+            async for chunk in chat_service.stream_answer(
+                turn.chat_id, assistant_message, user_role=user_role, files=files
+            ):
                 # chat.stream_answer отдаёт готовые SSE-фреймы; разбираем в (event, data).
                 event, data = _split_sse(chunk)
                 if on_event is not None:
                     data = on_event(event, data)
+                    # None — событие решили не показывать (например, вызов инструмента).
+                    if data is None:
+                        continue
                 turn.publish(event, data)
         except Exception as exc:  # noqa: BLE001 — ход не должен ронять фоновую задачу
             turn.error = str(exc)

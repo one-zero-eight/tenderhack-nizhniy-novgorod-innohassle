@@ -3,20 +3,20 @@ import hashlib
 import json
 import logging
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Chat, ChatStatus, CloseReason, Message, Rating, Role, SenderType, SupportLine, User, utcnow
+from src.db.models import Chat, ChatStatus, CloseReason, Message, Rating, SenderType, SupportLine, User, utcnow
 from src.db.repositories.chats import (
     append_message,
     chat_view,
+    chat_views,
     check_owner,
     check_read_access,
     check_writer,
     load_chat,
-    message_views,
     submission_messages,
 )
 from src.db.storage import AbstractSQLAlchemyStorage
@@ -67,6 +67,16 @@ def _extract_citations(tools: list[dict]) -> list[dict]:
     return citations
 
 
+def _sync_ml_metadata(chat: Chat, ml_data: dict) -> None:
+    new_title = ml_data.get("title")
+    if chat.title == "Новый чат" and new_title and new_title != "Новый чат":
+        chat.title = new_title
+    if ml_data.get("topic") is not None:
+        chat.topic = ml_data.get("topic")
+    if ml_data.get("subtopic") is not None:
+        chat.subtopic = ml_data.get("subtopic")
+
+
 class ChatService:
     # Client submission cache for idempotency: (chat_id, client_message_id) -> SendResult
     _submissions: dict[tuple[str, UUID], SendResult] = {}
@@ -87,7 +97,7 @@ class ChatService:
         return lock
 
     async def create(self, user: User) -> ChatOut:
-        if user.role != Role.USER:
+        if not user.is_customer:
             fail(403, "USER_REQUIRED", "Only users can open chats")
         ml_chat_id, title = await self.ai.create_chat()
         async with self.storage.create_session() as session, session.begin():
@@ -101,12 +111,10 @@ class ChatService:
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
             # Sync title from ML service if it was updated from default
-            if chat.title == "Новый чат":
+            if chat.title == "Новый чат" or chat.topic is None or chat.subtopic is None:
                 try:
                     ml_data = await self.ai.get_chat(chat_id)
-                    new_title = ml_data.get("title")
-                    if new_title and new_title != "Новый чат":
-                        chat.title = new_title
+                    _sync_ml_metadata(chat, ml_data)
                 except Exception:
                     pass
             return await chat_view(session, chat)
@@ -122,14 +130,16 @@ class ChatService:
         line_id: int | None = None,
         operator_id: UUID | None = None,
         user_id: UUID | None = None,
+        topic: str | None = None,
+        subtopic: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> ChatPage:
         filters = []
         if scope == "owner":
             filters.append(Chat.user_id == user.id)
-        elif scope == "operator":
-            if user.role != Role.OPERATOR:
+        elif scope in ("operator", "support"):
+            if not user.is_support:
                 fail(403, "OPERATOR_REQUIRED", "Operator access required")
             filters.append(
                 or_(
@@ -137,7 +147,7 @@ class ChatService:
                     Chat.operator_id == user.id,
                 )
             )
-        elif scope != "admin" or user.role != Role.ADMIN:
+        elif scope != "admin" or not user.is_admin:
             fail(403, "ADMIN_REQUIRED", "Admin access required")
         if status is not None:
             filters.append(Chat.status == status)
@@ -147,13 +157,17 @@ class ChatService:
             filters.append(Chat.operator_id == operator_id)
         if user_id is not None:
             filters.append(Chat.user_id == user_id)
+        if topic is not None:
+            filters.append(Chat.topic == topic)
+        if subtopic is not None:
+            filters.append(Chat.subtopic == subtopic)
         if since is not None:
             filters.append(Chat.created_at >= since)
         if until is not None:
             filters.append(Chat.created_at < until)
         order = (
             (Chat.handed_off_at.asc().nulls_last(), Chat.id)
-            if scope == "operator"
+            if scope in ("operator", "support")
             else (
                 Chat.created_at.desc(),
                 Chat.id.desc(),
@@ -165,7 +179,7 @@ class ChatService:
                 await session.scalars(select(Chat).where(*filters).order_by(*order).offset(offset).limit(limit))
             )
             return ChatPage(
-                items=[await chat_view(session, row) for row in rows], total=total, offset=offset, limit=limit
+                items=await chat_views(session, rows), total=total, offset=offset, limit=limit
             )
 
     async def messages(self, chat_id: str, user: User, after_sequence: int = 0, limit: int = 50) -> MessagePage:
@@ -177,6 +191,7 @@ class ChatService:
             ai_messages: list[MessageOut] = []
             try:
                 ml_data = await self.ai.get_chat(chat_id)
+                _sync_ml_metadata(chat, ml_data)
                 for idx, m in enumerate(ml_data.get("messages", [])):
                     role = m.get("role", "user")
                     tools = m.get("tools", [])
@@ -220,18 +235,7 @@ class ChatService:
 
             all_messages = ai_messages + pg_views
 
-            # 3. Join ratings
-            ratings = list(
-                await session.scalars(
-                    select(Rating).where(Rating.chat_id == chat_id)
-                )
-            )
-            by_message = {r.message_id: RatingOut.model_validate(r) for r in ratings}
-            for m in all_messages:
-                if m.id in by_message:
-                    m.rating = by_message[m.id]
-
-            # 4. Filter by after_sequence and paginate
+            # 3. Filter by after_sequence and paginate
             filtered = [m for m in all_messages if m.sequence > after_sequence]
             selected = filtered[:limit]
             return MessagePage(
@@ -250,7 +254,7 @@ class ChatService:
                 fail(409, "CHAT_CLOSED", "This chat is closed")
 
         blocked = False
-        if user.role == Role.USER:
+        if user.is_customer:
             try:
                 blocked = await self.moderator.is_blocked(payload.text)
             except ModerationUnavailable:
@@ -286,7 +290,7 @@ class ChatService:
                     session,
                     chat,
                     payload.text,
-                    sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                    sender_type=SenderType.USER if user.is_customer else SenderType.OPERATOR,
                     sender=user,
                     client_message_id=payload.client_message_id,
                     input_hash=digest,
@@ -326,14 +330,11 @@ class ChatService:
                     chat = await load_chat(session, chat_id, lock=True)
                     chat.ai_messages_count += 1
                     chat.updated_at = utcnow()
-                    if chat.title == "Новый чат":
-                        try:
-                            ml_data = await self.ai.get_chat(chat_id)
-                            new_title = ml_data.get("title")
-                            if new_title and new_title != "Новый чат":
-                                chat.title = new_title
-                        except Exception:
-                            pass
+                    try:
+                        ml_data = await self.ai.get_chat(chat_id)
+                        _sync_ml_metadata(chat, ml_data)
+                    except Exception:
+                        pass
             raw_data = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
             yield f"event: {event}\ndata: {raw_data}\n\n"
 
@@ -356,7 +357,7 @@ class ChatService:
                     fail(409, "CHAT_CLOSED", "This chat is closed")
 
             blocked = False
-            if user.role == Role.USER:
+            if user.is_customer:
                 try:
                     blocked = await self.moderator.is_blocked(payload.text)
                 except ModerationUnavailable:
@@ -394,7 +395,7 @@ class ChatService:
                         session,
                         chat,
                         payload.text,
-                        sender_type=SenderType.USER if user.role == Role.USER else SenderType.OPERATOR,
+                        sender_type=SenderType.USER if user.is_customer else SenderType.OPERATOR,
                         sender=user,
                         client_message_id=payload.client_message_id,
                         input_hash=digest,
@@ -425,9 +426,7 @@ class ChatService:
                     user_msg_id = f"user-{payload.client_message_id.hex[:12]}"
                     try:
                         ml_data = await self.ai.get_chat(chat_id)
-                        new_title = ml_data.get("title")
-                        if chat.title == "Новый чат" and new_title and new_title != "Новый чат":
-                            chat.title = new_title
+                        _sync_ml_metadata(chat, ml_data)
                         msgs = ml_data.get("messages", [])
                         if len(msgs) >= 2:
                             user_msg_id = msgs[-2]["id"]
@@ -536,7 +535,7 @@ class ChatService:
             return await chat_view(session, chat)
 
     async def claim(self, chat_id: str, user: User) -> ChatOut:
-        if user.role != Role.OPERATOR:
+        if not user.is_support:
             fail(403, "OPERATOR_REQUIRED", "Operator access required")
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
@@ -557,101 +556,36 @@ class ChatService:
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
             check_writer(chat, user)
-            if user.role == Role.OPERATOR and reason != "resolved":
+            if user.is_support and reason != "resolved":
                 fail(403, "INVALID_CLOSE_REASON", "Operators can close a chat as resolved")
             if chat.status != ChatStatus.CLOSED:
                 close_chat(session, chat, CloseReason(reason))
             return await chat_view(session, chat)
 
-    async def rate(self, message_id: str, user: User, payload: RatingIn) -> RatingOut:
+    async def rate(self, chat_id: str, user: User, payload: RatingIn) -> RatingOut:
         async with self.storage.create_session() as session, session.begin():
-            # 1. Check if message exists in Postgres Message table
-            pg_message = await session.get(Message, message_id)
-            if pg_message is not None:
-                chat = await load_chat(session, pg_message.chat_id, lock=True)
-                check_read_access(chat, user)
-                check_owner(chat, user)
-                if pg_message.sender_type not in (SenderType.AI, SenderType.OPERATOR) or pg_message.is_redacted:
-                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-                target_chat_id = pg_message.chat_id
-                sender_type = pg_message.sender_type
-                sender_id = pg_message.sender_id
-                sender_name = pg_message.sender_name
-                support_line_id = pg_message.support_line_id
-                msg_text = pg_message.text
+            chat = await load_chat(session, chat_id, lock=True)
+            check_read_access(chat, user)
+            check_owner(chat, user)
+
+            if chat.operator_id is not None:
+                operator = await session.get(User, chat.operator_id)
+                sender_type = SenderType.OPERATOR
+                sender_id = chat.operator_id
+                sender_name = operator.display_name if operator else "Оператор"
+                support_line_id = chat.support_line_id
             else:
-                # 2. Check user's chats in ML service
-                user_chats = list(
-                    await session.scalars(
-                        select(Chat).where(Chat.user_id == user.id).order_by(Chat.updated_at.desc())
-                    )
-                )
-                found_chat = None
-                found_msg = None
-                for c in user_chats:
-                    try:
-                        ml_data = await self.ai.get_chat(c.id)
-                        for m in ml_data.get("messages", []):
-                            if m.get("id") == message_id:
-                                found_chat = c
-                                found_msg = m
-                                break
-                    except Exception:
-                        continue
-                    if found_chat:
-                        break
-
-                if found_chat is None and message_id.startswith("user-"):
-                    for (c_id, _), cached_res in self._submissions.items():
-                        for m in cached_res.messages:
-                            if m.id == message_id:
-                                c = await session.get(Chat, c_id)
-                                if c and c.user_id == user.id:
-                                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-                                elif c and c.user_id != user.id:
-                                    fail(404, "CHAT_NOT_FOUND", "Chat not found")
-
-                if found_chat is None:
-                    # Message not found for this user
-                    # If message exists in another user's chat, check if any chat has it
-                    all_chats = list(await session.scalars(select(Chat).where(Chat.user_id != user.id)))
-                    other_found = False
-                    for c in all_chats:
-                        try:
-                            ml_data = await self.ai.get_chat(c.id)
-                            for m in ml_data.get("messages", []):
-                                if m.get("id") == message_id:
-                                    other_found = True
-                                    break
-                        except Exception:
-                            continue
-                        if other_found:
-                            break
-                    if other_found:
-                        fail(404, "CHAT_NOT_FOUND", "Chat not found")
-                    fail(404, "MESSAGE_NOT_FOUND", "Message not found")
-
-                chat = found_chat
-                check_read_access(chat, user)
-                check_owner(chat, user)
-                if found_msg.get("role") != "assistant":
-                    fail(422, "MESSAGE_NOT_RATEABLE", "Only delivered AI or operator replies can be rated")
-
-                target_chat_id = chat.id
                 sender_type = SenderType.AI
                 sender_id = None
                 sender_name = "ИИ-помощник"
                 support_line_id = chat.support_line_id
-                msg_text = found_msg.get("content", "")
 
-            # 3. Upsert Rating
             rating = await session.scalar(
-                select(Rating).where(Rating.message_id == message_id, Rating.user_id == user.id)
+                select(Rating).where(Rating.chat_id == chat.id)
             )
             if rating is None:
                 rating = Rating(
-                    message_id=message_id,
-                    chat_id=target_chat_id,
+                    chat_id=chat.id,
                     user_id=user.id,
                     stars=payload.stars,
                     comment=payload.comment,
@@ -659,10 +593,17 @@ class ChatService:
                     sender_id=sender_id,
                     sender_name=sender_name,
                     support_line_id=support_line_id,
-                    message_text=msg_text,
+                    chat_title=chat.title,
                 )
                 session.add(rating)
             else:
-                rating.stars, rating.comment, rating.updated_at = payload.stars, payload.comment, utcnow()
+                rating.stars = payload.stars
+                rating.comment = payload.comment
+                rating.sender_type = sender_type
+                rating.sender_id = sender_id
+                rating.sender_name = sender_name
+                rating.support_line_id = support_line_id
+                rating.chat_title = chat.title
+                rating.updated_at = utcnow()
             await session.flush()
             return RatingOut.model_validate(rating)

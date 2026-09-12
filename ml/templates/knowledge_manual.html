@@ -1,3 +1,5 @@
+{# Страница мануала: оглавление слева, раздел справа. Общая для /.
+   Ждёт: manual, toc, current, active_section, base. #}
 {% extends "base.html" %}
 
 {% block title %}{{ manual.title }} — База знаний{% endblock %}
@@ -8,7 +10,7 @@
       <li>
         <a
           class="tree-link{% if node.on_path %} on-path{% endif %}{% if current and current.id == node.id %} active{% endif %}"
-          href="/knowledge-base/{{ manual.slug }}/{{ node.id }}"
+          href="{{ base }}/knowledge-base/{{ manual.slug }}/{{ node.id }}"
           style="--depth: {{ depth }}"
         >{{ node.title_line }}</a>
         {% if node.subtree %}
@@ -22,10 +24,10 @@
 {% block content %}
 <div class="page-band">
   <nav class="crumbs">
-    <a href="/knowledge-base">База знаний</a>
+    <a href="{{ base }}/knowledge-base">База знаний</a>
     <span class="crumb-sep">/</span>
     {% if current %}
-      <a href="/knowledge-base/{{ manual.slug }}">{{ manual.title }}</a>
+      <a href="{{ base }}/knowledge-base/{{ manual.slug }}">{{ manual.title }}</a>
       <span class="crumb-sep">/</span>
       <span>{{ current.title_line }}</span>
     {% else %}
