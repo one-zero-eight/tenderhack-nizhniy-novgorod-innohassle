@@ -4,7 +4,7 @@ import { streamChatMessage, sendChatMessage } from '@/api/chat'
 import { chatQueryKey } from '@/hooks/useChat'
 import { chatsQueryKey } from '@/hooks/useChats'
 import { SenderType } from '@/api/types'
-import { toChatView, toMessageView, type MessageView } from '@/lib/chat-view'
+import { extractTransferLine, redirectNotice, stripToolSyntax, toChatView, toMessageView, type MessageView } from '@/lib/chat-view'
 
 export const chatMessagesQueryKey = (chatId: string) => ['chat', chatId, 'messages'] as const
 
@@ -87,6 +87,9 @@ export function useStreamMessage(chatId: string | undefined) {
       // Number of events received; used to detect a stream that closed without
       // sending anything (e.g. the AI service is unreachable).
       let received = 0
+      // Support line once the model hands the chat off to a human.
+      let redirectLine: string | null = null
+      let redirectReason: string | null = null
 
       const baseMessage: Omit<MessageView, 'id' | 'sequence' | 'senderType' | 'senderName'> = {
         chatId,
@@ -110,6 +113,11 @@ export function useStreamMessage(chatId: string | undefined) {
       )
 
       const upsertAssistant = () => {
+        // A redirect message is shown as a hand-off notice, never as raw tool
+        // syntax or a stray partial answer.
+        const text = redirectLine
+          ? redirectNotice(redirectLine, redirectReason)
+          : stripToolSyntax(content)
         queryClient.setQueryData<MessageView[]>(key, (prev) =>
           upsertMessage(prev, {
             ...baseMessage,
@@ -117,8 +125,10 @@ export function useStreamMessage(chatId: string | undefined) {
             sequence: maxSequence + 2,
             senderType: SenderType.ai,
             senderName: 'ИИ-помощник',
-            text: content,
-            isStreaming: true,
+            text,
+            isStreaming: !redirectLine,
+            redirectLine,
+            redirectReason,
           }),
         )
       }
@@ -136,7 +146,10 @@ export function useStreamMessage(chatId: string | undefined) {
               break
             case 'token':
               content = event.content
-              setState((prev) => ({ ...prev, text: content }))
+              // The model may leak its `transfer_to_support(...)` call as text;
+              // detect it so the answer turns into a hand-off notice.
+              if (!redirectLine) redirectLine = extractTransferLine(content)
+              setState((prev) => ({ ...prev, text: stripToolSyntax(content) }))
               upsertAssistant()
               break
             case 'tool_call':
@@ -150,15 +163,21 @@ export function useStreamMessage(chatId: string | undefined) {
               break
             case 'done':
               content = event.content || content
+              // Prefer the explicit redirect event, but fall back to a leaked
+              // call in the final text.
+              if (!redirectLine) redirectLine = extractTransferLine(content)
               completed = true
               if (!assistantStarted) {
                 assistantId = event.messageId || assistantId
-                upsertAssistant()
               }
+              upsertAssistant()
               setState(IDLE)
               break
             case 'redirect':
+              redirectLine = event.line || redirectLine
+              redirectReason = event.reason ?? redirectReason
               setState((prev) => ({ ...prev, toolStatus: null }))
+              upsertAssistant()
               break
           }
         }

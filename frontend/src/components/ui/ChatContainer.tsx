@@ -51,9 +51,9 @@ export default function ChatContainer({ messages, onSend, disabled = false, tool
             return (
               <Fragment key={message.id}>
                 {showDate && <ChatDateDivider label={formatDateSeparator(message.createdAt)} />}
-                {/* System messages are the assistant's handoff offers; render
-                    them as a delimiter rather than a chat bubble. */}
-                {message.senderType === SenderType.system ? (
+                {/* System messages and hand-off notices are rendered as a
+                    delimiter rather than a chat bubble. */}
+                {message.senderType === SenderType.system || message.redirectLine ? (
                   <ChatRedirectDivider text={message.text} />
                 ) : (
                   <ChatMessage message={message} />
