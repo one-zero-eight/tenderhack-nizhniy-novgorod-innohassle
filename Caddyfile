@@ -5,9 +5,11 @@
 		reverse_proxy api:8001
 	}
 
-  handle_path /ml-assets/* {
-    reverse_proxy 100.64.0.5:8010
-  }
+	# handle, а не handle_path: приложение само отдаёт картинки на /ml-assets
+	# (см. ml/assets.py, APIRouter(prefix="/ml-assets")), префикс срезать нельзя.
+	handle /ml-assets/* {
+		reverse_proxy 100.64.0.5:8010
+	}
 
 	handle {
 		reverse_proxy frontend:3000
