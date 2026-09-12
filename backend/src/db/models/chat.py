@@ -97,6 +97,7 @@ class Chat(Base):
     handoff_reason: Mapped[str | None] = mapped_column(String(40))
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
     operator_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    ml_chat_id: Mapped[str | None] = mapped_column(String(100))
     # A plain UUID avoids a circular FK; it refers to a message in this chat under the chat lock.
     pending_ai_message_id: Mapped[UUID | None]
     ai_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

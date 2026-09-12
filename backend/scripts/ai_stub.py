@@ -1,12 +1,15 @@
-"""Development-only AI contract stub. Markers simulate outcomes; this is not an AI implementation."""
+"""Development-only AI contract stub simulating ML-service SSE endpoints."""
 
 import asyncio
+import json
 import os
 import secrets
+from datetime import UTC, datetime
 from typing import Annotated
-from uuid import UUID
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 
@@ -19,11 +22,12 @@ async def authenticate(authorization: Annotated[str | None, Header()] = None):
 app = FastAPI(title="Development AI stub", dependencies=[Depends(authenticate)])
 
 
-class Input(BaseModel):
-    request_id: UUID
-    message: str = Field(min_length=1, max_length=4000)
-    history: list[dict] = Field(default_factory=list, max_length=20)
-    support_lines: list[dict] = Field(default_factory=list, max_length=3)
+class ChatIn(BaseModel):
+    system_prompt: str | None = Field(default=None, max_length=8000)
+
+
+class MessageIn(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
 
 
 @app.get("/health")
@@ -33,36 +37,50 @@ async def health():
         "mode": "stub",
         "components": {
             "answering": "ready",
-            "routing": "ready",
         },
     }
 
 
-@app.post("/v1/answer")
-async def answer(payload: Input):
+@app.post("/ml-api/chat", status_code=201)
+async def create_chat(payload: ChatIn | None = None):
+    chat_id = f"stub-chat-{uuid4().hex[:8]}"
+    now = datetime.now(UTC).isoformat()
+    return {
+        "id": chat_id,
+        "title": "Новый чат",
+        "system_prompt": payload.system_prompt if payload else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+@app.post("/ml-api/chat/{chat_id}/message")
+async def send_message(chat_id: str, payload: MessageIn):
     if "[slow]" in payload.message:
         await asyncio.sleep(60)
+
     if "[answer-error]" in payload.message:
-        raise HTTPException(503, "Simulated answer outage")
-    unknown = any(
-        marker in payload.message for marker in ("[unknown]", "[route-error]", "[route-invalid]", "[route-slow]")
-    )
-    return {
-        "request_id": payload.request_id,
-        "outcome": "no_answer" if unknown else "answered",
-        "answer": None if unknown else "Демонстрационный ответ. Подключите AI-сервис для ответа по базе знаний.",
-        "sources": [],
-    }
+        async def error_generator():
+            err_data = json.dumps({"message": "Simulated answer outage"})
+            yield f"event: error\ndata: {err_data}\n\n"
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
+
+    msg_id = f"msg-{uuid4().hex[:8]}"
+    content = "Демонстрационный ответ. Подключите AI-сервис для ответа по базе знаний."
+
+    async def sse_generator():
+        start_data = json.dumps({"message_id": msg_id})
+        yield f"event: start\ndata: {start_data}\n\n"
+
+        token_data = json.dumps({"delta": content, "content": content})
+        yield f"event: token\ndata: {token_data}\n\n"
+
+        done_data = json.dumps({"message_id": msg_id, "content": content})
+        yield f"event: done\ndata: {done_data}\n\n"
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 
-@app.post("/v1/route")
-async def route(payload: Input):
-    if "[route-slow]" in payload.message:
-        await asyncio.sleep(60)
-    if "[route-error]" in payload.message:
-        raise HTTPException(503, "Simulated routing outage")
-    line_id = next((line for line in (1, 2, 3) if f"[line={line}]" in payload.message), 1)
-    return {
-        "request_id": payload.request_id,
-        "recommended_support_line_id": 4 if "[route-invalid]" in payload.message else line_id,
-    }
+@app.delete("/ml-api/chat/{chat_id}", status_code=204)
+async def delete_chat(chat_id: str):
+    return None

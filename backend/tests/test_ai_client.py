@@ -1,5 +1,4 @@
 import asyncio
-from uuid import uuid4
 
 import httpx
 import pytest
@@ -15,85 +14,80 @@ def settings(**kwargs):
     )
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"outcome": "answered", "answer": "", "sources": []},
-        {"outcome": "answered", "answer": "   ", "sources": []},
-        {"outcome": "answered", "answer": None, "sources": []},
-        {"outcome": "no_answer", "answer": "An unsupported answer", "sources": []},
-        {"outcome": "other", "answer": "An answer", "sources": []},
-        {"outcome": "answered", "answer": "An answer", "sources": [{"title": "missing document id"}]},
-    ],
-)
-async def test_invalid_answer_is_unavailable(body):
-    request_id = uuid4()
-    async with httpx.AsyncClient(
-        base_url="http://ai/",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"request_id": str(request_id), **body}),
-        ),
-    ) as http:
-        with pytest.raises(AIUnavailable):
-            await AIClient(http, settings()).answer(request_id, "message", [])
-
-
-@pytest.mark.parametrize("failure", ["invalid_json", "wrong_id", "http_error"])
-async def test_invalid_transport_response_is_unavailable(failure):
-    request_id = uuid4()
-
-    def respond(request):
-        if failure == "invalid_json":
-            return httpx.Response(200, text="not json")
-        if failure == "http_error":
-            return httpx.Response(500, text="internal exception should not reach the user")
-        return httpx.Response(
-            200, json={"request_id": str(uuid4()), "outcome": "answered", "answer": "answer", "sources": []}
-        )
+async def test_create_chat_success():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat"
+        return httpx.Response(201, json={"id": "ml-chat-123", "title": "Новый чат"})
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        chat_id = await client.create_chat()
+        assert chat_id == "ml-chat-123"
+
+
+async def test_send_message_sse_success():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-1/message"
+        sse_data = (
+            "event: start\ndata: {\"message_id\": \"m1\"}\n\n"
+            "event: token\ndata: {\"delta\": \"Hi\", \"content\": \"Hi\"}\n\n"
+            "event: done\ndata: {\"message_id\": \"m1\", \"content\": \"Hi there!\"}\n\n"
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        answer = await client.send_message("chat-1", "Hello")
+        assert answer.message_id == "m1"
+        assert answer.content == "Hi there!"
+
+
+async def test_send_message_sse_error_event():
+    async def respond(request: httpx.Request):
+        sse_data = "event: error\ndata: {\"message\": \"Model overloaded\"}\n\n"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
         with pytest.raises(AIUnavailable):
-            await AIClient(http, settings()).answer(request_id, "message", [])
+            await client.send_message("chat-1", "Hello")
+
+
+async def test_send_message_http_error():
+    async def respond(request: httpx.Request):
+        return httpx.Response(500, text="Internal server error")
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        with pytest.raises(AIUnavailable):
+            await client.send_message("chat-1", "Hello")
 
 
 async def test_total_deadline_bounds_http_call():
-    async def slow(request):
+    async def slow(request: httpx.Request):
         await asyncio.sleep(1)
         raise AssertionError("The client should cancel this request at its deadline")
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(slow)) as http:
         client = AIClient(http, settings(ai_answer_timeout=0.01))
         with pytest.raises(AIUnavailable):
-            await client.answer(uuid4(), "message", [])
+            await client.send_message("chat-1", "message")
 
 
-async def test_routing_checks_supplied_catalog():
-    request_id = uuid4()
-    async with httpx.AsyncClient(
-        base_url="http://ai/",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"request_id": str(request_id), "recommended_support_line_id": 2}),
-        ),
-    ) as http:
-        with pytest.raises(AIUnavailable):
-            await AIClient(http, settings()).route(request_id, "message", [], [{"id": 1}])
+async def test_routing_stub_returns_none():
+    async with httpx.AsyncClient(base_url="http://ai/") as http:
+        client = AIClient(http, settings())
+        assert await client.route("message") is None
 
 
-@pytest.mark.parametrize(
-    "message,outcome,line",
-    [
-        ("ordinary message", "answered", None),
-        ("[unknown] [line=3]", "no_answer", 3),
-    ],
-)
-async def test_development_stub_matches_client_contract(monkeypatch, message, outcome, line):
+async def test_development_stub_matches_client_contract(monkeypatch):
     monkeypatch.delenv("API_SETTINGS__AI_SERVICE_TOKEN", raising=False)
     async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
         client = AIClient(http, settings())
-        if outcome:
-            assert (await client.answer(uuid4(), message, [])).outcome == outcome
-        if line:
-            assert await client.route(uuid4(), message, [], [{"id": n} for n in (1, 2, 3)]) == line
+        chat_id = await client.create_chat()
+        assert chat_id.startswith("stub-chat-")
+        answer = await client.send_message(chat_id, "ordinary message")
+        assert "Демонстрационный ответ" in answer.content
         assert (await client.health())["mode"] == "stub"
 
 
@@ -102,6 +96,7 @@ async def test_stub_requires_configured_internal_token(monkeypatch):
     async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
         client = AIClient(http, settings())
         with pytest.raises(AIUnavailable):
-            await client.answer(uuid4(), "message", [])
+            await client.create_chat()
         http.headers["Authorization"] = "Bearer stub-service-token"
-        assert (await client.answer(uuid4(), "message", [])).outcome == "answered"
+        chat_id = await client.create_chat()
+        assert chat_id.startswith("stub-chat-")

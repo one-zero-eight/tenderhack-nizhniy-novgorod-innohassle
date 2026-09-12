@@ -261,11 +261,9 @@ class ChatService:
                 chat.handoff_reason = None
                 chat.pending_ai_message_id = message.id
                 chat.ai_deadline_at = utcnow() + timedelta(
-                    seconds=self.ai.settings.ai_answer_timeout + self.ai.settings.ai_routing_timeout + 2,
+                    seconds=self.ai.settings.ai_answer_timeout + 2,
                 )
                 generation = chat.generation
-                history = await history_for(session, message)
-                lines = [line.model_dump() for line in await support_lines(session)]
             else:
                 generation = None
             if blocked or generation is None:
@@ -273,42 +271,39 @@ class ChatService:
                     chat=await chat_view(session, chat), messages=await submission_messages(session, message)
                 )
             message_id = message.id
+            ml_chat_id = chat.ml_chat_id
 
-        answer, reason, suggested = None, "no_answer", None
+        answer = None
         try:
-            answer = await self.ai.answer(message_id, payload.text, history)
+            if not ml_chat_id:
+                ml_chat_id = await self.ai.create_chat()
+            answer = await self.ai.send_message(ml_chat_id, payload.text)
         except AIUnavailable:
-            reason = "ai_unavailable"
-        if answer is None or answer.outcome == "no_answer":
-            # The routing capability may still be available when answer generation failed.
-            try:
-                suggested = await self.ai.route(uuid4(), payload.text, history, lines)
-            except AIUnavailable:
-                pass
+            answer = None
 
         async with self.storage.create_session() as session, session.begin():
             chat = await load_chat(session, chat_id, lock=True)
+            if ml_chat_id and chat.ml_chat_id is None:
+                chat.ml_chat_id = ml_chat_id
             if (
                 chat.generation == generation
                 and chat.pending_ai_message_id == message_id
                 and chat.status == ChatStatus.AI
             ):
                 invalidate_pending(chat)
-                if answer is not None and answer.outcome == "answered":
+                if answer is not None:
                     append_message(
                         session,
                         chat,
-                        answer.answer,
+                        answer.content,
                         sender_type=SenderType.AI,
                         reply_to=message_id,
-                        citations=[source.model_dump() for source in answer.sources],
                     )
                 else:
                     chat.status = ChatStatus.HANDOFF_OFFERED
-                    chat.suggested_line_id = suggested
-                    chat.handoff_reason = reason
-                    line = await session.get(SupportLine, suggested) if suggested else None
-                    append_message(session, chat, offer_text(reason, line), reply_to=message_id)
+                    chat.suggested_line_id = None
+                    chat.handoff_reason = "ai_unavailable"
+                    append_message(session, chat, offer_text("ai_unavailable", None), reply_to=message_id)
             message = await session.get(Message, message_id)
             return SendResult(chat=await chat_view(session, chat), messages=await submission_messages(session, message))
 
@@ -331,27 +326,7 @@ class ChatService:
             if question is None:
                 append_message(session, chat, offer_text("user_requested", None))
                 return HandoffOfferOut(chat=await chat_view(session, chat), support_lines=lines)
-            chat.pending_ai_message_id = question.id
-            chat.ai_deadline_at = utcnow() + timedelta(seconds=self.ai.settings.ai_routing_timeout + 2)
-            generation = chat.generation
-            history = await history_for(session, question)
-            question_text, question_id = question.text, question.id
-
-        try:
-            suggested = await self.ai.route(uuid4(), question_text, history, [line.model_dump() for line in lines])
-        except AIUnavailable:
-            suggested = None
-        async with self.storage.create_session() as session, session.begin():
-            chat = await load_chat(session, chat_id, lock=True)
-            if (
-                chat.generation == generation
-                and chat.status == ChatStatus.HANDOFF_OFFERED
-                and chat.pending_ai_message_id == question_id
-            ):
-                invalidate_pending(chat)
-                chat.suggested_line_id = suggested
-                line = await session.get(SupportLine, suggested) if suggested else None
-                append_message(session, chat, offer_text("user_requested", line), reply_to=question_id)
+            append_message(session, chat, offer_text("user_requested", None), reply_to=question.id)
             return HandoffOfferOut(chat=await chat_view(session, chat), support_lines=lines)
 
     async def handoff(self, chat_id: UUID, user: User, line_id: int | None) -> ChatOut:

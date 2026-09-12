@@ -27,7 +27,7 @@ class ApiSettings(BaseSettings):
     jwt_secret: SecretStr = Field(..., min_length=32)
     "Secret used to sign access tokens; use at least 32 random characters."
     access_token_minutes: int = Field(120, ge=1, le=1440)
-    ai_base_url: AnyHttpUrl = Field(default="http://127.0.0.1:8002")
+    ai_base_url: AnyHttpUrl = Field(default="http://127.0.0.1:8010")
     ai_service_token: SecretStr | None = None
     moderation_model_path: Path = Path("models/rubert-tiny-toxicity")
     moderation_threshold: float = Field(0.8, gt=0, lt=1)

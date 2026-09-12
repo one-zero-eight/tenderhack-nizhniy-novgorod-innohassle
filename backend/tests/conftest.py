@@ -32,8 +32,6 @@ class FakeAI:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
         self.answer_mode = "answered"
-        self.route_line = 2
-        self.route_error = False
         self.hold: str | None = None
         self.started = asyncio.Event()
         self.release = asyncio.Event()
@@ -45,23 +43,26 @@ class FakeAI:
         if self.hold == endpoint:
             self.started.set()
             await self.release.wait()
-        request_id = body.get("request_id")
         if endpoint == "/health":
             return httpx.Response(200, json={"status": "ready", "mode": "stub"})
-        if endpoint == "/v1/answer":
+        if endpoint == "/ml-api/chat":
+            return httpx.Response(201, json={"id": "test-ml-chat-1", "title": "Новый чат"})
+        if "/ml-api/chat/" in endpoint and endpoint.endswith("/message"):
             if self.answer_mode == "error":
                 return httpx.Response(503)
             if self.answer_mode == "timeout":
                 raise httpx.ReadTimeout("Simulated timeout")
-            answer = "A supported answer" if self.answer_mode == "answered" else None
-            sources = [{"document_id": "guide", "title": "User guide", "section": "Profile"}] if answer else []
-            return httpx.Response(
-                200, json={"request_id": request_id, "outcome": self.answer_mode, "answer": answer, "sources": sources}
+            sse_text = (
+                "event: start\ndata: {\"message_id\": \"msg-1\"}\n\n"
+                "event: done\ndata: {\"message_id\": \"msg-1\", \"content\": \"A supported answer\"}\n\n"
             )
-        if endpoint == "/v1/route":
-            if self.route_error:
-                return httpx.Response(503)
-            return httpx.Response(200, json={"request_id": request_id, "recommended_support_line_id": self.route_line})
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=sse_text,
+            )
+        if "/ml-api/chat/" in endpoint:
+            return httpx.Response(204)
         raise AssertionError(f"Unexpected AI endpoint {endpoint}")
 
 

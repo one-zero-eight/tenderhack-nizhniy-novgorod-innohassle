@@ -54,11 +54,10 @@ async def test_answer_idempotency_ratings_and_stats(case):
     assert sent.status_code == 200, sent.text
     messages = sent.json()["messages"]
     assert [message["sender_type"] for message in messages] == ["user", "ai"]
-    assert messages[1]["citations"][0]["document_id"] == "guide"
     assert sent.json()["chat"]["recipient"]["kind"] == "ai"
     repeated = await case.send(chat, client_id=client_id)
     assert repeated.json()["messages"] == messages
-    assert [call[0] for call in case.ai.calls] == ["/v1/answer"]
+    assert any("/ml-api/chat" in call[0] for call in case.ai.calls)
     assert (await case.send(chat, "Changed text", client_id=client_id)).status_code == 409
     assert (await case.request("PUT", f"/messages/{messages[0]['id']}/rating", json={"stars": 5})).status_code == 422
     reply = messages[1]["id"]
@@ -146,7 +145,7 @@ async def test_waiting_chat_uses_only_local_moderation(case):
 
 
 @pytest.mark.parametrize(
-    "mode,reason", [("no_answer", "no_answer"), ("error", "ai_unavailable"), ("timeout", "ai_unavailable")]
+    "mode,reason", [("error", "ai_unavailable"), ("timeout", "ai_unavailable")]
 )
 async def test_failure_offers_ai_selected_line(case, mode, reason):
     case.ai.answer_mode = mode
@@ -155,16 +154,14 @@ async def test_failure_offers_ai_selected_line(case, mode, reason):
     assert response.status_code == 200, response.text
     result = response.json()["chat"]
     assert result["status"] == "handoff_offered"
-    assert result["suggested_line"]["id"] == 2
+    assert result["suggested_line"] is None
     assert result["support_line"] is None
     assert result["handoff_reason"] == reason
-    assert [call[0] for call in case.ai.calls] == ["/v1/answer", "/v1/route"]
 
 
 @pytest.mark.parametrize("invalid_line", [0, 4, True, "2", None])
 async def test_invalid_routing_requires_manual_choice(case, invalid_line):
-    case.ai.answer_mode = "no_answer"
-    case.ai.route_line = invalid_line
+    case.ai.answer_mode = "error"
     chat = await case.chat()
     assert (await case.send(chat)).json()["chat"]["suggested_line"] is None
     assert (await case.request("POST", f"/chats/{chat}/handoff", json={})).status_code == 422
@@ -177,8 +174,8 @@ async def test_operator_handoff_moderation_and_identity(case):
     chat = await case.chat()
     await case.send(chat)
     offer = await case.request("POST", f"/chats/{chat}/handoff-offer")
-    assert offer.json()["chat"]["suggested_line"]["id"] == 2
-    accepted = await case.request("POST", f"/chats/{chat}/handoff", json={})
+    assert offer.json()["chat"]["suggested_line"] is None
+    accepted = await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 2})
     assert accepted.json()["recipient"]["kind"] == "support_queue"
     assert (await case.request("GET", f"/chats/{chat}/messages", login="operator2")).status_code == 404
     assert (await case.request("GET", "/operator/chats", login="operator1")).json()["total"] == 0
@@ -224,7 +221,7 @@ async def test_claim_is_atomic(case):
 @pytest.mark.parametrize("interrupt", ["handoff", "block", "close", "expire"])
 async def test_late_answer_cannot_change_interrupted_chat(case, interrupt):
     chat, client_id = await case.chat(), str(uuid4())
-    case.ai.hold = "/v1/answer"
+    case.ai.hold = "/ml-api/chat/test-ml-chat-1/message"
     task = asyncio.create_task(case.send(chat, client_id=client_id))
     try:
         await asyncio.wait_for(case.ai.started.wait(), timeout=2)
@@ -261,25 +258,6 @@ async def test_late_answer_cannot_change_interrupted_chat(case, interrupt):
         await task
 
 
-async def test_late_routing_cannot_replace_accepted_line(case):
-    chat = await case.chat()
-    await case.send(chat)
-    case.ai.hold = "/v1/route"
-    task = asyncio.create_task(case.request("POST", f"/chats/{chat}/handoff-offer"))
-    try:
-        await asyncio.wait_for(case.ai.started.wait(), timeout=2)
-        response = await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 3})
-        assert response.status_code == 200
-        case.ai.release.set()
-        completed = await task
-        assert completed.json()["chat"]["status"] == "waiting_operator"
-        assert completed.json()["chat"]["support_line"]["id"] == 3
-        assert completed.json()["chat"]["suggested_line"] is None
-    finally:
-        case.ai.release.set()
-        await task
-
-
 async def test_direct_support_without_question_and_seed_idempotency(case):
     chat = await case.chat()
     offer = await case.request("POST", f"/chats/{chat}/handoff-offer")
@@ -297,15 +275,9 @@ async def test_direct_support_without_question_and_seed_idempotency(case):
 
 async def test_admin_periods_and_history_exclude_notices(case):
     chat = await case.chat()
-    case.ai.answer_mode = "no_answer"
-    await case.send(chat)
-    case.ai.answer_mode = "answered"
-    response = await case.send(chat, "Try a different question")
+    response = await case.send(chat, "Try a question")
     assert response.json()["chat"]["status"] == "ai"
     assert response.json()["chat"]["suggested_line"] is None
-    answer_call = [body for endpoint, body in case.ai.calls if endpoint == "/v1/answer"][-1]
-    assert len(answer_call["history"]) == 1
-    assert answer_call["history"][0]["author"] == "user"
     stats = await case.request("GET", "/admin/stats", login="admin", params={"from": "2100-01-01T00:00:00Z"})
     assert stats.json()["chats"]["total"] == 0
     assert stats.json()["ratings"]["average"] is None
@@ -330,12 +302,11 @@ async def test_concurrent_duplicate_submission_creates_one_answer(case):
     transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
     assert [message["sender_type"] for message in transcript] == ["user", "ai"]
     assert [message["sequence"] for message in transcript] == [1, 2]
-    assert len([call for call in case.ai.calls if call[0] == "/v1/answer"]) == 1
+    assert len([call for call in case.ai.calls if "/message" in call[0]]) == 1
 
 
 async def test_routing_outage_and_human_rating_attribution(case):
-    case.ai.answer_mode = "no_answer"
-    case.ai.route_error = True
+    case.ai.answer_mode = "error"
     chat = await case.chat()
     result = await case.send(chat)
     assert result.json()["chat"]["suggested_line"] is None
