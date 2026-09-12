@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { Fragment, useState, type FormEvent } from 'react'
 import Button from '@/components/ui/Button'
+import ChatDateDivider from '@/components/ui/ChatDateDivider'
 import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
 import ChatRedirectDivider from '@/components/ui/ChatRedirectDivider'
 import { cn } from '@/lib/cn'
+import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
 import type { MessageView } from '@/lib/chat-view'
 
@@ -36,15 +38,23 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
         {messages.length === 0 ? (
           <p className="text-gray py-10 text-center text-sm">Сообщений пока нет. Задайте свой вопрос.</p>
         ) : (
-          messages.map((message) =>
-            // System messages are the assistant's handoff offers; render them as
-            // a delimiter rather than a chat bubble.
-            message.senderType === SenderType.system ? (
-              <ChatRedirectDivider key={message.id} text={message.text} />
-            ) : (
-              <ChatMessage key={message.id} message={message} />
-            ),
-          )
+          messages.map((message, index) => {
+            // Insert a Telegram-style date divider whenever the calendar day
+            // changes between consecutive messages.
+            const showDate = index === 0 || dayKey(message.createdAt) !== dayKey(messages[index - 1].createdAt)
+            return (
+              <Fragment key={message.id}>
+                {showDate && <ChatDateDivider label={formatDateSeparator(message.createdAt)} />}
+                {/* System messages are the assistant's handoff offers; render
+                    them as a delimiter rather than a chat bubble. */}
+                {message.senderType === SenderType.system ? (
+                  <ChatRedirectDivider text={message.text} />
+                ) : (
+                  <ChatMessage message={message} />
+                )}
+              </Fragment>
+            )
+          })
         )}
       </div>
 

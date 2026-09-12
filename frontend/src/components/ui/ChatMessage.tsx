@@ -1,6 +1,6 @@
 import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
 import { cn } from '@/lib/cn'
-import { formatDateTime } from '@/lib/format'
+import { formatTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
 import { SenderType } from '@/api/types'
 
@@ -50,19 +50,27 @@ export default function ChatMessage({ message, className }: ChatMessageProps) {
   return (
     <div className={cn('flex w-full', mine ? 'justify-end' : 'justify-start', className)}>
       <div className={cn('flex max-w-[80%] flex-col gap-1', mine ? 'items-end' : 'items-start')}>
-        <span className="text-gray flex items-center gap-2 text-xs">
+        <span className="text-gray text-xs">
           <span className="font-medium">{message.senderName || SENDER_LABELS[message.senderType]}</span>
-          <span>{formatDateTime(message.createdAt)}</span>
         </span>
         <div
           className={cn(
-            'rounded-2xl px-4 py-2 text-sm break-words',
-            mine ? 'bg-main-blue rounded-br-sm text-white' : 'bg-white text-pale-black rounded-bl-sm',
+            'relative rounded-lg pt-2 pr-16 pb-2 pl-4 text-sm wrap-break-word border-gray-200 border',
+            mine ? 'bg-main-blue rounded-br-none text-white' : 'bg-white text-pale-black rounded-bl-none',
             message.isRedacted ? 'italic opacity-70' : undefined,
           )}
         >
           {/* The user's own text is shown verbatim; assistant replies may contain Markdown. */}
           {mine ? <span className="whitespace-pre-wrap">{message.text}</span> : <Markdown components={components}>{message.text}</Markdown>}
+          {/* Timestamp pinned to the bubble's bottom-right corner. */}
+          <span
+            className={cn(
+              'absolute right-3 bottom-1.5 text-[0.7rem] leading-none select-none',
+              mine ? 'text-white/70' : 'text-gray',
+            )}
+          >
+            {formatTime(message.createdAt)}
+          </span>
         </div>
       </div>
     </div>

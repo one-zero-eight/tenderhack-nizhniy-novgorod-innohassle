@@ -1,5 +1,6 @@
 import { Link as RouterLink, useLocation } from '@tanstack/react-router'
 import { FaHeadset } from 'react-icons/fa6'
+import { FaBook } from "react-icons/fa"
 import { navButtonClasses } from './nav-button'
 import LeaveButton from './LeaveButton'
 
@@ -7,7 +8,7 @@ function NavLink({ to, children, icon: Icon }: { to: string; children: React.Rea
   const { pathname } = useLocation()
   const isActive = to === '/' ? pathname === '/' : pathname.startsWith(to)
   return (
-    <RouterLink to={to} className={navButtonClasses(isActive)}>
+    <RouterLink to={to} className={navButtonClasses(isActive, "hover:bg-pale-blue/50")}>
       {Icon && <Icon className="size-4" />}
       {children}
     </RouterLink>
@@ -23,6 +24,9 @@ export default function Navbar() {
         </RouterLink>
         <NavLink to="/support" icon={FaHeadset}>
           Поддержка
+        </NavLink>
+        <NavLink to="/knowledge" icon={FaBook}>
+          База Знаний
         </NavLink>
       </div>
       <LeaveButton />
