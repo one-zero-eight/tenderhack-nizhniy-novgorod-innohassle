@@ -21,8 +21,8 @@ export default function Navbar() {
   const isAdmin = user?.role === Role.admin
 
   return (
-    <nav className="border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
-      <div className="flex items-stretch">
+    <nav className="fixed border-gray-blue flex h-16 w-full items-stretch justify-between border-b bg-white px-4">
+      <div className="flex items-stretch pl-2">
         <RouterLink to="/" className="mr-4 flex items-center no-underline" aria-label="Портал Поставщиков">
           <img
             src="https://zakupki.mos.ru/cms/Media/holidaysthemes/pplogo/pp_logo.svg"

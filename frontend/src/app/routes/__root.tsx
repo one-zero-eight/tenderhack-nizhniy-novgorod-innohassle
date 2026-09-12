@@ -23,9 +23,11 @@ const RootLayout = () => {
           style={{ backgroundImage: `url(${MANUL_BACKGROUND_URL})` }}
         />
       )}
-      <div className="relative z-10 flex flex-1 flex-col">
+      <div className="relative z-10 flex flex-1 flex-col pt-">
         {!isAuthPage && <Navbar />}
-        <Outlet />
+        <div className="pt-16">
+            <Outlet />
+        </div>
       </div>
     </div>
   )
