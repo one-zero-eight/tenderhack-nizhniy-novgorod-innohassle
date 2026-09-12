@@ -84,3 +84,57 @@ async def send_message(chat_id: str, payload: MessageIn):
 @app.delete("/ml-api/chat/{chat_id}", status_code=204)
 async def delete_chat(chat_id: str):
     return None
+
+
+@app.get("/ml-api/knowledge-base")
+async def list_manuals():
+    return [
+        {
+            "slug": "instrukciya-po-sozdaniyu-oferty-i-ste",
+            "title": "Инструкция по созданию оферты и СТЕ",
+            "sections": 5,
+            "url": "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
+        }
+    ]
+
+
+@app.get("/ml-api/knowledge-base/{slug}")
+async def get_manual_structure(slug: str):
+    if slug == "not-found":
+        raise HTTPException(404, "Мануал не найден")
+    return {
+        "slug": slug,
+        "title": "Инструкция по созданию оферты и СТЕ",
+        "sections": [
+            {
+                "id": "root",
+                "title": "Полный текст",
+                "depth": 0,
+                "ancestors": [],
+                "children": ["1"],
+            },
+            {
+                "id": "1",
+                "title": "Общие положения",
+                "depth": 1,
+                "ancestors": ["root"],
+                "children": [],
+            },
+        ],
+    }
+
+
+@app.get("/ml-api/knowledge-base/{slug}/{section_id}")
+async def get_manual_section(slug: str, section_id: str):
+    if slug == "not-found" or section_id == "not-found":
+        raise HTTPException(404, "Раздел не найден")
+    return {
+        "id": section_id,
+        "title": "Общие положения",
+        "content_md": "# Общие положения\n\nТекст раздела инструкции...",
+        "breadcrumbs": [{"id": "root", "title": "Инструкция"}, {"id": section_id, "title": "Общие положения"}],
+        "prev": None,
+        "next": None,
+        "parent": "root",
+        "manual": {"slug": slug, "title": "Инструкция по созданию оферты и СТЕ"},
+    }

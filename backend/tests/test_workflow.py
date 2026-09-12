@@ -346,3 +346,36 @@ async def test_schema_initialization_preserves_existing_data(case):
     async with restarted.router.lifespan_context(restarted):
         assert (await case.request("GET", f"/chats/{chat}")).status_code == 200
     assert (await case.request("GET", "/support-lines")).json()[0]["id"] == 1
+
+
+async def test_knowledge_base_proxy_endpoints(case):
+    for path in ["/ml-api/knowledge-base", "/knowledge-base"]:
+        res = await case.client.get(path)
+        assert res.status_code == 200, res.text
+        manuals = res.json()
+        assert isinstance(manuals, list)
+        assert len(manuals) >= 1
+        assert manuals[0]["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
+
+    for path in [
+        "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
+        "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
+    ]:
+        res = await case.client.get(path)
+        assert res.status_code == 200, res.text
+        structure = res.json()
+        assert structure["slug"] == "instrukciya-po-sozdaniyu-oferty-i-ste"
+        assert len(structure["sections"]) >= 1
+
+    for path in [
+        "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1",
+        "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1",
+    ]:
+        res = await case.client.get(path)
+        assert res.status_code == 200, res.text
+        section = res.json()
+        assert section["id"] == "1"
+        assert "content_md" in section
+
+    res_404 = await case.client.get("/ml-api/knowledge-base/not-found")
+    assert res_404.status_code == 404

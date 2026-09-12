@@ -106,9 +106,12 @@ sequenceDiagram
 - `POST /auth/register` — Register a new account (`{"login": "...", "password": "...", "display_name": "..."}`).
 - `GET /auth/me` — Get current user information and role.
 
-### Support Lines & Image Proxy
+### Support Lines, Knowledge Base & Image Proxy
 - `GET /support-lines` — List available support lines (Lines 1-3: Technical support, Procurement support, General inquiries).
 - `GET /ml-assets/image/{slug}/{filename}` — **Unauthenticated** image proxy forwarding to the ML service's static assets.
+- `GET /ml-api/knowledge-base` (or `/knowledge-base`) — List all knowledge base manuals (slug, title, section count, URL).
+- `GET /ml-api/knowledge-base/{slug}` (or `/knowledge-base/{slug}`) — Get manual structure and section tree hierarchy.
+- `GET /ml-api/knowledge-base/{slug}/{section_id}` (or `/knowledge-base/{slug}/{section_id}`) — Get section content (Markdown text, navigation, breadcrumbs).
 
 ### Client Chat Flow (`/chats`)
 - `POST /chats` — Create a new user chat session (Status initialized to `ai`).

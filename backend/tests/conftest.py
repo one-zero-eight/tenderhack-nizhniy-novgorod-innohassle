@@ -63,6 +63,38 @@ class FakeAI:
             )
         if "/ml-api/chat/" in endpoint:
             return httpx.Response(204)
+        if endpoint == "/ml-api/knowledge-base":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "slug": "instrukciya-po-sozdaniyu-oferty-i-ste",
+                        "title": "Инструкция по созданию оферты и СТЕ",
+                        "sections": 5,
+                        "url": "/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste",
+                    }
+                ],
+            )
+        if endpoint == "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste":
+            return httpx.Response(
+                200,
+                json={
+                    "slug": "instrukciya-po-sozdaniyu-oferty-i-ste",
+                    "title": "Инструкция по созданию оферты и СТЕ",
+                    "sections": [{"id": "1", "title": "Section 1"}],
+                },
+            )
+        if endpoint == "/ml-api/knowledge-base/instrukciya-po-sozdaniyu-oferty-i-ste/1":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "1",
+                    "title": "Section 1",
+                    "content_md": "# Section 1",
+                },
+            )
+        if endpoint.startswith("/ml-api/knowledge-base/not-found"):
+            return httpx.Response(404, json={"detail": "Not found"})
         raise AssertionError(f"Unexpected AI endpoint {endpoint}")
 
 
