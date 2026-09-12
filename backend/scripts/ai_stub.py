@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,8 @@ async def health():
 
 
 _CHATS: dict[str, dict] = {}
+_CHAT_FILES: dict[str, list[dict]] = {}
+_ATTACHMENTS: dict[str, dict] = {}
 
 
 @app.post("/ml-api/chat", status_code=201)
@@ -72,6 +74,93 @@ async def get_chat(chat_id: str):
     return _CHATS[chat_id]
 
 
+@app.post("/ml-api/chat/{chat_id}/upload", status_code=201)
+async def upload_file(chat_id: str, file: Annotated[UploadFile, File(...)]):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    chat = _CHATS[chat_id]
+    if chat.get("closed_at") is not None:
+        raise HTTPException(409, "Чат закрыт")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(400, "Файл пуст")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Файл слишком большой")
+
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    is_img = ext in image_exts or (file.content_type and file.content_type.startswith("image/"))
+    kind = "image" if is_img else "document"
+    file_id = f"file-{uuid4().hex[:8]}"
+    record = {
+        "id": file_id,
+        "chat_id": chat_id,
+        "filename": file.filename or "file",
+        "content_type": file.content_type or "application/octet-stream",
+        "kind": kind,
+        "size": len(data),
+        "is_image": is_img,
+        "created_at": datetime.now(UTC).isoformat(),
+        "url": f"/attachments/{file_id}",
+        "_data": data,
+    }
+    _CHAT_FILES.setdefault(chat_id, []).append(record)
+    _ATTACHMENTS[file_id] = record
+    return {k: v for k, v in record.items() if k != "_data"}
+
+
+@app.get("/ml-api/chat/{chat_id}/files")
+async def list_files(chat_id: str):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    return [{k: v for k, v in f.items() if k != "_data"} for f in _CHAT_FILES.get(chat_id, [])]
+
+
+@app.get("/ml-api/chat/{chat_id}/files/{file_id}")
+async def get_file(chat_id: str, file_id: str):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    files = _CHAT_FILES.get(chat_id, [])
+    for f in files:
+        if f["id"] == file_id:
+            return {k: v for k, v in f.items() if k != "_data"}
+    raise HTTPException(404, "Файл не найден")
+
+
+@app.delete("/ml-api/chat/{chat_id}/files/{file_id}", status_code=204)
+async def delete_file(chat_id: str, file_id: str):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    files = _CHAT_FILES.get(chat_id, [])
+    for i, f in enumerate(files):
+        if f["id"] == file_id:
+            files.pop(i)
+            return None
+    raise HTTPException(404, "Файл не найден")
+
+
+@app.get("/ml-api/chat/{chat_id}/files/{file_id}/content")
+async def get_file_content(chat_id: str, file_id: str):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    for f in _CHAT_FILES.get(chat_id, []):
+        if f["id"] == file_id:
+            return Response(content=f["_data"], media_type=f["content_type"])
+    raise HTTPException(404, "Файл не найден")
+
+
+@app.get("/attachments/{file_id}")
+async def get_attachment(file_id: str):
+    if file_id not in _ATTACHMENTS:
+        raise HTTPException(404, "Вложение не найдено")
+    record = _ATTACHMENTS[file_id]
+    return Response(
+        content=record["_data"],
+        media_type=record["content_type"],
+        headers={"Content-Disposition": f'attachment; filename="{record["filename"]}"'},
+    )
+
+
 @app.post("/ml-api/chat/{chat_id}/message")
 async def send_message(chat_id: str, payload: MessageIn):
     if "[slow]" in payload.message:
@@ -86,18 +175,24 @@ async def send_message(chat_id: str, payload: MessageIn):
     msg_id = f"msg-{uuid4().hex[:8]}"
     content = "Демонстрационный ответ. Подключите AI-сервис для ответа по базе знаний."
 
+    # Pending attachments for this turn
+    pending = _CHAT_FILES.pop(chat_id, [])
+    user_attachments = [{k: v for k, v in f.items() if k != "_data"} for f in pending]
+
     if chat_id in _CHATS:
         _CHATS[chat_id]["messages"].append({
             "id": f"msg-user-{len(_CHATS[chat_id]['messages']) + 1}",
             "role": "user",
             "content": payload.message,
             "tools": [],
+            "attachments": user_attachments,
         })
         _CHATS[chat_id]["messages"].append({
             "id": msg_id,
             "role": "assistant",
             "content": content,
             "tools": [],
+            "attachments": [],
         })
 
     async def sse_generator():
@@ -116,7 +211,11 @@ async def send_message(chat_id: str, payload: MessageIn):
 @app.delete("/ml-api/chat/{chat_id}", status_code=204)
 async def delete_chat(chat_id: str):
     _CHATS.pop(chat_id, None)
+    files = _CHAT_FILES.pop(chat_id, [])
+    for f in files:
+        _ATTACHMENTS.pop(f["id"], None)
     return None
+
 
 
 @app.get("/ml-api/knowledge-base")

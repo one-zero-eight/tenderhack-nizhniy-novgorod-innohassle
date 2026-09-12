@@ -4,7 +4,6 @@ from datetime import timedelta
 from uuid import uuid4
 
 import jwt
-import pytest
 from sqlalchemy import select
 
 from src.api.app import create_app

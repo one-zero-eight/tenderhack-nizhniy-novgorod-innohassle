@@ -105,6 +105,18 @@ class MessageIn(Schema):
     client_message_id: UUID
 
 
+class ChatFileOut(Schema):
+    id: str
+    chat_id: str
+    filename: str
+    content_type: str
+    kind: str = "image"
+    size: int
+    is_image: bool
+    created_at: datetime | str
+    url: str
+
+
 class MessageOut(Schema):
     id: str
     chat_id: str
@@ -116,9 +128,11 @@ class MessageOut(Schema):
     text: str
     citations: list[dict] = Field(default_factory=list)
     tool_calls: list[dict] = Field(default_factory=list)
+    attachments: list[ChatFileOut] = Field(default_factory=list)
     reply_to_message_id: str | None = None
     is_redacted: bool = False
     created_at: datetime
+
 
 
 class MessagePage(Schema):

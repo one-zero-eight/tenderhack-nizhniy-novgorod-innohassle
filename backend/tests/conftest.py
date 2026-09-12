@@ -36,10 +36,15 @@ class FakeAI:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.chats: dict[str, dict] = {}
+        self.chat_files: dict[str, list[dict]] = {}
+        self.attachments: dict[str, dict] = {}
 
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         endpoint = request.url.path
-        body = json.loads(request.content) if request.content else {}
+        try:
+            body = json.loads(request.content) if request.content else {}
+        except Exception:
+            body = {}
         self.calls.append((endpoint, body))
         if self.hold == endpoint:
             self.started.set()
@@ -62,6 +67,102 @@ class FakeAI:
                 "messages": [],
             }
             return httpx.Response(201, json={"id": chat_id, "title": "Новый чат", "topic": None, "subtopic": None})
+
+        # File upload
+        if request.method == "POST" and "/ml-api/chat/" in endpoint and endpoint.endswith("/upload"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            if chat_id not in self.chats:
+                return httpx.Response(404, json={"detail": "Чат не найден"})
+            if self.chats[chat_id].get("closed_at") is not None:
+                return httpx.Response(409, json={"detail": "Чат закрыт"})
+            content = request.content
+            if not content:
+                return httpx.Response(400, json={"detail": "Файл пуст"})
+            filename = "test-file.png"
+            content_type = "image/png"
+            if b'filename="' in content:
+                try:
+                    filename = content.split(b'filename="')[1].split(b'"')[0].decode()
+                except Exception:
+                    pass
+            if b'Content-Type: ' in content:
+                try:
+                    content_type = content.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode()
+                except Exception:
+                    pass
+
+            file_data = content
+            if b"\r\n\r\n" in content:
+                file_data = content.split(b"\r\n\r\n", 1)[1]
+                if b"\r\n--" in file_data:
+                    file_data = file_data.rsplit(b"\r\n--", 1)[0]
+
+            file_id = f"test-file-{len(self.attachments) + 1}"
+            record = {
+                "id": file_id,
+                "chat_id": chat_id,
+                "filename": filename,
+                "content_type": content_type,
+                "kind": "image" if content_type.startswith("image/") else "document",
+                "size": len(file_data),
+                "is_image": content_type.startswith("image/"),
+                "created_at": "2026-09-12T00:00:00Z",
+                "url": f"/attachments/{file_id}",
+                "_data": file_data,
+            }
+            self.chat_files.setdefault(chat_id, []).append(record)
+            self.attachments[file_id] = record
+            return httpx.Response(201, json={k: v for k, v in record.items() if k != "_data"})
+
+        # File content
+        if request.method == "GET" and "/ml-api/chat/" in endpoint and "/files/" in endpoint and endpoint.endswith("/content"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            file_id = parts[5]
+            for f in self.chat_files.get(chat_id, []):
+                if f["id"] == file_id:
+                    return httpx.Response(200, content=f["_data"], headers={"content-type": f["content_type"]})
+            return httpx.Response(404, json={"detail": "Файл не найден"})
+
+        # Single file
+        if request.method == "GET" and "/ml-api/chat/" in endpoint and "/files/" in endpoint:
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            file_id = parts[5]
+            for f in self.chat_files.get(chat_id, []):
+                if f["id"] == file_id:
+                    return httpx.Response(200, json={k: v for k, v in f.items() if k != "_data"})
+            return httpx.Response(404, json={"detail": "Файл не найден"})
+
+        # Delete file
+        if request.method == "DELETE" and "/ml-api/chat/" in endpoint and "/files/" in endpoint:
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            file_id = parts[5]
+            files = self.chat_files.get(chat_id, [])
+            for idx, f in enumerate(files):
+                if f["id"] == file_id:
+                    files.pop(idx)
+                    return httpx.Response(204)
+            return httpx.Response(404, json={"detail": "Файл не найден"})
+
+        # List files
+        if request.method == "GET" and "/ml-api/chat/" in endpoint and endpoint.endswith("/files"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            if chat_id not in self.chats:
+                return httpx.Response(404, json={"detail": "Чат не найден"})
+            return httpx.Response(200, json=[{k: v for k, v in f.items() if k != "_data"} for f in self.chat_files.get(chat_id, [])])
+
+        # Attachment download
+        if request.method == "GET" and (endpoint.startswith("/attachments/") or endpoint.startswith("/ml-assets/attachments/")):
+            file_id = endpoint.split("/")[-1]
+            if file_id in self.attachments:
+                rec = self.attachments[file_id]
+                return httpx.Response(200, content=rec["_data"], headers={"content-type": rec["content_type"]})
+            return httpx.Response(404, json={"detail": "Вложение не найдено"})
+
         if "/ml-api/chat/" in endpoint and endpoint.endswith("/message"):
             if self.answer_mode == "error":
                 return httpx.Response(503)
@@ -71,18 +172,24 @@ class FakeAI:
             chat_id = parts[3]
             turn_num = len(self.chats[chat_id]["messages"]) // 2 + 1 if chat_id in self.chats else 1
             msg_id = f"msg-{turn_num}"
+
+            pending = self.chat_files.pop(chat_id, [])
+            user_att = [{k: v for k, v in f.items() if k != "_data"} for f in pending]
+
             if chat_id in self.chats:
                 self.chats[chat_id]["messages"].append({
                     "id": f"msg-user-{len(self.chats[chat_id]['messages']) + 1}",
                     "role": "user",
                     "content": body.get("message", ""),
                     "tools": [],
+                    "attachments": user_att,
                 })
                 self.chats[chat_id]["messages"].append({
                     "id": msg_id,
                     "role": "assistant",
                     "content": "A supported answer",
                     "tools": [],
+                    "attachments": [],
                 })
             sse_text = (
                 f"event: start\ndata: {{\"message_id\": \"{msg_id}\"}}\n\n"
@@ -106,6 +213,7 @@ class FakeAI:
             return httpx.Response(204)
 
         if endpoint == "/ml-api/knowledge-base":
+
             return httpx.Response(
                 200,
                 json=[

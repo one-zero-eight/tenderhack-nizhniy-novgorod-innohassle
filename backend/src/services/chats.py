@@ -21,6 +21,7 @@ from src.db.repositories.chats import (
 )
 from src.db.storage import AbstractSQLAlchemyStorage
 from src.schemas.chat import (
+    ChatFileOut,
     ChatOut,
     ChatPage,
     MessageIn,
@@ -198,6 +199,12 @@ class ChatService:
                     sender_type = SenderType.USER if role == "user" else SenderType.AI
                     name = user.display_name if sender_type == SenderType.USER else "ИИ-помощник"
                     sender_id = user.id if sender_type == SenderType.USER else None
+                    raw_att = m.get("attachments", [])
+                    attachments = (
+                        [ChatFileOut.model_validate(a) for a in raw_att]
+                        if isinstance(raw_att, list)
+                        else []
+                    )
                     ai_messages.append(
                         MessageOut(
                             id=m["id"],
@@ -209,6 +216,7 @@ class ChatService:
                             text=m.get("content", ""),
                             citations=_extract_citations(tools),
                             tool_calls=tools,
+                            attachments=attachments,
                             is_redacted=False,
                             created_at=chat.created_at,
                         )
@@ -433,6 +441,12 @@ class ChatService:
                     except Exception:
                         pass
 
+                    user_att_raw = msgs[-2].get("attachments", []) if len(msgs) >= 2 else []
+                    user_attachments = (
+                        [ChatFileOut.model_validate(a) for a in user_att_raw]
+                        if isinstance(user_att_raw, list)
+                        else []
+                    )
                     user_msg = MessageOut(
                         id=user_msg_id,
                         chat_id=chat_id,
@@ -441,6 +455,7 @@ class ChatService:
                         sender_id=user.id,
                         sender_name=user.display_name,
                         text=payload.text,
+                        attachments=user_attachments,
                         is_redacted=False,
                         created_at=utcnow(),
                     )
@@ -607,3 +622,80 @@ class ChatService:
                 rating.updated_at = utcnow()
             await session.flush()
             return RatingOut.model_validate(rating)
+
+    async def upload_file(
+        self, chat_id: str, user: User, filename: str, content: bytes, content_type: str | None = None
+    ) -> ChatFileOut:
+        if not content:
+            fail(400, "INVALID_FILE", "File cannot be empty")
+        if len(content) > 10 * 1024 * 1024:
+            fail(400, "FILE_TOO_LARGE", "File size exceeds 10 MB limit")
+
+        async with self.storage.create_session() as session, session.begin():
+            chat = await load_chat(session, chat_id, lock=True)
+            check_writer(chat, user)
+            if chat.status == ChatStatus.CLOSED:
+                fail(409, "CHAT_CLOSED", "This chat is closed")
+
+        try:
+            file_data = await self.ai.upload_file(chat_id, filename, content, content_type)
+            return ChatFileOut.model_validate(file_data)
+        except KeyError:
+            fail(404, "CHAT_NOT_FOUND", "Chat not found")
+        except ValueError as exc:
+            fail(400, "INVALID_FILE", str(exc))
+        except AIUnavailable:
+            fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
+
+    async def list_files(self, chat_id: str, user: User) -> list[ChatFileOut]:
+        async with self.storage.create_session() as session, session.begin():
+            chat = await load_chat(session, chat_id, lock=True)
+            check_read_access(chat, user)
+
+        try:
+            files_data = await self.ai.list_files(chat_id)
+            return [ChatFileOut.model_validate(f) for f in files_data]
+        except KeyError:
+            fail(404, "CHAT_NOT_FOUND", "Chat not found")
+        except AIUnavailable:
+            fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
+
+    async def get_file(self, chat_id: str, file_id: str, user: User) -> ChatFileOut:
+        async with self.storage.create_session() as session, session.begin():
+            chat = await load_chat(session, chat_id, lock=True)
+            check_read_access(chat, user)
+
+        try:
+            file_data = await self.ai.get_file(chat_id, file_id)
+            return ChatFileOut.model_validate(file_data)
+        except KeyError:
+            fail(404, "FILE_NOT_FOUND", "File not found")
+        except AIUnavailable:
+            fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
+
+    async def delete_file(self, chat_id: str, file_id: str, user: User) -> None:
+        async with self.storage.create_session() as session, session.begin():
+            chat = await load_chat(session, chat_id, lock=True)
+            check_writer(chat, user)
+            if chat.status == ChatStatus.CLOSED:
+                fail(409, "CHAT_CLOSED", "This chat is closed")
+
+        try:
+            await self.ai.delete_file(chat_id, file_id)
+        except KeyError:
+            fail(404, "FILE_NOT_FOUND", "File not found")
+        except AIUnavailable:
+            fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
+
+    async def get_file_content(self, chat_id: str, file_id: str, user: User) -> tuple[bytes, str, str | None]:
+        async with self.storage.create_session() as session, session.begin():
+            chat = await load_chat(session, chat_id, lock=True)
+            check_read_access(chat, user)
+
+        try:
+            return await self.ai.get_file_content(chat_id, file_id)
+        except KeyError:
+            fail(404, "FILE_NOT_FOUND", "File not found")
+        except AIUnavailable:
+            fail(503, "AI_UNAVAILABLE", "AI service is unavailable")
+

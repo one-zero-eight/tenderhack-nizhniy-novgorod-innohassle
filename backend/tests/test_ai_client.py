@@ -183,3 +183,128 @@ async def test_send_message_sse_tool_call_and_redirect():
         assert answer.citations == [{"manual": "manual.json", "section_id": "1.2"}]
         assert answer.redirect_line == 2
         assert answer.redirect_reason == "User requested operator"
+
+
+async def test_ai_client_upload_file_success():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-1/upload"
+        return httpx.Response(
+            201,
+            json={
+                "id": "file-123",
+                "chat_id": "chat-1",
+                "filename": "document.pdf",
+                "content_type": "application/pdf",
+                "kind": "document",
+                "size": 1024,
+                "is_image": False,
+                "created_at": "2026-09-12T00:00:00Z",
+                "url": "/attachments/file-123",
+            },
+        )
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        file_info = await client.upload_file("chat-1", "document.pdf", b"hello world", "application/pdf")
+        assert file_info["id"] == "file-123"
+        assert file_info["kind"] == "document"
+        assert file_info["is_image"] is False
+
+
+async def test_ai_client_upload_file_errors():
+    async def respond(request: httpx.Request):
+        if "chat-404" in request.url.path:
+            return httpx.Response(404, json={"detail": "Чат не найден"})
+        if "chat-409" in request.url.path:
+            return httpx.Response(409, json={"detail": "Чат закрыт"})
+        return httpx.Response(400, json={"detail": "Файл пуст"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        with pytest.raises(KeyError):
+            await client.upload_file("chat-404", "doc.pdf", b"data")
+        with pytest.raises(ValueError, match="Чат закрыт"):
+            await client.upload_file("chat-409", "doc.pdf", b"data")
+        with pytest.raises(ValueError, match="Файл пуст"):
+            await client.upload_file("chat-1", "doc.pdf", b"")
+
+
+async def test_ai_client_list_get_delete_files_and_attachments():
+    async def respond(request: httpx.Request):
+        path = request.url.path
+        if request.method == "GET" and path == "/ml-api/chat/chat-1/files":
+            return httpx.Response(200, json=[{"id": "file-1", "chat_id": "chat-1"}])
+        if request.method == "GET" and path == "/ml-api/chat/chat-1/files/file-1":
+            return httpx.Response(200, json={"id": "file-1", "chat_id": "chat-1"})
+        if request.method == "DELETE" and path == "/ml-api/chat/chat-1/files/file-1":
+            return httpx.Response(204)
+        if request.method == "GET" and path == "/ml-api/chat/chat-1/files/file-1/content":
+            return httpx.Response(200, content=b"content-bytes", headers={"content-type": "image/png"})
+        if request.method == "GET" and path == "/attachments/file-1":
+            return httpx.Response(200, content=b"attachment-bytes", headers={"content-type": "image/png"})
+        return httpx.Response(404, json={"detail": "Not found"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        files = await client.list_files("chat-1")
+        assert len(files) == 1
+        assert files[0]["id"] == "file-1"
+
+        file_meta = await client.get_file("chat-1", "file-1")
+        assert file_meta["id"] == "file-1"
+
+        await client.delete_file("chat-1", "file-1")
+
+        content, ctype, disp = await client.get_file_content("chat-1", "file-1")
+        assert content == b"content-bytes"
+        assert ctype == "image/png"
+
+        att_content, att_type, _ = await client.get_attachment("file-1")
+        assert att_content == b"attachment-bytes"
+        assert att_type == "image/png"
+
+
+async def test_development_stub_file_operations(monkeypatch):
+    monkeypatch.delenv("API_SETTINGS__AI_SERVICE_TOKEN", raising=False)
+    async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
+        client = AIClient(http, settings())
+        chat_id, _ = await client.create_chat()
+
+        # Upload file
+        uploaded = await client.upload_file(chat_id, "photo.jpg", b"image-binary-data", "image/jpeg")
+        assert uploaded["filename"] == "photo.jpg"
+        assert uploaded["is_image"] is True
+        file_id = uploaded["id"]
+
+        # List files
+        files = await client.list_files(chat_id)
+        assert len(files) == 1
+        assert files[0]["id"] == file_id
+
+        # Get file metadata
+        single = await client.get_file(chat_id, file_id)
+        assert single["id"] == file_id
+
+        # Get file content
+        content, ctype, _ = await client.get_file_content(chat_id, file_id)
+        assert content == b"image-binary-data"
+        assert ctype == "image/jpeg"
+
+        # Permanent attachment content
+        att_bytes, att_type, _ = await client.get_attachment(file_id)
+        assert att_bytes == b"image-binary-data"
+        assert att_type == "image/jpeg"
+
+        # Send message consumes attachments into message history
+        answer = await client.send_message(chat_id, "Here is my photo")
+        assert answer.message_id.startswith("msg-")
+
+        # Files list should now be empty
+        assert await client.list_files(chat_id) == []
+
+        # Chat history now has attachments
+        chat_history = await client.get_chat(chat_id)
+        user_msg = chat_history["messages"][0]
+        assert len(user_msg["attachments"]) == 1
+        assert user_msg["attachments"][0]["id"] == file_id
+

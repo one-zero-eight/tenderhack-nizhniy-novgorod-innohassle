@@ -154,6 +154,127 @@ class AIClient:
         except (httpx.HTTPError, TimeoutError) as exc:
             logger.warning("Failed to delete ML chat %s: %s", ml_chat_id, exc)
 
+    async def upload_file(
+        self, ml_chat_id: str, filename: str, content: bytes, content_type: str | None = None
+    ) -> dict:
+        """Upload a file or image to ML service (POST /ml-api/chat/{chat_id}/upload)."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/upload"
+        try:
+            async with asyncio.timeout(30.0):
+                files = {"file": (filename, content, content_type or "application/octet-stream")}
+                response = await self.http.post(endpoint, files=files, timeout=30.0)
+                if response.status_code == 404:
+                    raise KeyError(ml_chat_id)
+                if response.status_code in (400, 409, 422):
+                    try:
+                        err_detail = response.json().get("detail", response.text)
+                    except Exception:
+                        err_detail = response.text
+                    raise ValueError(err_detail)
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid upload response format")
+                return data
+        except (KeyError, ValueError):
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            logger.warning("AI service unavailable during upload_file (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    async def list_files(self, ml_chat_id: str) -> list[dict]:
+        """List pending files for a chat in ML service (GET /ml-api/chat/{chat_id}/files)."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/files"
+        try:
+            async with asyncio.timeout(10.0):
+                response = await self.http.get(endpoint, timeout=10.0)
+                if response.status_code == 404:
+                    raise KeyError(ml_chat_id)
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, list):
+                    raise ValueError("Invalid list_files response format")
+                return data
+        except KeyError:
+            raise
+        except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+            logger.warning("AI service unavailable during list_files (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    async def get_file(self, ml_chat_id: str, file_id: str) -> dict:
+        """Get file metadata from ML service (GET /ml-api/chat/{chat_id}/files/{file_id})."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/files/{file_id}"
+        try:
+            async with asyncio.timeout(10.0):
+                response = await self.http.get(endpoint, timeout=10.0)
+                if response.status_code == 404:
+                    raise KeyError(file_id)
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid get_file response format")
+                return data
+        except KeyError:
+            raise
+        except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+            logger.warning("AI service unavailable during get_file (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    async def delete_file(self, ml_chat_id: str, file_id: str) -> None:
+        """Delete pending file in ML service (DELETE /ml-api/chat/{chat_id}/files/{file_id})."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/files/{file_id}"
+        try:
+            async with asyncio.timeout(10.0):
+                response = await self.http.delete(endpoint, timeout=10.0)
+                if response.status_code == 404:
+                    raise KeyError(file_id)
+                response.raise_for_status()
+        except KeyError:
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            logger.warning("AI service unavailable during delete_file (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    async def get_file_content(self, ml_chat_id: str, file_id: str) -> tuple[bytes, str, str | None]:
+        """Get pending file content from ML service (GET /ml-api/chat/{chat_id}/files/{file_id}/content)."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/files/{file_id}/content"
+        try:
+            async with asyncio.timeout(20.0):
+                response = await self.http.get(endpoint, timeout=20.0)
+                if response.status_code == 404:
+                    raise KeyError(file_id)
+                response.raise_for_status()
+                return (
+                    response.content,
+                    response.headers.get("content-type", "application/octet-stream"),
+                    response.headers.get("content-disposition"),
+                )
+        except KeyError:
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            logger.warning("AI service unavailable during get_file_content (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    async def get_attachment(self, file_id: str) -> tuple[bytes, str, str | None]:
+        """Get permanent attachment content from ML service (GET /attachments/{file_id})."""
+        endpoint = f"attachments/{file_id}"
+        try:
+            async with asyncio.timeout(20.0):
+                response = await self.http.get(endpoint, timeout=20.0)
+                if response.status_code == 404:
+                    raise KeyError(file_id)
+                response.raise_for_status()
+                return (
+                    response.content,
+                    response.headers.get("content-type", "application/octet-stream"),
+                    response.headers.get("content-disposition"),
+                )
+        except KeyError:
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            logger.warning("AI service unavailable during get_attachment (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
     async def route(self, *args, **kwargs) -> int | None:
         """Stub method for backward compatibility. Returns None until routing is implemented."""
         return None
@@ -170,3 +291,4 @@ class AIClient:
         except (httpx.HTTPError, TimeoutError, ValueError) as exc:
             logger.warning("AI service health check failed: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("health") from exc
+
