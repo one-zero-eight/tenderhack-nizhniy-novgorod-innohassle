@@ -3,6 +3,7 @@
 Эндпоинты чатов:
     POST /ml-api/chat                        — создать чат, вернуть id
     GET  /ml-api/chat                        — список чатов
+    POST /ml-api/chat/title                  — сгенерировать название чата из вопроса
     GET  /ml-api/chat/<id>                   — содержимое чата (сообщения + вызовы инструментов)
     DELETE /ml-api/chat/<id>                 — удалить чат
     POST /ml-api/chat/<id>/message           — SSE-стрим ответа агента и вызовов инструментов
@@ -131,6 +132,32 @@ class MessageIn(BaseModel):
         max_length=8000,
         description="Текст вопроса пользователя на русском",
         examples=["Как создать котировочную сессию?"],
+    )
+
+
+class ChatTitleIn(BaseModel):
+    """Тело запроса на генерацию названия чата."""
+
+    message: str = Field(
+        min_length=1,
+        max_length=8000,
+        description=(
+            "Текст вопроса, из которого нужно сделать название. Обычно это первое сообщение пользователя в новом чате."
+        ),
+        examples=["Как добавить код ЕРУЗ в профиль компании?"],
+    )
+
+
+class ChatTitleOut(BaseModel):
+    """Название чата, сгенерированное из вопроса."""
+
+    title: str = Field(
+        description=(
+            "Короткое название чата: 3—7 слов, без кавычек и завершающей точки. "
+            "Если модель недоступна, возвращается обрезанный текст вопроса — "
+            "поле всегда непустое."
+        ),
+        examples=["Добавление кода ЕРУЗ в профиль"],
     )
 
 
@@ -377,6 +404,36 @@ async def list_chats(
     return [_summary(record) for record in chat_service.list_chats()[:limit]]
 
 
+@router.post(
+    "/chat/title",
+    response_model=ChatTitleOut,
+    summary="Сгенерировать название чата",
+    description=(
+        "Принимает текст вопроса и возвращает короткое название чата для списка.\n\n"
+        "Работает без стриминга: один запрос к LLM с минимальным системным промптом, "
+        "на выходе готовое название. Чат создавать не нужно — ручка просто генерирует текст, "
+        "решение о создании и переименовании остаётся за клиентом.\n\n"
+        "Название не критично для работы, поэтому при недоступности модели возвращается "
+        "обрезанный текст вопроса, а не ошибка: `title` всегда непустой.\n\n"
+        "**Пример:**\n\n"
+        "```bash\n"
+        "curl -X POST http://localhost:8010/ml-api/chat/title \\\n"
+        "  -H 'Content-Type: application/json' \\\n"
+        '  -d \'{"message": "Как добавить код ЕРУЗ в профиль компании?"}\'\n'
+        "```"
+    ),
+    response_description="Сгенерированное название чата",
+    responses={
+        422: {"model": ErrorOut, "description": "Пустое сообщение или невалидное тело"},
+    },
+)
+async def generate_chat_title(payload: Annotated[ChatTitleIn, Body()]) -> ChatTitleOut:
+    text = payload.message.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Пустое сообщение")
+    return ChatTitleOut(title=await chat_service.generate_title(text))
+
+
 @router.get(
     "/chat/{chat_id}",
     response_model=ChatOut,
@@ -598,6 +655,8 @@ __all__ = [
     "ChatIn",
     "ChatOut",
     "ChatSummary",
+    "ChatTitleIn",
+    "ChatTitleOut",
     "ErrorOut",
     "ManualSection",
     "ManualSectionNode",

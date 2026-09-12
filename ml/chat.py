@@ -7,17 +7,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
 from typing import Any
 
+from llama_index.core import Settings
 from llama_index.core.agent.workflow import AgentStream, ToolCall, ToolCallResult
 from llama_index.core.base.llms.types import ChatMessage as LIChatMessage
+from llama_index.core.base.llms.types import MessageRole
 from llama_index.core.workflow import Context
 
-from support import SupportSession
 from rag import build_agent, langfuse, propagate_attributes
 from storage import ChatRecord, ChatStorage, MessageRecord, get_storage
+from support import SupportSession
 
 _CHAT_LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -36,6 +39,64 @@ def get_lock(chat_id: str) -> asyncio.Lock:
 def _title_from(text: str) -> str:
     compact = " ".join(text.split())
     return compact[:48] + ("…" if len(compact) > 48 else "")
+
+
+# ---------------------------------------------------------------------- title
+
+# Минимальный промпт: задача узкая, лишний контекст только мешает.
+TITLE_SYSTEM_PROMPT = (
+    "Ты придумываешь короткое название для чата в поддержке Портала поставщиков.\n"
+    "Ответь только названием, без кавычек, точек и пояснений.\n"
+    "Требования: 3—7 слов, на русском, по сути вопроса. "
+    "Не пиши «вопрос», «тема», «помощь» и подобное. Не отвечай на вопрос — только назови его."
+)
+
+# Ограничения на длину названия чата в БД и в интерфейсе.
+TITLE_MAX_LEN = 64
+TITLE_FALLBACK_LEN = 48
+
+
+def _clean_title(raw: str) -> str:
+    """Приводит ответ модели к названию: без кавычек/точек/переносов и лишней длины."""
+    title = " ".join((raw or "").split()).strip()
+    # Снимаем обрамляющие кавычки, точки и тире, которые модель часто добавляет.
+    title = re.sub(r"^[\"'«»„“”`.,;:!?\-—\s]+|[\"'«»„“”`.,;:!?\-—\s]+$", "", title)
+    if len(title) > TITLE_MAX_LEN:
+        title = title[:TITLE_MAX_LEN].rstrip(" ,;:—-")
+    return title
+
+
+async def generate_title(text: str) -> str:
+    """Генерирует название чата из текста вопроса. Без стриминга.
+
+    При любой ошибке LLM возвращает обрезанный текст вопроса — название чата
+    не должно ломать создание чата или отправку сообщения.
+    """
+    question = " ".join((text or "").split()).strip()
+    if not question:
+        return "Новый чат"
+
+    fallback = _title_from(question)
+    try:
+        # achat, а не acomplete: OpenAILike не принимает system_prompt в acomplete.
+        response = await Settings.llm.achat(
+            [
+                LIChatMessage(role=MessageRole.SYSTEM, content=TITLE_SYSTEM_PROMPT),
+                LIChatMessage(
+                    role=MessageRole.USER,
+                    content=f"Вопрос пользователя: {question}\n\nНазвание чата:",
+                ),
+            ]
+        )
+        raw = response.message.content or ""
+    except Exception:  # noqa: BLE001 — название не критично, отдаём фолбэк
+        return fallback
+
+    title = _clean_title(raw)
+    # Совсем короткий или пустой ответ считаем неудачей и берём вопрос.
+    if len(title) < 3:
+        return fallback
+    return title
 
 
 def _history(storage: ChatStorage, chat_id: str, exclude_message_id: str | None = None) -> list[LIChatMessage]:
@@ -134,9 +195,7 @@ async def stream_answer(
     chat = store.get_chat(chat_id)
     # Сессия поддержки ловит transfer_to_support: по ней потом закрываем чат.
     support_session = SupportSession()
-    turn_agent = build_agent(
-        chat.system_prompt if chat else None, support_session=support_session
-    )
+    turn_agent = build_agent(chat.system_prompt if chat else None, support_session=support_session)
 
     async with lock:
         # chat_history — всё до текущего вопроса; сам вопрос идёт в user_msg.
@@ -160,9 +219,7 @@ async def stream_answer(
                     is_error = bool(event.tool_output is not None and event.tool_output.is_error)
                     store.finish_tool_call(assistant_message.id, event.tool_id, output, is_error)
                     saved = store.get_message(assistant_message.id)
-                    record = next(
-                        (t for t in (saved.tools if saved else []) if t.id == event.tool_id), None
-                    )
+                    record = next((t for t in (saved.tools if saved else []) if t.id == event.tool_id), None)
                     if extra_events and record is not None:
                         yield sse("tool_result", tool_event(store, assistant_message.id, record, phase="end"))
                 elif isinstance(event, AgentStream):
@@ -214,9 +271,7 @@ async def run_turn(chat_id: str, user_text: str, *, storage: ChatStorage | None 
         else nullcontext()
     )
     attrs_cm = (
-        propagate_attributes(trace_name="chat-response", session_id=chat_id)
-        if langfuse is not None
-        else nullcontext()
+        propagate_attributes(trace_name="chat-response", session_id=chat_id) if langfuse is not None else nullcontext()
     )
     with trace_cm as root:
         with attrs_cm:
@@ -233,7 +288,10 @@ async def run_turn(chat_id: str, user_text: str, *, storage: ChatStorage | None 
 
 
 __all__ = [
+    "TITLE_MAX_LEN",
+    "TITLE_SYSTEM_PROMPT",
     "create_chat",
+    "generate_title",
     "get_chat",
     "get_lock",
     "get_storage",
