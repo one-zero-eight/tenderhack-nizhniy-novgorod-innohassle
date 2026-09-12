@@ -18,28 +18,6 @@ def settings(**kwargs):
 @pytest.mark.parametrize(
     "body",
     [
-        {"decision": "allow", "reason": "profanity"},
-        {"decision": "block", "reason": None},
-        {"decision": "unknown", "reason": None},
-        {"decision": "allow"},
-        {"decision": "block", "reason": "unrelated_policy"},
-    ],
-)
-async def test_invalid_moderation_is_unavailable(body):
-    request_id = uuid4()
-    async with httpx.AsyncClient(
-        base_url="http://ai/",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"request_id": str(request_id), **body}),
-        ),
-    ) as http:
-        with pytest.raises(AIUnavailable):
-            await AIClient(http, settings()).moderate(request_id, "message")
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
         {"outcome": "answered", "answer": "", "sources": []},
         {"outcome": "answered", "answer": "   ", "sources": []},
         {"outcome": "answered", "answer": None, "sources": []},
@@ -69,11 +47,13 @@ async def test_invalid_transport_response_is_unavailable(failure):
             return httpx.Response(200, text="not json")
         if failure == "http_error":
             return httpx.Response(500, text="internal exception should not reach the user")
-        return httpx.Response(200, json={"request_id": str(uuid4()), "decision": "allow", "reason": None})
+        return httpx.Response(
+            200, json={"request_id": str(uuid4()), "outcome": "answered", "answer": "answer", "sources": []}
+        )
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
         with pytest.raises(AIUnavailable):
-            await AIClient(http, settings()).moderate(request_id, "message")
+            await AIClient(http, settings()).answer(request_id, "message", [])
 
 
 async def test_total_deadline_bounds_http_call():
@@ -82,9 +62,9 @@ async def test_total_deadline_bounds_http_call():
         raise AssertionError("The client should cancel this request at its deadline")
 
     async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(slow)) as http:
-        client = AIClient(http, settings(ai_moderation_timeout=0.01))
+        client = AIClient(http, settings(ai_answer_timeout=0.01))
         with pytest.raises(AIUnavailable):
-            await client.moderate(uuid4(), "message")
+            await client.answer(uuid4(), "message", [])
 
 
 async def test_routing_checks_supplied_catalog():
@@ -100,18 +80,16 @@ async def test_routing_checks_supplied_catalog():
 
 
 @pytest.mark.parametrize(
-    "message,decision,outcome,line",
+    "message,outcome,line",
     [
-        ("ordinary message", "allow", "answered", None),
-        ("[block]", "block", None, None),
-        ("[unknown] [line=3]", "allow", "no_answer", 3),
+        ("ordinary message", "answered", None),
+        ("[unknown] [line=3]", "no_answer", 3),
     ],
 )
-async def test_development_stub_matches_client_contract(monkeypatch, message, decision, outcome, line):
+async def test_development_stub_matches_client_contract(monkeypatch, message, outcome, line):
     monkeypatch.delenv("API_SETTINGS__AI_SERVICE_TOKEN", raising=False)
     async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
         client = AIClient(http, settings())
-        assert (await client.moderate(uuid4(), message)).decision == decision
         if outcome:
             assert (await client.answer(uuid4(), message, [])).outcome == outcome
         if line:
@@ -124,6 +102,6 @@ async def test_stub_requires_configured_internal_token(monkeypatch):
     async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
         client = AIClient(http, settings())
         with pytest.raises(AIUnavailable):
-            await client.moderate(uuid4(), "message")
+            await client.answer(uuid4(), "message", [])
         http.headers["Authorization"] = "Bearer stub-service-token"
-        assert (await client.moderate(uuid4(), "message")).decision == "allow"
+        assert (await client.answer(uuid4(), "message", [])).outcome == "answered"

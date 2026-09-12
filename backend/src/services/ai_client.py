@@ -17,17 +17,6 @@ class AIResponse(BaseModel):
     request_id: UUID
 
 
-class ModerationResult(AIResponse):
-    decision: Literal["allow", "block"]
-    reason: Literal["profanity"] | None
-
-    @model_validator(mode="after")
-    def check_decision(self) -> Self:
-        if (self.decision == "block") != (self.reason == "profanity"):
-            raise ValueError("The reason must match the moderation decision")
-        return self
-
-
 class Source(BaseModel):
     model_config = ConfigDict(extra="forbid")
     document_id: str = Field(min_length=1, max_length=200)
@@ -70,14 +59,6 @@ class AIClient:
                 return result
         except (httpx.HTTPError, TimeoutError, ValidationError, ValueError) as exc:
             raise AIUnavailable(endpoint) from exc
-
-    async def moderate(self, request_id: UUID, message: str) -> ModerationResult:
-        return await self._post(
-            "v1/moderate",
-            {"request_id": str(request_id), "message": message},
-            ModerationResult,
-            self.settings.ai_moderation_timeout,
-        )
 
     async def answer(self, request_id: UUID, message: str, history: list[dict]) -> AnswerResult:
         return await self._post(

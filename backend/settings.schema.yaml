@@ -44,11 +44,34 @@ $defs:
         - type: 'null'
         default: null
         title: Ai Service Token
-      ai_moderation_timeout:
+      moderation_model_path:
+        default: models/rubert-tiny-toxicity
+        format: path
+        title: Moderation Model Path
+        type: string
+      moderation_threshold:
+        default: 0.8
+        exclusiveMaximum: 1
+        exclusiveMinimum: 0
+        title: Moderation Threshold
+        type: number
+      moderation_block_labels:
+        default:
+        - obscenity
+        - insult
+        items:
+          enum:
+          - obscenity
+          - insult
+          type: string
+        minItems: 1
+        title: Moderation Block Labels
+        type: array
+      moderation_timeout:
         default: 5
         exclusiveMinimum: 0
         maximum: 120
-        title: Ai Moderation Timeout
+        title: Moderation Timeout
         type: number
       ai_answer_timeout:
         default: 30

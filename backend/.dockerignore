@@ -21,3 +21,6 @@ public.pem
 ### Docker ###
 Dockerfile
 docker-compose.yaml
+
+# Downloaded model artifacts
+models/

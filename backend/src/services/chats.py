@@ -32,6 +32,7 @@ from src.schemas.chat import (
 )
 from src.services.ai_client import AIClient, AIUnavailable
 from src.services.errors import fail
+from src.services.moderation import ModerationUnavailable, Moderator
 
 BOT_STATES = (ChatStatus.AI, ChatStatus.HANDOFF_OFFERED)
 
@@ -83,9 +84,10 @@ def close_chat(session: AsyncSession, chat: Chat, reason: CloseReason, *, reply_
 
 
 class ChatService:
-    def __init__(self, storage: AbstractSQLAlchemyStorage, ai: AIClient):
+    def __init__(self, storage: AbstractSQLAlchemyStorage, ai: AIClient, moderator: Moderator):
         self.storage = storage
         self.ai = ai
+        self.moderator = moderator
 
     async def create(self, user: User) -> ChatOut:
         if user.role != Role.USER:
@@ -225,9 +227,8 @@ class ChatService:
         blocked = False
         if user.role == Role.USER:
             try:
-                moderation = await self.ai.moderate(uuid4(), payload.text)
-                blocked = moderation.decision == "block"
-            except AIUnavailable:
+                blocked = await self.moderator.is_blocked(payload.text)
+            except ModerationUnavailable:
                 fail(503, "MODERATION_UNAVAILABLE", "Message not delivered. Please retry moderation later")
 
         async with self.storage.create_session() as session, session.begin():

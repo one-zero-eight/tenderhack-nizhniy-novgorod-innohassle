@@ -24,7 +24,7 @@ def get_settings(request: Request) -> ApiSettings:
 
 
 def get_chat_service(request: Request) -> ChatService:
-    return ChatService(get_storage(request), request.app.state.ai)
+    return ChatService(get_storage(request), request.app.state.ai, request.app.state.moderator)
 
 
 bearer = HTTPBearer(auto_error=False)

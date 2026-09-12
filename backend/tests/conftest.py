@@ -23,6 +23,7 @@ from src.db.storage import SQLAlchemyStorage  # noqa: E402
 from src.seed import seed_demo  # noqa: E402
 from src.services.ai_client import AIClient  # noqa: E402
 from src.services.auth import issue_token  # noqa: E402
+from src.services.moderation import ModerationUnavailable  # noqa: E402
 
 PASSWORD = "test-user-password"
 
@@ -30,7 +31,6 @@ PASSWORD = "test-user-password"
 class FakeAI:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
-        self.moderation_error = False
         self.answer_mode = "answered"
         self.route_line = 2
         self.route_error = False
@@ -48,18 +48,6 @@ class FakeAI:
         request_id = body.get("request_id")
         if endpoint == "/health":
             return httpx.Response(200, json={"status": "ready", "mode": "stub"})
-        if endpoint == "/v1/moderate":
-            if self.moderation_error:
-                return httpx.Response(503)
-            blocked = "[block]" in body["message"]
-            return httpx.Response(
-                200,
-                json={
-                    "request_id": request_id,
-                    "decision": "block" if blocked else "allow",
-                    "reason": "profanity" if blocked else None,
-                },
-            )
         if endpoint == "/v1/answer":
             if self.answer_mode == "error":
                 return httpx.Response(503)
@@ -77,11 +65,36 @@ class FakeAI:
         raise AssertionError(f"Unexpected AI endpoint {endpoint}")
 
 
+class FakeModerator:
+    def __init__(self, settings):
+        self.calls = []
+        self.error = False
+        self.hold = False
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def start(self):
+        pass
+
+    async def close(self):
+        pass
+
+    async def is_blocked(self, text):
+        self.calls.append(text)
+        if self.hold:
+            self.started.set()
+            await self.release.wait()
+        if self.error:
+            raise ModerationUnavailable
+        return "[block]" in text
+
+
 @dataclass
 class Case:
     client: httpx.AsyncClient
     storage: SQLAlchemyStorage
     ai: FakeAI
+    moderator: FakeModerator
     settings: ApiSettings
     users: dict[str, User]
 
@@ -113,7 +126,7 @@ class Case:
 
 
 @pytest.fixture
-async def case():
+async def case(monkeypatch):
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("Set TEST_DATABASE_URL to run PostgreSQL integration tests")
@@ -132,11 +145,13 @@ async def case():
         await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     storage = SQLAlchemyStorage(create_async_engine(url, connect_args={"server_settings": {"search_path": schema}}))
     fake = FakeAI()
+    app = None
     try:
         await storage.create_all()
         await seed_demo(storage, PASSWORD)
         async with storage.create_session() as session:
             users = {user.login: user for user in await session.scalars(select(User))}
+        monkeypatch.setattr("src.api.lifespan.RubertModerator", FakeModerator)
         app = create_app(settings)
         async with app.router.lifespan_context(app):
             app.state.storage = storage
@@ -145,9 +160,11 @@ async def case():
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app), base_url="http://backend.test"
                 ) as client:
-                    yield Case(client, storage, fake, settings, users)
+                    yield Case(client, storage, fake, app.state.moderator, settings, users)
     finally:
         fake.release.set()
+        if app is not None and hasattr(app.state, "moderator"):
+            app.state.moderator.release.set()
         await storage.close_connection()
         async with admin_engine.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))

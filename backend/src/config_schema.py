@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import AnyHttpUrl, Field, SecretStr
@@ -28,7 +29,10 @@ class ApiSettings(BaseSettings):
     access_token_minutes: int = Field(120, ge=1, le=1440)
     ai_base_url: AnyHttpUrl = Field(default="http://127.0.0.1:8002")
     ai_service_token: SecretStr | None = None
-    ai_moderation_timeout: float = Field(5, gt=0, le=120)
+    moderation_model_path: Path = Path("models/rubert-tiny-toxicity")
+    moderation_threshold: float = Field(0.8, gt=0, lt=1)
+    moderation_block_labels: list[Literal["obscenity", "insult"]] = Field(default=["obscenity", "insult"], min_length=1)
+    moderation_timeout: float = Field(5, gt=0, le=120)
     ai_answer_timeout: float = Field(30, gt=0, le=300)
     ai_routing_timeout: float = Field(5, gt=0, le=120)
 

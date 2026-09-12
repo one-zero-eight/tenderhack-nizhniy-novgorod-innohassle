@@ -18,6 +18,9 @@ api_settings:
   app_root_path: ""
   ai_base_url: "http://127.0.0.1:8002"
   ai_service_token: null
-  ai_moderation_timeout: 5
+  moderation_model_path: "models/rubert-tiny-toxicity"
+  moderation_threshold: 0.8
+  moderation_block_labels: [obscenity, insult]
+  moderation_timeout: 5
   ai_answer_timeout: 30
   ai_routing_timeout: 5

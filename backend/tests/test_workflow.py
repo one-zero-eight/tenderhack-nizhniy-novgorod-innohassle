@@ -57,7 +57,7 @@ async def test_answer_idempotency_ratings_and_stats(case):
     assert sent.json()["chat"]["recipient"]["kind"] == "ai"
     repeated = await case.send(chat, client_id=client_id)
     assert repeated.json()["messages"] == messages
-    assert [call[0] for call in case.ai.calls] == ["/v1/moderate", "/v1/answer"]
+    assert [call[0] for call in case.ai.calls] == ["/v1/answer"]
     assert (await case.send(chat, "Changed text", client_id=client_id)).status_code == 409
     assert (await case.request("PUT", f"/messages/{messages[0]['id']}/rating", json={"stars": 5})).status_code == 422
     reply = messages[1]["id"]
@@ -97,23 +97,51 @@ async def test_block_closes_and_redacts_before_answering(case):
     assert result["chat"]["close_reason"] == "moderation"
     assert result["messages"][0]["is_redacted"] is True
     assert "forbidden text" not in str(result)
-    assert [call[0] for call in case.ai.calls] == ["/v1/moderate"]
+    assert case.ai.calls == []
     repeated = await case.send(chat, "[block] forbidden text", client_id=client_id)
     assert repeated.json()["messages"] == result["messages"]
-    assert len(case.ai.calls) == 1
+    assert case.ai.calls == []
+    assert len(case.moderator.calls) == 1
     assert (await case.send(chat, "[block] different", client_id=client_id)).status_code == 409
 
 
 async def test_moderation_outage_keeps_draft_and_allows_retry(case):
     chat, client_id = await case.chat(), str(uuid4())
-    case.ai.moderation_error = True
+    case.moderator.error = True
     response = await case.send(chat, client_id=client_id)
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "MODERATION_UNAVAILABLE"
     assert (await case.request("GET", f"/chats/{chat}")).json()["status"] == "ai"
     assert (await case.request("GET", f"/chats/{chat}/messages")).json()["items"] == []
-    case.ai.moderation_error = False
+    case.moderator.error = False
     assert (await case.send(chat, client_id=client_id)).status_code == 200
+
+
+async def test_closing_during_local_moderation_does_not_publish(case):
+    chat = await case.chat()
+    case.moderator.hold = True
+    pending = asyncio.create_task(case.send(chat))
+    try:
+        await asyncio.wait_for(case.moderator.started.wait(), timeout=2)
+        closed = await case.request("POST", f"/chats/{chat}/close", json={"reason": "user_cancelled"})
+        assert closed.status_code == 200
+    finally:
+        case.moderator.release.set()
+    assert (await pending).status_code == 409
+    assert case.ai.calls == []
+    transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]
+    assert all(message["sender_type"] == "system" for message in transcript)
+
+
+async def test_waiting_chat_uses_only_local_moderation(case):
+    chat = await case.chat()
+    await case.request("POST", f"/chats/{chat}/handoff", json={"support_line_id": 1})
+    assert (await case.send(chat)).status_code == 200
+    assert len(case.moderator.calls) == 1
+    assert case.ai.calls == []
+    blocked = await case.send(chat, "[block]")
+    assert blocked.json()["chat"]["close_reason"] == "moderation"
+    assert case.ai.calls == []
 
 
 @pytest.mark.parametrize(
@@ -129,7 +157,7 @@ async def test_failure_offers_ai_selected_line(case, mode, reason):
     assert result["suggested_line"]["id"] == 2
     assert result["support_line"] is None
     assert result["handoff_reason"] == reason
-    assert [call[0] for call in case.ai.calls] == ["/v1/moderate", "/v1/answer", "/v1/route"]
+    assert [call[0] for call in case.ai.calls] == ["/v1/answer", "/v1/route"]
 
 
 @pytest.mark.parametrize("invalid_line", [0, 4, True, "2", None])
@@ -164,11 +192,11 @@ async def test_operator_handoff_moderation_and_identity(case):
     assert human.json()["messages"][0]["sender_type"] == "operator"
     assert human.json()["messages"][0]["support_line_id"] == 2
     assert (await case.send(chat, "Another question")).status_code == 200
-    assert len(case.ai.calls) == calls + 1
-    assert case.ai.calls[-1][0] == "/v1/moderate"
-    case.ai.moderation_error = True
+    assert len(case.ai.calls) == calls
+    assert case.moderator.calls[-1] == "Another question"
+    case.moderator.error = True
     assert (await case.send(chat, "Keep this as a draft")).status_code == 503
-    case.ai.moderation_error = False
+    case.moderator.error = False
     blocked = await case.send(chat, "[block] during operator chat")
     assert blocked.json()["chat"]["close_reason"] == "moderation"
     transcript = (await case.request("GET", f"/chats/{chat}/messages")).json()["items"]

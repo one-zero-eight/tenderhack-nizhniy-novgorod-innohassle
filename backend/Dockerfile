@@ -13,6 +13,9 @@ COPY ./pyproject.toml ./uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
+COPY scripts/download_moderation_model.py /tmp/download_moderation_model.py
+RUN .venv/bin/python /tmp/download_moderation_model.py --output /app/models/rubert-tiny-toxicity
+
 
 ###########################################################
 # Production stage. Copy only runtime deps that were installed in the Builder stage.

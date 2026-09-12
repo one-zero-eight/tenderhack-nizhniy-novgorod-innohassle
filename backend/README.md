@@ -1,11 +1,12 @@
-FastAPI backend for the TenderHack support-chat MVP. PostgreSQL stores chats, messages, support assignments, and ratings. A neighboring AI service handles moderation, answering, and support-line classification.
+FastAPI backend for the TenderHack support-chat MVP. PostgreSQL stores chats, messages, support assignments, and ratings. A neighboring AI service handles answering and support-line classification. The backend performs local RuBERT profanity checks.
 
-The completed backend uses SQLAlchemy/asyncpg, ordinary HTTP requests, and frontend polling. The AI service is stateless with respect to conversations and owns knowledge-base ingestion, retrieval, answer generation, moderation, and support-line classification. The backend persists conversations and executes confirmed handoffs and operator assignments. The case requirements are in [task.pdf](task.pdf).
+The completed backend uses SQLAlchemy/asyncpg, ordinary HTTP requests, and frontend polling. The AI service is stateless with respect to conversations and owns knowledge-base ingestion, retrieval, answer generation, and support-line classification. The backend persists conversations and executes confirmed handoffs and operator assignments. The case requirements are in [task.pdf](task.pdf).
 
 **Run locally from this `backend` directory.** Install Python 3.12+, uv, and Docker, then prepare dependencies and settings:
 
 ```bash
 uv sync
+uv run python -m scripts.download_moderation_model
 cp settings.example.yaml settings.yaml
 uv run python -c 'import secrets; print(secrets.token_hex(32))'
 ```
@@ -30,20 +31,28 @@ The API is available at `http://127.0.0.1:8000`, with interactive documentation 
 uv run uvicorn scripts.ai_stub:app --host 127.0.0.1 --port 8002
 ```
 
-This stub exercises the contract and does not answer from a knowledge base or perform real moderation. Ordinary text returns a demo answer. Add these markers to a user message to exercise other paths:
+This stub exercises the answering/routing contract and does not answer from a knowledge base. Moderation runs in the backend using the real local model, including in demo mode. Ordinary text returns a demo answer. Add these markers to a user message to exercise other paths:
 
 | Marker | Simulated behavior |
 | --- | --- |
-| `[block]` | Moderation blocks the message and closes the chat. |
-| `[moderation-error]` | Moderation is unavailable; the text stays undelivered for retry. |
 | `[unknown] [line=2]` | No answer; routing recommends line 2. Use `1` or `3` for other lines. |
 | `[answer-error]` | Answer generation fails; the backend offers support. |
 | `[route-error]` | No answer and routing is unavailable; the user selects a line manually. |
 | `[route-invalid]` | No answer and an invalid routing line; manual line selection is required. |
-| `[moderation-slow]` / `[route-slow]` | Delays moderation or routing by 60 seconds to exercise its timeout. |
+| `[route-slow]` | Delays routing by 60 seconds to exercise its timeout. |
 | `[slow]` | Answering takes 60 seconds, exercising the backend's configured timeout. |
 
-The real AI service implements `POST /v1/moderate`, `POST /v1/answer`, `POST /v1/route`, and `GET /health`. Configure `ai_service_token` if it requires bearer authentication. For the stub, set the matching `API_SETTINGS__AI_SERVICE_TOKEN` environment variable in its terminal as well. The service must run on team-controlled infrastructure, as required by the case. The backend contains no profanity dictionary or classification rules.
+The real AI service implements `POST /v1/answer`, `POST /v1/route`, and `GET /health`. Configure `ai_service_token` if it requires bearer authentication. For the stub, set the matching `API_SETTINGS__AI_SERVICE_TOKEN` environment variable in its terminal as well. The service must run on team-controlled infrastructure, as required by the case. The backend owns profanity classification; the AI service needs no moderation endpoint.
+
+**Local profanity moderation.** The backend uses [cointegrated/rubert-tiny-toxicity](https://huggingface.co/cointegrated/rubert-tiny-toxicity), an MIT-licensed Russian multilabel classifier. The download script pins revision `5d37eff844868e243467e4c38898bad46c271af2` and includes the model card. The default rule blocks high sigmoid scores in either `obscenity` or `insult`. Real-model checks found that common explicit swear words score below 0.02 for `obscenity` but above 0.98 for `insult`, so obscenity alone misses them. This also blocks some insults without profanity; threats and the aggregate toxicity score do not independently close chats. Set `moderation_block_labels: [obscenity]` to restrict categories, accepting those misses. The existing public closure reason remains `profanity`.
+
+Model files are loaded once per API process from `moderation_model_path` (default `models/rubert-tiny-toxicity`). Run the download command above before local startup; Docker downloads the files during its build. Startup fails if the files cannot be loaded or the warmup fails. Runtime loading uses local files only. Linux/Windows use CPU PyTorch wheels; each API worker holds its own model and uses one inference worker with one PyTorch CPU thread.
+
+`moderation_threshold` defaults to **0.8**; a message is blocked when any selected category's score in any chunk is greater than or equal to the threshold. This is an initial operating threshold, not a calibrated accuracy guarantee. Evaluate representative support messages before rollout. Lower values catch more borderline cases but may close innocent chats; higher values can miss profanity. There is no dictionary fallback. Long messages are tokenized into overlapping windows of at most 512 tokens with 64-token overlap, and every window is checked. Sentences split at punctuation followed by whitespace or at line breaks are also scored separately to reduce dilution by surrounding neutral text. Model inference runs outside the async event loop with bounded batches.
+
+`moderation_timeout` defaults to 5 seconds, including waiting for the inference worker. Errors, non-finite scores, and timeouts return `503 MODERATION_UNAVAILABLE` without publishing the text or closing the chat. Native inference cannot be forcibly cancelled; after timeout or client cancellation the worker remains occupied until the calculation finishes, so retries cannot accumulate queued model jobs. Closing a chat during moderation still prevents message publication.
+
+Environment overrides are `API_SETTINGS__MODERATION_MODEL_PATH`, `API_SETTINGS__MODERATION_THRESHOLD`, `API_SETTINGS__MODERATION_BLOCK_LABELS` (a JSON array such as `["obscenity","insult"]`), and `API_SETTINGS__MODERATION_TIMEOUT`. The former field `ai_moderation_timeout` / `API_SETTINGS__AI_MODERATION_TIMEOUT` is removed; use `moderation_timeout` instead. The AI contract no longer includes `POST /v1/moderate`, and demo markers such as `[block]` no longer simulate moderation (they are used only in test doubles).
 
 **Run the complete demo with Docker Compose.** Set these variables in your shell or an ignored `.env` file:
 
@@ -54,7 +63,7 @@ docker compose --profile demo up --build -d
 docker compose exec -e DEMO_PASSWORD api uv run --no-sync python -m src.seed
 ```
 
-Compose creates missing tables from the SQLAlchemy models before starting the API. Schema initialization is idempotent; it does not alter existing tables. The API listens on port 8000 and the stub on local port 8002. For a real neighboring AI service, set `API_SETTINGS__AI_BASE_URL` to its address reachable from the API container and run Compose without `--profile demo`. Retain the same signing secret across restarts. Demo accounts are created only by the explicit seed command.
+Docker builds download a pinned model revision into the image; runtime inference requires no internet access. Compose creates missing tables from the SQLAlchemy models before starting the API. Schema initialization is idempotent; it does not alter existing tables. The API listens on port 8000 and the stub on local port 8002. For a real neighboring AI service, set `API_SETTINGS__AI_BASE_URL` to its address reachable from the API container and run Compose without `--profile demo`. Retain the same signing secret across restarts. Demo accounts are created only by the explicit seed command.
 
 **Authenticate and exercise the chat API.** Login accepts JSON:
 
@@ -108,10 +117,10 @@ uv run ruff check .
 docker stop tenderhack-test-db
 ```
 
-Integration tests create the SQLAlchemy model tables in each test schema and use a controllable HTTP stub for the AI contract. They cover access control, handoff, moderation and routing failures, duplicate sends/ratings, concurrent claims, stale AI results, history, and reporting. Without `TEST_DATABASE_URL`, only the independent AI-client tests run; PostgreSQL integration tests are skipped.
+Integration tests create the SQLAlchemy model tables in each test schema and use a controllable HTTP stub for the AI contract and an injected local moderator. Unit tests exercise real tokenization with controlled model logits, including chunk boundaries, thresholding, failures, and cancellation; they do not establish pretrained model accuracy. They cover access control, handoff, moderation and routing failures, duplicate sends/ratings, concurrent claims, stale AI results, history, and reporting. Without `TEST_DATABASE_URL`, the independent AI-client and local moderation tests run; PostgreSQL integration tests are skipped. After downloading the pinned model, run `HF_HUB_OFFLINE=1 RUN_MODERATION_MODEL_TESTS=1 uv run pytest -q` to include real-model smoke checks for ordinary Russian support messages, explicit profanity, insults, and a swear sentence at the end of a long message. These examples verify integration, not general accuracy or resistance to obfuscation.
 
 
-**Conversation workflow and access rules.** A new chat starts with AI. Every user message passes moderation before publication. An approved question receives an AI answer or a support offer; missing knowledge and temporary service failures have distinct notices. The user confirms the recommended line or chooses another line before entering its waiting list. An operator from that line claims the chat and continues the existing transcript. User messages while waiting or talking to an operator call moderation only.
+**Conversation workflow and access rules.** A new chat starts with AI. Every user message passes moderation before publication. An approved question receives an AI answer or a support offer; missing knowledge and temporary service failures have distinct notices. The user confirms the recommended line or chooses another line before entering its waiting list. An operator from that line claims the chat and continues the existing transcript. User messages while waiting or talking to an operator use local moderation without AI-service calls. Operator replies retain their existing behavior and are not moderated.
 
 Every chat response includes a computed `recipient`; each message independently retains its original author, display name, and support line.
 
@@ -143,41 +152,19 @@ Messages allow up to 4,000 characters; rating comments allow up to 2,000. Only t
 
 Chats also store `generation` and `next_sequence` to reject stale AI results and allocate ordered messages under a chat-row lock. Unique `(chat_id, sequence)` and `(chat_id, client_message_id)` constraints enforce ordering and submission deduplication. Indexes support owner/date lookups, support queues, reply targets, and rating dates. Schema initialization creates missing tables directly from model metadata; there are no migrations.
 
-Business logic lives in `src/services/`: `chats.py` handles conversations and human support, `ai_client.py` handles AI HTTP contracts, `auth.py` handles authentication, and `stats.py` handles reporting. HTTP routes live in `src/api/repositories/`, database helpers in `src/db/repositories/`, models in `src/db/models/`, and request/response schemas in `src/schemas/`.
+Business logic lives in `src/services/`: `chats.py` handles conversations and human support, `ai_client.py` handles AI HTTP contracts, `moderation.py` handles local obscenity classification, `auth.py` handles authentication, and `stats.py` handles reporting. HTTP routes live in `src/api/repositories/`, database helpers in `src/db/repositories/`, models in `src/db/models/`, and request/response schemas in `src/schemas/`.
 
-**AI service JSON contracts.** The backend uses one async HTTP client owned by the FastAPI lifespan. Requests go to the configured `ai_base_url`, with bearer authentication when `ai_service_token` is set. The three capability endpoints must echo the request UUID. The normal path calls moderation, then answering; routing runs when support is offered.
+**AI service JSON contracts.** The backend uses one async HTTP client owned by the FastAPI lifespan. Requests go to the configured `ai_base_url`, with bearer authentication when `ai_service_token` is set. The two capability endpoints must echo the request UUID. The normal path performs local moderation, then calls answering; routing runs when support is offered.
 
-The AI service must provide these four endpoints:
+The AI service must provide these three endpoints:
 
 | Method and path | Request | Required response |
 | --- | --- | --- |
-| `POST /v1/moderate` | `request_id`, original user `message`. | Echo `request_id`; return `decision: "allow"` with `reason: null`, or `decision: "block"` with `reason: "profanity"`. Both decisions use HTTP `200`. |
 | `POST /v1/answer` | `request_id`, approved `message`, bounded approved `history`. | Echo `request_id`; return `outcome: "answered"`, non-empty `answer`, and `sources`, or `outcome: "no_answer"`, `answer: null`, and `sources: []`. Both outcomes use HTTP `200`. |
 | `POST /v1/route` | `request_id`, approved `message`, bounded approved `history`, and the three `support_lines` with IDs, names, and descriptions. | HTTP `200` with the same `request_id` and `recommended_support_line_id` belonging to the supplied catalog. Assignment requires user confirmation. |
-| `GET /health` | No body. | JSON describing moderation, answering, routing, and model/index readiness. HTTP `200` when all required capabilities are ready, `503` otherwise. |
+| `GET /health` | No body. | JSON describing answering, routing, and model/index readiness. HTTP `200` when all required capabilities are ready, `503` otherwise. |
 
 Health checks are used for diagnostics, not before each message. Technical failures from capability endpoints use non-2xx responses. Detailed JSON examples follow.
-
-Example request to `POST /v1/moderate` (the backend generates a request UUID before storing a message):
-
-```json
-{
-  "request_id": "uuid-for-this-submission",
-  "message": "The user's original message"
-}
-```
-
-A blocked response uses HTTP `200`:
-
-```json
-{
-  "request_id": "uuid-for-this-submission",
-  "decision": "block",
-  "reason": "profanity"
-}
-```
-
-An allowed response uses the same shape with `decision: "allow"` and `reason: null`. For the MVP, `profanity` is the only blocking reason. A valid `block` is a business decision; non-2xx responses, timeouts, malformed responses, or mismatched request IDs mean moderation is unavailable, not that the text is prohibited.
 
 Example request to `POST /v1/answer`:
 
@@ -246,7 +233,7 @@ Successful routing uses HTTP `200`:
 
 The returned line must belong to the supplied catalog. Replace the placeholder descriptions with the lines' actual responsibilities before testing classification. Routing does not select a named operator, move the chat into a queue, or close it; those are backend operations performed after user confirmation. If there is no approved question yet, offer manual line selection without calling routing.
 
-Technical failures use non-2xx responses. For answering, timeout, malformed JSON, mismatched request IDs, unknown outcomes, and an empty `answered` response trigger a support offer and a bounded routing attempt. Routing failure leaves the recommendation empty and presents the three line choices. Moderation failure leaves the message undelivered and the chat open. Default configurable timeouts are 5 seconds for moderation, 30 seconds for answering, and 5 seconds for routing. The frontend timeout must exceed the combined request budget. The backend does not automatically retry AI calls.
+Technical failures use non-2xx responses. For answering, timeout, malformed JSON, mismatched request IDs, unknown outcomes, and an empty `answered` response trigger a support offer and a bounded routing attempt. Routing failure leaves the recommendation empty and presents the three line choices. Moderation failure leaves the message undelivered and the chat open. Default configurable timeouts are 5 seconds for local moderation (including waiting for its worker), 30 seconds for answering, and 5 seconds for routing. The frontend timeout must exceed the combined request budget. The backend does not automatically retry AI calls.
 
 **Transactions, retries, and pending AI work.** AI calls run synchronously in request handlers, outside database transactions. The backend checks authentication and duplicate submission IDs before moderation, then locks and rechecks the chat before saving anything. A chat closed during moderation receives no new message. A block saves the redacted message and closure notice atomically; moderation failure returns `503` with `MODERATION_UNAVAILABLE` and saves no submission.
 
@@ -270,4 +257,4 @@ Ratings stay attributed to the reply's original author and support line. UTC tim
 
 Feedback analysis is also outside the implemented API. A possible future `POST /v1/feedback/analyze` could accept bounded reviews containing `feedback_id`, `stars`, `comment`, `response_text`, and `support_line_id`, and return a summary with recurring issues tied to feedback IDs.
 
-When integrating the real AI service, configure its URL/token and agreed line descriptions, then validate known and unknown questions, classification accuracy, Russian profanity and innocent near-matches, and independent capability failures. Stub checks verify backend behavior; model quality and service readiness require validation against the real service. The case also calls for a BPMN diagram of the user/backend/AI/operator workflow for the presentation.
+When integrating the real AI service, configure its URL/token and agreed line descriptions, then validate known and unknown questions, routing classification accuracy and independent capability failures. Separately validate local RuBERT moderation against Russian profanity, obfuscated text, and innocent near-matches. Stub checks verify backend behavior; model quality requires representative labeled messages. The case also calls for a BPMN diagram of the user/backend/AI/operator workflow for the presentation.

@@ -32,24 +32,9 @@ async def health():
         "status": "ready",
         "mode": "stub",
         "components": {
-            "moderation": "ready",
             "answering": "ready",
             "routing": "ready",
         },
-    }
-
-
-@app.post("/v1/moderate")
-async def moderate(payload: Input):
-    if "[moderation-slow]" in payload.message:
-        await asyncio.sleep(60)
-    if "[moderation-error]" in payload.message:
-        raise HTTPException(503, "Simulated moderation outage")
-    blocked = "[block]" in payload.message
-    return {
-        "request_id": payload.request_id,
-        "decision": "block" if blocked else "allow",
-        "reason": "profanity" if blocked else None,
     }
 
 
