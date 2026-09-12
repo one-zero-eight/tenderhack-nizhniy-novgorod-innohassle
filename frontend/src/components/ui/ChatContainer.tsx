@@ -3,6 +3,7 @@ import ChatDateDivider from '@/components/ui/ChatDateDivider'
 import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
 import ChatRedirectDivider from '@/components/ui/ChatRedirectDivider'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { useFileAttachments } from '@/hooks/useFileAttachments'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
@@ -13,10 +14,12 @@ interface ChatContainerProps {
   messages: MessageView[]
   onSend?: (text: string) => void
   disabled?: boolean
+  /** Short status shown while the assistant runs a tool (searching, reading…). */
+  toolStatus?: string | null
   className?: string
 }
 
-export default function ChatContainer({ messages, onSend, disabled = false, className }: ChatContainerProps) {
+export default function ChatContainer({ messages, onSend, disabled = false, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const trimmed = text.trim()
   const { attachments, addFiles, removeFile, clearFiles } = useFileAttachments()
@@ -36,8 +39,8 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
   }
 
   return (
-    <div className={cn('flex flex-1 flex-col gap-4', className)}>
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+    <div className={cn('flex min-h-0 flex-1 flex-col gap-4', className)}>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {messages.length === 0 ? (
           <p className="text-gray py-10 text-center text-sm">Сообщений пока нет. Задайте свой вопрос.</p>
         ) : (
@@ -59,9 +62,16 @@ export default function ChatContainer({ messages, onSend, disabled = false, clas
             )
           })
         )}
+
+        {toolStatus && (
+          <div className="text-gray flex items-center gap-2 text-xs" role="status">
+            <LoadingSpinner size="sm" />
+            <span>{toolStatus}</span>
+          </div>
+        )}
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="shrink-0">
         <ChatInput
           value={text}
           onChange={setText}

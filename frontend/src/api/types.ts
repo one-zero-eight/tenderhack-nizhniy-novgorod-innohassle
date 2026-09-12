@@ -145,7 +145,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/chats/{chat_id}/handoff-offer": {
+    "/chats/{chat_id}/stream": {
         parameters: {
             query?: never;
             header?: never;
@@ -154,15 +154,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Request Handoff Offer */
-        post: operations["request_handoff_offer_chats__chat_id__handoff_offer_post"];
+        /** Stream Message */
+        post: operations["stream_message_chats__chat_id__stream_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/chats/{chat_id}/handoff": {
+    "/chats/{chat_id}/message": {
         parameters: {
             query?: never;
             header?: never;
@@ -171,8 +171,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Handoff */
-        post: operations["handoff_chats__chat_id__handoff_post"];
+        /** Stream Message */
+        post: operations["stream_message_chats__chat_id__message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{chat_id}/request-operator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Operator */
+        post: operations["request_operator_chats__chat_id__request_operator_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -315,6 +332,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ml-assets/image/{slug}/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proxy Image */
+        get: operations["proxy_image_ml_assets_image__slug___filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ml-api/knowledge-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Список мануалов */
+        get: operations["list_manuals_ml_api_knowledge_base_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ml-api/knowledge-base/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Структура мануала */
+        get: operations["get_manual_structure_ml_api_knowledge_base__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ml-api/knowledge-base/{slug}/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Содержимое раздела мануала */
+        get: operations["get_manual_section_ml_api_knowledge_base__slug___section_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -340,10 +425,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Message Id
-             * Format: uuid
-             */
+            /** Message Id */
             message_id: string;
             /**
              * User Id
@@ -360,28 +442,27 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /**
-             * Chat Id
-             * Format: uuid
-             */
+            /** Chat Id */
             chat_id: string;
             sender_type: components["schemas"]["SenderType"];
             /** Sender Id */
-            sender_id: string | null;
+            sender_id?: string | null;
             /** Sender Name */
             sender_name: string;
             /** Support Line Id */
-            support_line_id: number | null;
+            support_line_id?: number | null;
             /** Message Text */
             message_text: string;
         };
         /** ChatOut */
         ChatOut: {
-            /**
-             * Id
-             * Format: uuid
-             */
+            /** Id */
             id: string;
+            /**
+             * Title
+             * @default Новый чат
+             */
+            title: string;
             /**
              * User Id
              * Format: uuid
@@ -389,13 +470,8 @@ export interface components {
             user_id: string;
             status: components["schemas"]["ChatStatus"];
             recipient: components["schemas"]["RecipientOut"];
-            suggested_line: components["schemas"]["SupportLineOut"] | null;
             support_line: components["schemas"]["SupportLineOut"] | null;
             operator: components["schemas"]["ActorOut"] | null;
-            /** Handoff Reason */
-            handoff_reason: string | null;
-            /** Ai Pending */
-            ai_pending: boolean;
             /**
              * Created At
              * Format: date-time
@@ -451,17 +527,6 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** HandoffIn */
-        HandoffIn: {
-            /** Support Line Id */
-            support_line_id?: number | null;
-        };
-        /** HandoffOfferOut */
-        HandoffOfferOut: {
-            chat: components["schemas"]["ChatOut"];
-            /** Support Lines */
-            support_lines: components["schemas"]["SupportLineOut"][];
-        };
         /** LoginIn */
         LoginIn: {
             /** Login */
@@ -481,34 +546,35 @@ export interface components {
         };
         /** MessageOut */
         MessageOut: {
-            /**
-             * Id
-             * Format: uuid
-             */
+            /** Id */
             id: string;
-            /**
-             * Chat Id
-             * Format: uuid
-             */
+            /** Chat Id */
             chat_id: string;
             /** Sequence */
             sequence: number;
             sender_type: components["schemas"]["SenderType"];
             /** Sender Id */
-            sender_id: string | null;
+            sender_id?: string | null;
             /** Sender Name */
             sender_name: string;
             /** Support Line Id */
-            support_line_id: number | null;
+            support_line_id?: number | null;
             /** Text */
             text: string;
             /** Citations */
-            citations: {
+            citations?: {
+                [key: string]: unknown;
+            }[];
+            /** Tool Calls */
+            tool_calls?: {
                 [key: string]: unknown;
             }[];
             /** Reply To Message Id */
-            reply_to_message_id: string | null;
-            /** Is Redacted */
+            reply_to_message_id?: string | null;
+            /**
+             * Is Redacted
+             * @default false
+             */
             is_redacted: boolean;
             /**
              * Created At
@@ -544,10 +610,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Message Id
-             * Format: uuid
-             */
+            /** Message Id */
             message_id: string;
             /**
              * User Id
@@ -600,6 +663,11 @@ export interface components {
             role: components["schemas"]["Role"];
             /** Support Line Id */
             support_line_id?: number | null;
+        };
+        /** RequestOperatorIn */
+        RequestOperatorIn: {
+            /** Support Line Id */
+            support_line_id: number;
         };
         /**
          * Role
@@ -676,8 +744,6 @@ export type SchemaChatOut = components['schemas']['ChatOut'];
 export type SchemaChatPage = components['schemas']['ChatPage'];
 export type SchemaCloseIn = components['schemas']['CloseIn'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
-export type SchemaHandoffIn = components['schemas']['HandoffIn'];
-export type SchemaHandoffOfferOut = components['schemas']['HandoffOfferOut'];
 export type SchemaLoginIn = components['schemas']['LoginIn'];
 export type SchemaMessageIn = components['schemas']['MessageIn'];
 export type SchemaMessageOut = components['schemas']['MessageOut'];
@@ -687,6 +753,7 @@ export type SchemaRatingOut = components['schemas']['RatingOut'];
 export type SchemaRatingPage = components['schemas']['RatingPage'];
 export type SchemaRecipientOut = components['schemas']['RecipientOut'];
 export type SchemaRegisterIn = components['schemas']['RegisterIn'];
+export type SchemaRequestOperatorIn = components['schemas']['RequestOperatorIn'];
 export type SchemaSendResult = components['schemas']['SendResult'];
 export type SchemaSupportLineOut = components['schemas']['SupportLineOut'];
 export type SchemaTokenOut = components['schemas']['TokenOut'];
@@ -975,7 +1042,7 @@ export interface operations {
             };
         };
     };
-    request_handoff_offer_chats__chat_id__handoff_offer_post: {
+    stream_message_chats__chat_id__stream_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -984,7 +1051,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -992,7 +1063,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HandoffOfferOut"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1006,7 +1077,7 @@ export interface operations {
             };
         };
     };
-    handoff_chats__chat_id__handoff_post: {
+    stream_message_chats__chat_id__message_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1017,7 +1088,42 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["HandoffIn"];
+                "application/json": components["schemas"]["MessageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_operator_chats__chat_id__request_operator_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestOperatorIn"];
             };
         };
         responses: {
@@ -1183,6 +1289,7 @@ export interface operations {
                 status?: components["schemas"]["ChatStatus"] | null;
                 line_id?: number | null;
                 operator_id?: string | null;
+                user_id?: string | null;
                 offset?: number;
                 limit?: number;
             };
@@ -1307,10 +1414,124 @@ export interface operations {
             };
         };
     };
+    proxy_image_ml_assets_image__slug___filename__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_manuals_ml_api_knowledge_base_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_manual_structure_ml_api_knowledge_base__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_manual_section_ml_api_knowledge_base__slug___section_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }
 export enum ChatStatus {
     ai = "ai",
-    handoff_offered = "handoff_offered",
     waiting_operator = "waiting_operator",
     operator = "operator",
     closed = "closed"

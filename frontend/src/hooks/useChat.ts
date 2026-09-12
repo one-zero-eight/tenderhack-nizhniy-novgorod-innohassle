@@ -8,19 +8,14 @@ export const chatQueryKey = (chatId: string) => ['chat', chatId] as const
 /**
  * Loads a single chat from `GET /chats/{id}`.
  *
- * Polls every 2s while the assistant is working so status changes (handoff
- * offer, operator assignment, closure) show up without a manual refresh.
+ * Not polled: status changes are driven by the SSE stream while a reply is in
+ * flight, and the query is invalidated when the stream settles.
  */
 export function useChat(chatId: string | undefined) {
   return useQuery<ChatView, Error>({
     queryKey: chatQueryKey(chatId ?? ''),
     queryFn: async () => toChatView(await fetchChat(chatId as string)),
     enabled: !!chatId,
-    refetchInterval: (query) => {
-      const chat = query.state.data
-      if (!chat) return 2000
-      return chat.status === 'closed' ? false : 2000
-    },
   })
 }
 

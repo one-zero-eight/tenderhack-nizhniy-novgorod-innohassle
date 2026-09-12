@@ -61,7 +61,16 @@ export default function ChatMessage({ message, className }: ChatMessageProps) {
           )}
         >
           {/* The user's own text is shown verbatim; assistant replies may contain Markdown. */}
-          {mine ? <span className="whitespace-pre-wrap">{message.text}</span> : <Markdown components={components}>{message.text}</Markdown>}
+          {mine ? (
+            <span className="whitespace-pre-wrap">{message.text}</span>
+          ) : message.text ? (
+            <Markdown components={components}>{message.text}</Markdown>
+          ) : (
+            // Before the first token arrives the bubble would be empty.
+            <span className="text-gray">…</span>
+          )}
+          {/* Blinking caret while tokens are still streaming in. */}
+          {message.isStreaming && <span className="bg-main-blue ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-text-bottom" aria-hidden="true" />}
           {/* Timestamp pinned to the bubble's bottom-right corner. */}
           <span
             className={cn(

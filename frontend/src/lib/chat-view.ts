@@ -1,4 +1,4 @@
-import { ChatStatus, SenderType, type SchemaActorOut, type SchemaChatOut, type SchemaMessageOut, type SchemaSupportLineOut } from '@/api/types'
+import { ChatStatus, SenderType, type SchemaActorOut, type SchemaChatOut, type SchemaMessageOut } from '@/api/types'
 
 /**
  * View models for the support chat UI.
@@ -14,7 +14,7 @@ export type ChatRecipientKind = SchemaChatOut['recipient']['kind']
 
 export interface ChatView {
   id: string
-  /** Derived title: the first user message, or a fallback. */
+  /** Title provided by the backend (generated from the first message). */
   title: string
   status: ChatStatus
   recipient: ChatRecipientKind
@@ -24,10 +24,6 @@ export interface ChatView {
   lineName: string | null
   createdAt: string
   updatedAt: string
-  /** True while the assistant is still generating a reply. */
-  aiPending: boolean
-  /** Suggested line the assistant recommends handing off to, if any. */
-  suggestedLine: SchemaSupportLineOut | null
   closeReason: SchemaChatOut['close_reason']
   operator: SchemaActorOut | null
 }
@@ -47,33 +43,24 @@ export interface MessageView {
   isRedacted: boolean
   replyToMessageId: string | null
   rating: SchemaMessageOut['rating']
+  /** Set while tokens are still streaming into this message. */
+  isStreaming?: boolean
 }
-
-const CHAT_TITLE_FALLBACK = 'Обращение в поддержку'
 
 /**
- * Derives a chat title. The backend stores no title, so the first user message
- * is used as the summary; when it is missing we fall back to a generic label.
+ * Maps an API chat to the UI view model. The backend generates a `title` from
+ * the first message, so no client-side derivation is needed.
  */
-function deriveTitle(firstUserMessageText: string | undefined): string {
-  const trimmed = firstUserMessageText?.trim()
-  if (!trimmed) return CHAT_TITLE_FALLBACK
-  return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed
-}
-
-/** Maps an API chat to the UI view model. */
-export function toChatView(chat: SchemaChatOut, firstUserMessageText?: string): ChatView {
+export function toChatView(chat: SchemaChatOut): ChatView {
   return {
     id: chat.id,
-    title: deriveTitle(firstUserMessageText),
+    title: chat.title || CHAT_TITLE_FALLBACK,
     status: chat.status,
     recipient: chat.recipient.kind,
     recipientLabel: chat.recipient.display_name,
-    lineName: chat.support_line?.name ?? chat.suggested_line?.name ?? null,
+    lineName: chat.support_line?.name ?? null,
     createdAt: chat.created_at,
     updatedAt: chat.updated_at,
-    aiPending: chat.ai_pending,
-    suggestedLine: chat.suggested_line,
     closeReason: chat.close_reason,
     operator: chat.operator,
   }
@@ -87,12 +74,12 @@ export function toMessageView(message: SchemaMessageOut): MessageView {
     sequence: message.sequence,
     senderType: message.sender_type,
     senderName: message.sender_name,
-    supportLineId: message.support_line_id,
+    supportLineId: message.support_line_id ?? null,
     text: message.text,
-    citations: message.citations,
+    citations: message.citations ?? [],
     createdAt: message.created_at,
     isRedacted: message.is_redacted,
-    replyToMessageId: message.reply_to_message_id,
+    replyToMessageId: message.reply_to_message_id ?? null,
     rating: message.rating ?? null,
   }
 }
@@ -102,10 +89,12 @@ export function firstUserMessageText(messages: MessageView[]): string | undefine
   return messages.find((message) => message.senderType === SenderType.user)?.text
 }
 
+/** Fallback label for a chat without a generated title. */
+export const CHAT_TITLE_FALLBACK = 'Новый чат'
+
 /** Russian labels for chat statuses. */
 export const CHAT_STATUS_LABELS: Record<ChatStatus, string> = {
   [ChatStatus.ai]: 'Ассистент',
-  [ChatStatus.handoff_offered]: 'Предложен перевод',
   [ChatStatus.waiting_operator]: 'Ожидает оператора',
   [ChatStatus.operator]: 'Оператор',
   [ChatStatus.closed]: 'Закрыто',
@@ -114,7 +103,6 @@ export const CHAT_STATUS_LABELS: Record<ChatStatus, string> = {
 /** Tailwind classes for status badges. */
 export const CHAT_STATUS_CLASSES: Record<ChatStatus, string> = {
   [ChatStatus.ai]: 'bg-pale-blue text-main-blue',
-  [ChatStatus.handoff_offered]: 'bg-orange/10 text-orange',
   [ChatStatus.waiting_operator]: 'bg-orange/10 text-orange',
   [ChatStatus.operator]: 'bg-orange/10 text-orange',
   [ChatStatus.closed]: 'bg-light-gray/40 text-gray',

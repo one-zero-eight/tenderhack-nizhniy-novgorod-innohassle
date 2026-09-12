@@ -1,5 +1,7 @@
 import { eventsFetch } from '@/api'
-import type { SchemaChatOut, SchemaChatPage, SchemaCloseIn, SchemaHandoffIn, SchemaHandoffOfferOut, SchemaMessagePage, SchemaRatingIn, SchemaRatingOut, SchemaSendResult } from '@/api/types'
+import type { SchemaChatOut, SchemaChatPage, SchemaCloseIn, SchemaMessagePage, SchemaRatingIn, SchemaRatingOut, SchemaSendResult } from '@/api/types'
+import { getToken } from '@/lib/auth-storage'
+import { postSse } from '@/lib/sse'
 
 /**
  * Backend chat endpoints, typed via the generated OpenAPI client.
@@ -65,7 +67,7 @@ export async function fetchChat(chatId: string): Promise<SchemaChatOut> {
 }
 
 export async function createChat(): Promise<SchemaChatOut> {
-  const { data, error } = await eventsFetch.POST('/chats')
+  const { data, error } = await eventsFetch.POST('/chats', { body: {} as never })
   return unwrap(data, error)
 }
 
@@ -84,25 +86,18 @@ export async function sendChatMessage(chatId: string, text: string, clientMessag
   return unwrap(data, error)
 }
 
-export async function requestHandoffOffer(chatId: string): Promise<SchemaHandoffOfferOut> {
-  const { data, error } = await eventsFetch.POST('/chats/{chat_id}/handoff-offer', {
-    params: { path: { chat_id: chatId } },
-  })
-  return unwrap(data, error)
-}
-
-export async function handoffChat(chatId: string, body: SchemaHandoffIn = {}): Promise<SchemaChatOut> {
-  const { data, error } = await eventsFetch.POST('/chats/{chat_id}/handoff', {
-    params: { path: { chat_id: chatId } },
-    body,
-  })
-  return unwrap(data, error)
-}
-
 export async function closeChat(chatId: string, body: SchemaCloseIn): Promise<SchemaChatOut> {
   const { data, error } = await eventsFetch.POST('/chats/{chat_id}/close', {
     params: { path: { chat_id: chatId } },
     body,
+  })
+  return unwrap(data, error)
+}
+
+export async function requestOperator(chatId: string, supportLineId: number): Promise<SchemaChatOut> {
+  const { data, error } = await eventsFetch.POST('/chats/{chat_id}/request-operator', {
+    params: { path: { chat_id: chatId } },
+    body: { support_line_id: supportLineId },
   })
   return unwrap(data, error)
 }
@@ -113,4 +108,101 @@ export async function rateMessage(messageId: string, body: SchemaRatingIn): Prom
     body,
   })
   return unwrap(data, error)
+}
+
+/* ------------------------------------------------------------------ streaming */
+
+/**
+ * Events emitted by the backend's SSE stream while answering a message.
+ *
+ * - `start`       — an AI message id has been allocated.
+ * - `token`       — a chunk of the answer; `content` is the full text so far.
+ * - `tool_call`   — the assistant invoked a tool (search, open, …).
+ * - `tool_result` — a tool finished.
+ * - `redirect`    — the chat was handed off to a support line.
+ * - `error`       — a non-fatal error (e.g. moderation blocked the message).
+ * - `done`        — the final, complete answer.
+ */
+export type ChatStreamEvent =
+  | { type: 'start'; messageId: string }
+  | { type: 'token'; content: string }
+  | { type: 'tool_call'; id: string; name: string; kwargs: Record<string, unknown>; phase: 'start' }
+  | { type: 'tool_result'; id: string; name: string; output: string; error: boolean; phase: 'end' }
+  | { type: 'redirect'; line: string; reason: string | null }
+  | { type: 'error'; message: string }
+  | { type: 'done'; messageId: string; content: string }
+
+/** Parses a raw SSE frame into a typed stream event, or `null` if unknown. */
+function parseStreamEvent(event: string, raw: string): ChatStreamEvent | null {
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    data = { content: raw }
+  }
+  const str = (value: unknown): string => (typeof value === 'string' ? value : '')
+
+  switch (event) {
+    case 'start':
+      return { type: 'start', messageId: str(data.message_id) }
+    case 'token':
+      return { type: 'token', content: str(data.content) }
+    case 'tool_call':
+      return {
+        type: 'tool_call',
+        id: str(data.id),
+        name: str(data.name),
+        kwargs: (data.kwargs as Record<string, unknown>) ?? {},
+        phase: 'start',
+      }
+    case 'tool_result':
+      return {
+        type: 'tool_result',
+        id: str(data.id),
+        name: str(data.name),
+        output: str(data.output),
+        error: data.error === true,
+        phase: 'end',
+      }
+    case 'redirect':
+      return { type: 'redirect', line: str(data.line), reason: data.reason ? str(data.reason) : null }
+    case 'error':
+      return { type: 'error', message: str(data.message) || 'Ошибка сервера' }
+    case 'done':
+      return { type: 'done', messageId: str(data.message_id), content: str(data.content) }
+    default:
+      return null
+  }
+}
+
+/**
+ * Streams an assistant reply from `POST /chats/{chat_id}/stream`.
+ *
+ * Yields typed events as they arrive. Cancelling the generator (via the
+ * provided `AbortSignal`) closes the connection, which the backend treats as a
+ * client disconnect and stops work.
+ */
+export async function* streamChatMessage(
+  chatId: string,
+  text: string,
+  clientMessageId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  const baseUrl = import.meta.env.VITE_API_URL ?? '/api'
+  const token = getToken()
+
+  const stream = postSse(`${baseUrl}/chats/${encodeURIComponent(chatId)}/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ text, client_message_id: clientMessageId }),
+    signal,
+  })
+
+  for await (const sse of stream) {
+    const parsed = parseStreamEvent(sse.event, sse.data)
+    if (parsed) yield parsed
+  }
 }

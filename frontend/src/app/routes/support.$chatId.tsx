@@ -3,7 +3,8 @@ import ChatContainer from '@/components/ui/ChatContainer'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { requireAuth } from '@/app/routes/-guards'
 import { useChat } from '@/hooks/useChat'
-import { useChatMessages, useSendChatMessage } from '@/hooks/useChatMessages'
+import { useChatMessages } from '@/hooks/useChatMessages'
+import { useStreamMessage } from '@/hooks/useStreamMessage'
 
 export const Route = createFileRoute('/support/$chatId')({
   beforeLoad: requireAuth,
@@ -14,7 +15,7 @@ function ChatPage() {
   const { chatId } = Route.useParams()
   const { data: chat, isLoading, isError, error } = useChat(chatId)
   const { data: messages, isLoading: messagesLoading, isError: messagesError, error: messagesErr } = useChatMessages(chatId)
-  const sendMessage = useSendChatMessage(chatId)
+  const stream = useStreamMessage(chatId)
 
   if (isLoading) {
     return (
@@ -38,12 +39,14 @@ function ChatPage() {
   const isClosed = chat.status === 'closed'
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-8">
-      <div className="flex flex-col gap-1">
+    // Fill the viewport below the 4rem navbar so the message list scrolls and
+    // the composer stays pinned to the bottom of the screen.
+    <div className="mx-auto flex h-[calc(100vh-4rem)] w-full max-w-3xl flex-col gap-4 px-4 py-6">
+      <div className="flex shrink-0 flex-col gap-1">
         <Link to="/support" className="text-gray hover:text-main-blue text-xs underline underline-offset-4">
           ← Все обращения
         </Link>
-        <h1 className="text-2xl font-bold text-pale-black">{chat.title}</h1>
+        <h1 className="text-pale-black text-2xl font-bold">{chat.title}</h1>
       </div>
 
       {messagesLoading ? (
@@ -54,13 +57,17 @@ function ChatPage() {
         <p className="text-red py-10 text-center text-sm">{messagesErr?.message || 'Не удалось загрузить сообщения'}</p>
       ) : (
         <>
-          {sendMessage.isError && (
-            <p className="text-red text-center text-sm">{sendMessage.error?.message || 'Не удалось отправить сообщение'}</p>
+          {stream.error && (
+            <p className="text-red shrink-0 text-center text-sm">
+              {stream.error.message || 'Не удалось отправить сообщение'}
+            </p>
           )}
           <ChatContainer
             messages={messages ?? []}
-            onSend={(text) => sendMessage.mutate(text)}
-            disabled={sendMessage.isPending || isClosed}
+            onSend={stream.send}
+            disabled={stream.isStreaming || isClosed}
+            toolStatus={stream.toolStatus}
+            className="min-h-0"
           />
         </>
       )}
