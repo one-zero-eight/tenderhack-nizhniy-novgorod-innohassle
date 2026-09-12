@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -17,7 +17,6 @@ export const Route = createFileRoute('/register')({
 })
 
 function RegisterPage() {
-  const navigate = useNavigate()
   const register = useRegister()
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
@@ -39,7 +38,8 @@ function RegisterPage() {
         // Omitted when blank so the backend keeps its default display name.
         ...(trimmedDisplayName ? { display_name: trimmedDisplayName } : {}),
       },
-      { onSuccess: () => navigate({ to: '/support' }) },
+      // Full reload so the app boots with the new session.
+      { onSuccess: () => window.location.assign('/support') },
     )
   }
 

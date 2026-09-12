@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { AuthContext, type AuthContextValue } from '@/app/providers/auth-context'
 import { useMe, useLogin, useLogout } from '@/hooks/useAuth'
-import { getStoredUser } from '@/lib/auth-storage'
 import { onUnauthorized } from '@/lib/auth-events'
 import { router } from '@/app/router'
 import type { SchemaLoginIn } from '@/api/types'
@@ -11,13 +10,13 @@ import type { SchemaLoginIn } from '@/api/types'
  * events to a session reset + redirect.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { data, isLoading } = useMe()
+  // `useMe` seeds from the persisted profile and always revalidates, so the
+  // navbar reflects the account that owns the current token even right after
+  // signing in as someone else (no manual refresh needed).
+  const { data: me, isLoading } = useMe()
+  const user = me ?? null
   const loginMutation = useLogin()
   const clearSession = useLogout()
-
-  // Fall back to the cached profile so the UI can render the user immediately
-  // while /auth/me is in flight (or if it is offline).
-  const user = data ?? getStoredUser()
 
   const logout = useCallback(() => {
     clearSession()

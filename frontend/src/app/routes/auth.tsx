@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -15,7 +15,6 @@ export const Route = createFileRoute('/auth')({
 })
 
 function AuthPage() {
-  const navigate = useNavigate()
   const login = useLogin()
   const [loginValue, setLoginValue] = useState('')
   const [password, setPassword] = useState('')
@@ -27,7 +26,9 @@ function AuthPage() {
     if (!canSubmit || login.isPending) return
     login.mutate(
       { login: loginValue.trim(), password },
-      { onSuccess: () => navigate({ to: '/support' }) },
+      // Full reload so the app boots with the new session (no stale cached
+      // account/token state anywhere in memory).
+      { onSuccess: () => window.location.assign('/support') },
     )
   }
 

@@ -11,7 +11,7 @@ export default function LeaveButton() {
   const label = user?.display_name || user?.login || 'Профиль'
   return (
     <Menu as="div" className="relative flex">
-      <MenuButton className={navButtonClasses(false, 'data-open:bg-pale-blue/50')} title={label}>
+      <MenuButton className={navButtonClasses(false, 'data-open:bg-pale-blue/50 min-w-46')} title={label}>
         <FaUser className="shrink-0" />
         <span className="truncate">{label}</span>
       </MenuButton>
@@ -26,8 +26,8 @@ export default function LeaveButton() {
         className="border-gray-blue z-50 w-[var(--button-width)] border border-t-0 bg-white shadow-lg focus:outline-none"
       >
         {user && (
-          <div className="border-gray-blue text-gray border-b px-5 py-2 text-xs">
-            {user.login} · <span className="text-main-blue font-medium">{roleLabel(user.role)}</span>
+          <div className="flex flex-col items-center justify-center gap-1 border-gray-blue text-gray border-b px-5 py-2 text-xs">
+            <span>{user.login}</span><span className="text-main-blue font-medium">{roleLabel(user.role)}</span>
           </div>
         )}
         <MenuItem>

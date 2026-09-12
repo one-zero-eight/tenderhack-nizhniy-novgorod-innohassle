@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { eventsFetch } from '@/api'
 import type { SchemaLoginIn, SchemaRegisterIn, SchemaTokenOut, SchemaUserOut } from '@/api/types'
-import { clearAuth, getToken, setToken, setUser } from '@/lib/auth-storage'
+import { clearAuth, getStoredUser, getToken, setToken, setUser } from '@/lib/auth-storage'
 
 export const meQueryKey = ['auth', 'me'] as const
 
@@ -15,23 +15,34 @@ async function fetchMe(): Promise<SchemaUserOut> {
 /**
  * Query options for the current user. Shared so route guards can prefetch it
  * via `queryClient.ensureQueryData` and components can read the same cache.
+ *
+ * `staleTime` is 0 on purpose: the cached profile must never outlive the token
+ * it was fetched with, otherwise switching accounts can briefly show the
+ * previous user until a hard refresh.
  */
 export function meQueryOptions() {
   return {
     queryKey: meQueryKey,
     queryFn: fetchMe,
-    staleTime: Infinity,
+    staleTime: 0,
     retry: false,
   }
 }
 
 /**
  * Loads the current user. Disabled while there is no valid token.
+ *
+ * The persisted profile is used as `initialData` so the UI can render the
+ * account immediately, while `staleTime: 0` guarantees it is revalidated
+ * against `/auth/me` (important after switching accounts).
  */
 export function useMe() {
-  return useQuery({
+  const token = getToken()
+  return useQuery<SchemaUserOut, Error>({
     ...meQueryOptions(),
-    enabled: getToken() !== null,
+    enabled: token !== null,
+    initialData: token ? (getStoredUser() ?? undefined) : undefined,
+    initialDataUpdatedAt: 0,
   })
 }
 
@@ -61,13 +72,19 @@ async function login(credentials: SchemaLoginIn): Promise<SchemaUserOut> {
 }
 
 /**
- * Authenticates the user and seeds the `me` query cache on success.
+ * Authenticates the user, drops any data cached for the previous session, and
+ * seeds the `me` query cache on success.
  */
 export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation<SchemaUserOut, Error, SchemaLoginIn>({
     mutationFn: login,
-    onSuccess: (user) => queryClient.setQueryData(meQueryKey, user),
+    onSuccess: (user) => {
+      // A different account may have been signed in before: clear every cached
+      // query so no stale chats or profile leak into the new session.
+      queryClient.clear()
+      queryClient.setQueryData(meQueryKey, user)
+    },
   })
 }
 
@@ -85,7 +102,10 @@ export function useRegister() {
   const queryClient = useQueryClient()
   return useMutation<SchemaUserOut, Error, SchemaRegisterIn>({
     mutationFn: register,
-    onSuccess: (user) => queryClient.setQueryData(meQueryKey, user),
+    onSuccess: (user) => {
+      queryClient.clear()
+      queryClient.setQueryData(meQueryKey, user)
+    },
   })
 }
 
