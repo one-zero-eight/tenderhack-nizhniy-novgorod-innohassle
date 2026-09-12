@@ -11,6 +11,7 @@ import {
 import { FaPaperclip, FaPaperPlane } from 'react-icons/fa6'
 import Button from '@/components/ui/Button'
 import ChatAttachments from '@/components/ui/ChatAttachments'
+import ChatCommandsMenu, { type ChatCommand } from '@/components/ui/ChatCommandsMenu'
 import { cn } from '@/lib/cn'
 import type { Attachment } from '@/hooks/useFileAttachments'
 
@@ -33,6 +34,8 @@ interface ChatInputProps extends NativeTextareaProps {
   onRemoveAttachment?: (id: string) => void
   /** `accept` attribute for the file picker. */
   accept?: string
+  /** Slash-commands offered by the commands button next to the send button. */
+  commands?: ChatCommand[]
 }
 
 /**
@@ -59,6 +62,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       onFilesAdded,
       onRemoveAttachment,
       accept,
+      commands = [],
       className,
       onKeyDown,
       ...props
@@ -190,17 +194,29 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             <FaPaperclip />
             <span>Прикрепить</span>
           </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            className="flex items-center gap-2"
-            disabled={disabled || !value.trim()}
-            onClick={() => onSubmit?.()}
-          >
-            <FaPaperPlane />
-            <span>Отправить</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <ChatCommandsMenu
+              commands={commands}
+              disabled={disabled}
+              onSelect={(command) => {
+                // Paste the command into the composer; the user still has to
+                // send it for it to take effect.
+                onChange(command.value)
+                innerRef.current?.focus()
+              }}
+            />
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className="flex items-center gap-2"
+              disabled={disabled || !value.trim()}
+              onClick={() => onSubmit?.()}
+            >
+              <FaPaperPlane />
+              <span>Отправить</span>
+            </Button>
+          </div>
         </div>
       </div>
     )

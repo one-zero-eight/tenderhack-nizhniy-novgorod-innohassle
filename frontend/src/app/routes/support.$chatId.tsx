@@ -38,6 +38,14 @@ function ChatPage() {
 
   const isClosed = chat.status === 'closed'
 
+  // Placeholder: the actual rating submission endpoint is not wired yet.
+  // Queries the backend later, e.g. `PUT /messages/{message_id}/rating`.
+  const handleRate = (stars: number, comment: string) => {
+    // TODO: send stars + comment for the last assistant/operator reply.
+    void stars
+    void comment
+  }
+
   return (
     // Fill the viewport below the 4rem navbar so the message list scrolls and
     // the composer stays pinned to the bottom of the screen.
@@ -65,6 +73,7 @@ function ChatPage() {
           <ChatContainer
             messages={messages ?? []}
             onSend={stream.send}
+            onRate={handleRate}
             disabled={stream.isStreaming || isClosed}
             toolStatus={stream.toolStatus}
             className="min-h-0"

@@ -23,7 +23,7 @@ export default function LeaveButton() {
       */}
       <MenuItems
         anchor={{ to: 'bottom', gap: 0 }}
-        className="border-gray-blue z-50 w-[var(--button-width)] border border-t-0 bg-white shadow-lg focus:outline-none"
+        className="border-gray-blue z-50 w-(--button-width) border border-t-0 bg-white shadow-lg focus:outline-none"
       >
         {user && (
           <div className="flex flex-col items-center justify-center gap-1 border-gray-blue text-gray border-b px-5 py-2 text-xs">
