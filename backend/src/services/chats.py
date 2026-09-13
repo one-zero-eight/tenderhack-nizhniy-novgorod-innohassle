@@ -31,6 +31,7 @@ from src.schemas.chat import (
     RatingOut,
     SendResult,
 )
+from src.schemas.entity import EntityIn
 from src.services.ai_client import AIClient, AIUnavailable
 from src.services.errors import fail
 from src.services.moderation import ModerationUnavailable, Moderator
@@ -42,6 +43,25 @@ from src.services.profile_entities import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_tags_and_entities(chat_id: str, user: User, mentions: list[str], entities: list[EntityIn]) -> None:
+    if mentions:
+        logger.info("Tags found in message (chat=%s, user=%s): %s", chat_id, user.id, mentions)
+    if entities:
+        for ent in entities:
+            ent_id = ent.extra.get("id") or ent.extra.get("chat_id") or "N/A"
+            ent_title = ent.extra.get("title") or ent.extra.get("name") or ent.alias
+            logger.info(
+                "Attached %s for tag '@%s' (chat=%s): id='%s', title='%s'",
+                ent.kind,
+                ent.alias,
+                chat_id,
+                ent_id,
+                ent_title,
+            )
+    elif mentions:
+        logger.info("No matching files/chats found for tags: %s (chat=%s)", mentions, chat_id)
 
 
 def invalidate_pending(chat: Chat) -> None:
@@ -352,6 +372,7 @@ class ChatService:
         explicit_aliases = {e.alias for e in payload.entities}
         all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
         entities_dicts = [e.model_dump() for e in all_entities]
+        _log_tags_and_entities(chat_id, user, mentions, all_entities)
 
         tool_calls: list[dict] = []
         citations: list[dict] = []
@@ -632,6 +653,7 @@ class ChatService:
             explicit_aliases = {e.alias for e in payload.entities}
             all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
             entities_dicts = [e.model_dump() for e in all_entities]
+            _log_tags_and_entities(chat_id, user, mentions, all_entities)
 
             answer = None
             try:

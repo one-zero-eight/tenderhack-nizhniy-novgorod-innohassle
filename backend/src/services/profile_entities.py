@@ -196,6 +196,7 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
         doc = _match_document(alias, unique_docs)
         if doc:
             seen_aliases.add(alias)
+            logger.info("Matched file/document for tag '@%s': id='%s', title='%s'", alias, doc.id, doc.title)
             resolved.append(
                 EntityIn(
                     alias=alias,
@@ -220,6 +221,7 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
         contract = _match_contract(alias, profile.contracts)
         if contract:
             seen_aliases.add(alias)
+            logger.info("Matched contract for tag '@%s': id='%s', title='%s'", alias, contract.id, contract.title)
             cust = contract.parties.customer
             supp = contract.parties.supplier
             resolved.append(
@@ -255,6 +257,7 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
         proc = _match_procurement(alias, profile.procurements)
         if proc:
             seen_aliases.add(alias)
+            logger.info("Matched procurement for tag '@%s': id='%s', title='%s'", alias, proc.id, proc.title)
             resolved.append(
                 EntityIn(
                     alias=alias,
@@ -283,6 +286,7 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
         offer = _match_offer(alias, profile.offers)
         if offer:
             seen_aliases.add(alias)
+            logger.info("Matched offer for tag '@%s': id='%s', title='%s'", alias, offer.id, offer.procurement_title)
             resolved.append(
                 EntityIn(
                     alias=alias,
@@ -314,6 +318,7 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
         ):
             seen_aliases.add(alias)
             comp = profile.company
+            logger.info("Matched company for tag '@%s': id='%s', title='%s'", alias, comp.id, comp.name)
             resolved.append(
                 EntityIn(
                     alias=alias,
@@ -502,6 +507,7 @@ async def resolve_chat_entities(
         if len(full_text) > 1950:
             full_text = full_text[:1947] + "..."
 
+        logger.info("Matched past chat for tag '@%s': id='%s', title='%s'", alias_clean, cid, title)
         resolved.append(
             EntityIn(
                 alias=alias_clean[:64],
