@@ -670,4 +670,3 @@ async def test_chat_rating_and_topic_filtering(case):
     ).json()
     assert admin_res["total"] == 1
     assert admin_res["items"][0]["id"] == chat2
-
