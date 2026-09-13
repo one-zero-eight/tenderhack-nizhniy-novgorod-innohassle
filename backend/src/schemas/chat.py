@@ -34,6 +34,7 @@ class UserOut(Schema):
     id: UUID
     login: str
     display_name: str
+    username: str | None = None
     role: Role
     support_line_id: int | None = None
 
@@ -47,6 +48,8 @@ class SupportLineOut(Schema):
 class ActorOut(Schema):
     id: UUID
     display_name: str
+    username: str | None = None
+    login: str | None = None
 
 
 class RecipientOut(Schema):
@@ -80,6 +83,8 @@ class ChatOut(Schema):
     user: ActorOut | None = None
     user_display_name: str | None = None
     display_name: str | None = None
+    user_username: str | None = None
+    username: str | None = None
     status: ChatStatus
     recipient: RecipientOut
     support_line: SupportLineOut | None

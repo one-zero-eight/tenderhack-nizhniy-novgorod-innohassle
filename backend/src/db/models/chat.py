@@ -73,6 +73,10 @@ class User(Base):
     support_line_id: Mapped[int | None] = mapped_column(ForeignKey("support_lines.id"))
 
     @property
+    def username(self) -> str:
+        return self.login
+
+    @property
     def is_customer(self) -> bool:
         return self.role in (Role.SELLER, Role.BUYER)
 

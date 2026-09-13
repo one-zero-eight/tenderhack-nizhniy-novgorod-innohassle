@@ -288,11 +288,40 @@ async def test_admin_periods_and_history_exclude_notices(case):
 async def test_admin_get_all_chats(case):
     res1 = await case.request("POST", "/chats", login="user")
     assert res1.status_code == 201
-    chat1 = res1.json()["id"]
+    chat1_created = res1.json()
+    assert chat1_created["user_username"] == case.users["user"].login
+    assert chat1_created["username"] == case.users["user"].login
+    assert chat1_created["user"]["username"] == case.users["user"].login
+    assert chat1_created["user_display_name"] == case.users["user"].display_name
+    assert chat1_created["display_name"] == case.users["user"].display_name
+    assert chat1_created["user"]["display_name"] == case.users["user"].display_name
+    chat1 = chat1_created["id"]
 
     res2 = await case.request("POST", "/chats", login="user2")
     assert res2.status_code == 201
     chat2 = res2.json()["id"]
+
+    # Regular user gets single chat and lists chats
+    user_chat_res = await case.request("GET", f"/chats/{chat1}", login="user")
+    assert user_chat_res.status_code == 200
+    user_chat = user_chat_res.json()
+    assert user_chat["user_username"] == case.users["user"].login
+    assert user_chat["username"] == case.users["user"].login
+    assert user_chat["user"]["username"] == case.users["user"].login
+    assert user_chat["user_display_name"] == case.users["user"].display_name
+    assert user_chat["display_name"] == case.users["user"].display_name
+    assert user_chat["user"]["display_name"] == case.users["user"].display_name
+
+    user_chats_res = await case.request("GET", "/chats", login="user")
+    assert user_chats_res.status_code == 200
+    user_chats_data = user_chats_res.json()
+    assert any(
+        c["id"] == chat1
+        and c["username"] == case.users["user"].login
+        and c["user_username"] == case.users["user"].login
+        and c["user"]["username"] == case.users["user"].login
+        for c in user_chats_data["items"]
+    )
 
     # Regular user/operator should be denied access to admin endpoint
     assert (await case.request("GET", "/admin/chats", login="user")).status_code == 403
@@ -307,18 +336,24 @@ async def test_admin_get_all_chats(case):
     assert chat1 in chat_ids
     assert chat2 in chat_ids
 
-    # Verify user display_name returned in GET /admin/chats
+    # Verify user display_name and username returned in GET /admin/chats
     chat1_data = next(c for c in data["items"] if c["id"] == chat1)
     chat2_data = next(c for c in data["items"] if c["id"] == chat2)
     assert chat1_data["user_display_name"] == case.users["user"].display_name
     assert chat1_data["display_name"] == case.users["user"].display_name
+    assert chat1_data["user_username"] == case.users["user"].login
+    assert chat1_data["username"] == case.users["user"].login
     assert chat1_data["user"]["id"] == str(case.users["user"].id)
     assert chat1_data["user"]["display_name"] == case.users["user"].display_name
+    assert chat1_data["user"]["username"] == case.users["user"].login
 
     assert chat2_data["user_display_name"] == case.users["user2"].display_name
     assert chat2_data["display_name"] == case.users["user2"].display_name
+    assert chat2_data["user_username"] == case.users["user2"].login
+    assert chat2_data["username"] == case.users["user2"].login
     assert chat2_data["user"]["id"] == str(case.users["user2"].id)
     assert chat2_data["user"]["display_name"] == case.users["user2"].display_name
+    assert chat2_data["user"]["username"] == case.users["user2"].login
 
     # Admin filters by user_id
     user1_id = str(case.users["user"].id)
@@ -327,6 +362,9 @@ async def test_admin_get_all_chats(case):
     user1_chats = res_user1.json()
     assert all(c["user_id"] == user1_id for c in user1_chats["items"])
     assert all(c["user_display_name"] == case.users["user"].display_name for c in user1_chats["items"])
+    assert all(c["display_name"] == case.users["user"].display_name for c in user1_chats["items"])
+    assert all(c["user_username"] == case.users["user"].login for c in user1_chats["items"])
+    assert all(c["username"] == case.users["user"].login for c in user1_chats["items"])
     assert chat1 in [c["id"] for c in user1_chats["items"]]
     assert chat2 not in [c["id"] for c in user1_chats["items"]]
 

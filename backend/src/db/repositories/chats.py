@@ -94,11 +94,15 @@ async def chat_view(
     chat: Chat,
     rating: Rating | None | object = _UNSET,
     user: User | None | object = _UNSET,
+    operator: User | None | object = _UNSET,
 ) -> ChatOut:
     line = await session.get(SupportLine, chat.support_line_id) if chat.support_line_id else None
-    operator = await session.get(User, chat.operator_id) if chat.operator_id else None
+    if operator is _UNSET:
+        operator_obj = await session.get(User, chat.operator_id) if chat.operator_id else None
+    else:
+        operator_obj = operator
     line_out = SupportLineOut.model_validate(line) if line else None
-    operator_out = ActorOut.model_validate(operator) if operator else None
+    operator_out = ActorOut.model_validate(operator_obj) if operator_obj else None
     if chat.status == ChatStatus.CLOSED:
         recipient = RecipientOut(kind="none", display_name="Обращение закрыто")
     elif chat.status == ChatStatus.WAITING_OPERATOR:
@@ -108,7 +112,7 @@ async def chat_view(
     elif chat.status == ChatStatus.OPERATOR:
         recipient = RecipientOut(
             kind="operator",
-            display_name=operator.display_name if operator else "",
+            display_name=operator_obj.display_name if operator_obj else "",
             support_line=line_out,
             operator=operator_out,
         )
@@ -127,6 +131,7 @@ async def chat_view(
         chat_user = user
     user_out = ActorOut.model_validate(chat_user) if chat_user else None
     user_display_name = chat_user.display_name if chat_user else None
+    user_username = chat_user.login if chat_user else None
 
     return ChatOut(
         id=chat.id,
@@ -135,6 +140,8 @@ async def chat_view(
         user=user_out,
         user_display_name=user_display_name,
         display_name=user_display_name,
+        user_username=user_username,
+        username=user_username,
         status=chat.status,
         recipient=recipient,
         support_line=line_out,
@@ -166,7 +173,16 @@ async def chat_views(session: AsyncSession, chats: list[Chat]) -> list[ChatOut]:
     else:
         by_user = {}
 
-    return [await chat_view(session, c, rating=by_chat.get(c.id), user=by_user.get(c.user_id)) for c in chats]
+    return [
+        await chat_view(
+            session,
+            c,
+            rating=by_chat.get(c.id),
+            user=by_user.get(c.user_id),
+            operator=by_user.get(c.operator_id),
+        )
+        for c in chats
+    ]
 
 
 async def message_views(session: AsyncSession, messages: list[Message]) -> list[MessageOut]:
