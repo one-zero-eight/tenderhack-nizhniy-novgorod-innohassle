@@ -65,6 +65,7 @@ function ChatPage() {
             ← Все обращения
           </Link>
           <h1 className="text-black text-2xl font-bold">{chat.title}</h1>
+          {/* Rating summary in the header; it also appears inline in the timeline. */}
           <ChatRating rating={chat.rating} className="mt-1" />
         </div>
 
@@ -92,6 +93,7 @@ function ChatPage() {
               onRate={handleRate}
               disabled={stream.isStreaming || isClosed}
               disabledPlaceholder={stream.isStreaming ? undefined : disabledReason}
+              rating={chat.rating}
               toolStatus={stream.toolStatus}
               className="min-h-0"
             />

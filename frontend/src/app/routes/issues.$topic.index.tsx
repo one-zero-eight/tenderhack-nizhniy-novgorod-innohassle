@@ -1,11 +1,13 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMemo } from 'react'
+import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import Disclosure from '@/components/ui/Disclosure'
 import ChatRow, { ChatRowHeader } from '@/components/ui/ChatRow'
 import { useAllAdminChats } from '@/hooks/useAdminChats'
-import { chatsForTopic, summarizeSubtopics, NO_SUBTOPIC } from '@/lib/issues'
-
+import { useTopicSummary } from '@/hooks/useTopicSummary'
+import { chatsForTopic, summarizeSubtopics } from '@/lib/issues'
+import { cn } from '@/lib/cn'
 export const Route = createFileRoute('/issues/$topic/')({
   component: TopicPage,
 })
@@ -40,7 +42,7 @@ function TopicPage() {
       </div>
 
       {/* AI summary of the topic's recurring problems. */}
-      <TopicSummaryCard topic={topic} chatCount={topicTotal} />
+      <TopicSummaryCard topic={topic} />
 
       {isLoading ? (
         <div className="flex justify-center py-10">
@@ -87,18 +89,65 @@ function TopicPage() {
  * Placeholder for now: the text is stubbed and will be fetched from the backend
  * once a summary endpoint exists.
  */
-function TopicSummaryCard({ topic, chatCount }: { topic: string; chatCount: number }) {
-  // TODO: replace with a real request, e.g. `GET /admin/topics/{topic}/summary`.
-  const summary =
-    topic === NO_SUBTOPIC || chatCount === 0
-      ? 'Недостаточно данных для анализа.'
-      : `Пользователи чаще всего обращаются по теме «${topic}». ИИ-сводка появится после подключения сервиса: она опишет повторяющиеся проблемы, частые причины обращений и рекомендуемые шаги для операторов.`
+/** Props passed to custom components; the parser adds a `node` field we drop. */
+type ElementProps<Tag extends keyof React.JSX.IntrinsicElements> = MarkdownComponentProps<Tag> & { node?: unknown }
+
+/** Removes the non-DOM `node` prop before spreading onto an element. */
+function withoutNode<T extends { node?: unknown }>({ node, ...rest }: T): Omit<T, 'node'> {
+  void node
+  return rest
+}
+
+/** Compact Markdown styling for the AI summary. */
+const components = {
+  p: (props: ElementProps<'p'>) => <p {...withoutNode(props)} className="not-first:mt-2" />,
+  ul: (props: ElementProps<'ul'>) => <ul {...withoutNode(props)} className="my-2 list-disc space-y-1 pl-5" />,
+  ol: (props: ElementProps<'ol'>) => <ol {...withoutNode(props)} className="my-2 list-decimal space-y-1 pl-5" />,
+  strong: (props: ElementProps<'strong'>) => <strong {...withoutNode(props)} className="font-semibold" />,
+  a: (props: ElementProps<'a'>) => (
+    <a {...withoutNode(props)} target="_blank" rel="noopener noreferrer" className="text-main-blue underline underline-offset-2" />
+  ),
+  code: (props: ElementProps<'code'>) => (
+    <code {...withoutNode(props)} className={cn('bg-black/10 rounded px-1 py-0.5 font-mono text-[0.85em]', props.className)} />
+  ),
+} satisfies MarkdownComponents
+
+function TopicSummaryCard({ topic }: { topic: string }) {
+  const { data, isLoading, isError, error, refetch } = useTopicSummary(topic)
+
+  const status = data?.status
+  const hasSummary = !!data?.summary
 
   return (
     <section className="border-gray-blue bg-pale-blue/30 flex flex-col gap-2 border p-4">
       <h2 className="text-main-blue text-xs font-semibold tracking-wide uppercase">Сводка по проблемам</h2>
-      <p className="text-black text-sm leading-relaxed whitespace-pre-wrap">{summary}</p>
-      <span className="text-gray text-xs">Сводка сформирована ИИ и может быть неточной.</span>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 py-2">
+          <LoadingSpinner size="sm" />
+          <span className="text-gray text-sm">Загружаем сводку…</span>
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-start gap-2 py-1">
+          <p className="text-red text-sm">{error?.message || 'Не удалось загрузить сводку'}</p>
+          <button type="button" onClick={() => refetch()} className="text-main-blue text-sm underline underline-offset-4">
+            Повторить
+          </button>
+        </div>
+      ) : hasSummary ? (
+        // The summary is Markdown (paragraphs, bullet lists).
+        <div className="text-black text-sm leading-relaxed">
+          <Markdown components={components}>{data?.summary ?? ''}</Markdown>
+        </div>
+      ) : (
+        <p className="text-gray text-sm">
+          {status === 'pending' || status === 'outdated'
+            ? 'Сводка формируется, это может занять некоторое время.'
+            : 'Недостаточно обратной связи по теме для анализа.'}
+        </p>
+      )}
+
+      {hasSummary && <span className="text-gray text-xs">Сводка сформирована ИИ и может быть неточной.</span>}
     </section>
   )
 }

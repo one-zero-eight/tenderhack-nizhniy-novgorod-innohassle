@@ -76,6 +76,7 @@ export default function AdminChatView({ chatId, backTo, backParams, backLabel, n
           <h1 className="text-pale-black text-2xl font-bold">{chat.title}</h1>
           {/* Admins see whose conversation this is. */}
           <span className="text-pale-black text-sm">Пользователь: {chat.userName}</span>
+          {/* Rating summary in the header; it also appears inline in the timeline. */}
           <ChatRating rating={chat.rating} showEmpty className="mt-1" />
         </div>
 
@@ -89,6 +90,7 @@ export default function AdminChatView({ chatId, backTo, backParams, backLabel, n
           <ChatContainer
             messages={messages ?? []}
             readOnly
+            rating={chat.rating}
             className="min-h-0"
             onCreateRule={(assistantText, userText) => setDraft({ assistantText, userText })}
           />

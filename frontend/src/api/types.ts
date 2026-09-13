@@ -704,6 +704,32 @@ export interface paths {
         patch: operations["update_handrule_ml_api_handrules__rule_id__patch"];
         trace?: never;
     };
+    "/ml-api/stats/topics/{topic}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * AI-сводка темы статистики
+         * @description Возвращает сохранённую AI-сводку по теме обращений и её статус.
+         *
+         *     Сводки готовит фоновая задача — она следит за новыми отзывами. Если по теме появилась новая обратная связь, а сводка устарела или её ещё нет, этот запрос сам ставит генерацию в фон и сразу отвечает текущим состоянием: повторный запрос через несколько секунд вернёт уже обновлённый текст.
+         *
+         *     Сводка отдаётся в markdown.
+         *
+         *     **Статусы:** `ready` — актуальна; `outdated` — есть новая обратная связь, идёт пересчёт; `pending` — обратная связь есть, сводки ещё нет; `none` — обратной связи по теме нет.
+         */
+        get: operations["get_topic_summary_ml_api_stats_topics__topic__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1377,6 +1403,41 @@ export interface components {
             /** Expires In */
             expires_in: number;
         };
+        /** TopicSummaryStatus */
+        TopicSummaryStatus: {
+            /**
+             * Topic
+             * @description Имя темы, как в URL `/stats/<topic>`
+             * @example Работа с контрактами
+             */
+            topic: string;
+            /**
+             * Status
+             * @description `ready` — сводка актуальна; `outdated` — есть новая обратная связь, идёт пересчёт; `pending` — обратная связь есть, сводки ещё нет; `none` — обратной связи по теме нет.
+             * @example ready
+             * @enum {string}
+             */
+            status: TopicSummaryStatusStatus;
+            /**
+             * Summary
+             * @description Markdown-текст сводки. `null`, если сводки ещё нет (`pending` или `none`)
+             * @example По теме… — не подошёл ответ.
+             *
+             *     - Уточнить в базе знаний…
+             */
+            summary?: string | null;
+            /**
+             * Feedback Chats
+             * @description Сколько чатов темы имеют обратную связь (оценка пользователя или перевод)
+             * @example 2
+             */
+            feedback_chats: number;
+            /**
+             * Updated At
+             * @description Когда сводка была сгенерирована, ISO 8601. `null`, если сводки нет
+             */
+            updated_at?: string | null;
+        };
         /** UpdateRoleIn */
         UpdateRoleIn: {
             /** @default buyer */
@@ -1449,6 +1510,7 @@ export type SchemaRegisterIn = components['schemas']['RegisterIn'];
 export type SchemaSendResult = components['schemas']['SendResult'];
 export type SchemaSupportLineOut = components['schemas']['SupportLineOut'];
 export type SchemaTokenOut = components['schemas']['TokenOut'];
+export type SchemaTopicSummaryStatus = components['schemas']['TopicSummaryStatus'];
 export type SchemaUpdateRoleIn = components['schemas']['UpdateRoleIn'];
 export type SchemaUserOut = components['schemas']['UserOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
@@ -2805,6 +2867,37 @@ export interface operations {
             };
         };
     };
+    get_topic_summary_ml_api_stats_topics__topic__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topic: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicSummaryStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }
 export enum ChatStatus {
     ai = "ai",
@@ -2845,4 +2938,10 @@ export enum SenderType {
     operator = "operator",
     support = "support",
     system = "system"
+}
+export enum TopicSummaryStatusStatus {
+    ready = "ready",
+    outdated = "outdated",
+    pending = "pending",
+    none = "none"
 }

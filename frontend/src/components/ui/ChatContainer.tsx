@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, ty
 import ChatDateDivider from '@/components/ui/ChatDateDivider'
 import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
+import ChatRatingCard from '@/components/ui/ChatRatingCard'
 import ChatRedirectDivider from '@/components/ui/ChatRedirectDivider'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import RatingInput from '@/components/ui/RatingInput'
@@ -12,6 +13,7 @@ import { extractContracts, withContractHeader } from '@/lib/contracts'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
+import type { SchemaRatingOut } from '@/api/types'
 import type { MessageView } from '@/lib/chat-view'
 
 interface ChatContainerProps {
@@ -33,6 +35,11 @@ interface ChatContainerProps {
    * receives the assistant reply and the user question it answers.
    */
   onCreateRule?: (assistantText: string, userText: string) => void
+  /**
+   * The chat's rating. Rendered inline in the timeline at the moment it was
+   * left, so it reads as part of the conversation rather than as a header.
+   */
+  rating?: SchemaRatingOut | null
   /** Short status shown while the assistant runs a tool (searching, reading…). */
   toolStatus?: string | null
   className?: string
@@ -80,6 +87,26 @@ function precedingUserMessage(messages: MessageView[], index: number): string | 
   return null
 }
 
+/**
+ * Whether the rating card belongs directly after the message at `index`: true
+ * for the last message created at or before the rating's `updated_at`.
+ *
+ * When the rating predates every message (or has an unparseable timestamp), the
+ * card falls back to after the first message so it still appears.
+ */
+function shouldShowRatingAfter(messages: MessageView[], index: number, rating?: SchemaRatingOut | null): boolean {
+  if (!rating) return false
+  const ratingTime = new Date(rating.updated_at).getTime()
+  if (Number.isNaN(ratingTime)) return index === messages.length - 1
+
+  const current = new Date(messages[index].createdAt).getTime()
+  const next = index + 1 < messages.length ? new Date(messages[index + 1].createdAt).getTime() : null
+
+  if (current <= ratingTime) return next === null || next > ratingTime
+  // Older than every message: keep the card in the timeline anyway.
+  return index === 0
+}
+
 /** Slash-commands offered near the composer's send button. */
 const COMMANDS: ChatCommand[] = [
   {
@@ -92,7 +119,7 @@ const COMMANDS: ChatCommand[] = [
   },
 ]
 
-export default function ChatContainer({ messages, onSend, onRate, disabled = false, disabledPlaceholder, readOnly = false, onCreateRule, toolStatus, className }: ChatContainerProps) {
+export default function ChatContainer({ messages, onSend, onRate, disabled = false, disabledPlaceholder, readOnly = false, onCreateRule, rating, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const [showRating, setShowRating] = useState(false)
   const [ratingComment, setRatingComment] = useState('')
@@ -181,6 +208,8 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
             // Insert a Telegram-style date divider whenever the calendar day
             // changes between consecutive messages.
             const showDate = index === 0 || dayKey(message.createdAt) !== dayKey(messages[index - 1].createdAt)
+            // Place the rating card right after the message it followed.
+            const showRating = shouldShowRatingAfter(messages, index, rating)
             return (
               <Fragment key={message.id}>
                 {showDate && <ChatDateDivider label={formatDateSeparator(message.createdAt)} />}
@@ -202,6 +231,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
                     }
                   />
                 )}
+                {showRating && rating && <ChatRatingCard rating={rating} />}
               </Fragment>
             )
           })
