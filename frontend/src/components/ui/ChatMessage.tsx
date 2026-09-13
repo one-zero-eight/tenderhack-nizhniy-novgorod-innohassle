@@ -1,6 +1,7 @@
 import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
 import { FaPencil } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
+import { resolveAssetSrc } from '@/lib/assets'
 import { formatTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
 import { SenderType } from '@/api/types'
@@ -54,6 +55,20 @@ const components = {
   h1: (props: ElementProps<'h1'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
   h2: (props: ElementProps<'h2'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
   h3: (props: ElementProps<'h3'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
+  img: (props: ElementProps<'img'>) => {
+    const { src, alt, ...rest } = withoutNode(props)
+    return (
+      // Images are served by the API origin, so the `/ml-assets/...` path has to
+      // be rewritten before the browser resolves it.
+      <img
+        {...rest}
+        src={resolveAssetSrc(src ?? '')}
+        alt={alt ?? ''}
+        loading="lazy"
+        className="border-gray-blue my-2 block h-auto max-w-full rounded border bg-white"
+      />
+    )
+  },
 } satisfies MarkdownComponents
 
 export default function ChatMessage({ message, isParticipant = true, onCreateRule, className }: ChatMessageProps) {

@@ -7,6 +7,7 @@
  */
 
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? '/api'
+export { resolveAssetSrc as resolveKnowledgeSrc } from '@/lib/assets'
 
 /** Base for the knowledge-base endpoints, independent of the `/api` prefix. */
 const KNOWLEDGE_BASE = `${API_ORIGIN}/ml-api/knowledge-base`
@@ -87,17 +88,6 @@ export function fetchSection(slug: string, sectionId: string): Promise<SectionCo
 /** Absolute URL for an image referenced by manual content. */
 export function knowledgeAssetUrl(slug: string, filename: string): string {
   return `${API_ORIGIN}/ml-assets/image/${encodeURIComponent(slug)}/${encodeURIComponent(filename)}`
-}
-
-/**
- * Rewrites asset paths from the ML API (`/ml-assets/…`) so they hit the
- * backend through the frontend's API origin (`/api/ml-assets/…` by default).
- */
-export function resolveKnowledgeSrc(src: string): string {
-  if (src.startsWith('/ml-assets/')) {
-    return `${API_ORIGIN}${src}`
-  }
-  return src
 }
 
 /** Word private-use bullets left over from PDF/DOCX conversion. */

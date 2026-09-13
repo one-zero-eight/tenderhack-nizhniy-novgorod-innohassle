@@ -23,13 +23,13 @@ export interface TopicSummary {
   /** Distinct subtopics within the topic. */
   subtopicCount: number
   /**
-   * Average time to answer, in milliseconds. `null` until the backend exposes
-   * response timings.
+   * Average time to answer across the topic's chats, in seconds. `null` when no
+   * chat in the topic reports a timing.
    */
-  averageAnswerMs: number | null
+  averageAnswerSeconds: number | null
 }
 
-/** Groups chats by topic and computes per-topic counts. */
+/** Groups chats by topic and computes per-topic counts and averages. */
 export function summarizeTopics(chats: SchemaChatOut[]): TopicSummary[] {
   const byTopic = new Map<string, { chats: SchemaChatOut[]; subtopics: Set<string> }>()
 
@@ -46,14 +46,23 @@ export function summarizeTopics(chats: SchemaChatOut[]): TopicSummary[] {
       topic,
       chatCount: entry.chats.length,
       subtopicCount: entry.subtopics.size,
-      // Not tracked by the backend yet.
-      averageAnswerMs: null,
+      averageAnswerSeconds: averageTurnSeconds(entry.chats),
     }))
     .sort((a, b) => {
       if (a.topic === NO_TOPIC) return 1
       if (b.topic === NO_TOPIC) return -1
       return a.topic.localeCompare(b.topic, 'ru')
     })
+}
+
+/**
+ * Mean `avg_turn_seconds` across chats that report one. Returns `null` when
+ * none do, so topics without data sort to the bottom instead of showing 0.
+ */
+export function averageTurnSeconds(chats: SchemaChatOut[]): number | null {
+  const values = chats.map((chat) => chat.avg_turn_seconds).filter((value): value is number => typeof value === 'number')
+  if (values.length === 0) return null
+  return values.reduce((total, value) => total + value, 0) / values.length
 }
 
 export interface SubtopicSummary {

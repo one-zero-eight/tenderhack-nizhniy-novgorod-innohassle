@@ -626,6 +626,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ml-api/handrules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Список правил
+         * @description Возвращает все правила-подсказки, свежие сверху.
+         *
+         *     Перед каждым ходом агента по вопросу пользователя ищутся до трёх ближайших правил (гибридный поиск: эмбеддинги + BM25), и их instructions уходят в системный промпт этого хода.
+         */
+        get: operations["list_handrules_ml_api_handrules_get"];
+        put?: never;
+        /**
+         * Создать правило
+         * @description Создаёт правило вида {'user_message': ..., 'instructions': ...}.
+         *
+         *     user_message — пример вопроса пользователя (по нему идёт поиск), instructions — что агенту делать в этом случае. После создания правило сразу участвует в поиске: индекс пересобирается лениво.
+         */
+        post: operations["create_handrule_ml_api_handrules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ml-api/handrules/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Проверить, какие правила подходят к вопросу
+         * @description Сухой прогон поиска: возвращает правила, которые агент получил бы на такой вопрос, в порядке убывания релевантности. Нужен, чтобы проверить правило до того, как на него ответит живой агент.
+         *
+         *     Объявлено перед /handrules/{rule_id} намеренно: иначе FastAPI принял бы search за идентификатор правила.
+         */
+        get: operations["search_handrules_ml_api_handrules_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ml-api/handrules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Одно правило
+         * @description Возвращает правило по id.
+         */
+        get: operations["get_handrule_ml_api_handrules__rule_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Удалить правило
+         * @description Удаляет правило. После удаления оно больше не попадает в контекст агента.
+         */
+        delete: operations["delete_handrule_ml_api_handrules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Изменить правило
+         * @description Частично обновляет правило: переданные поля заменяются, остальные остаются как были. Пустая строка в любом из полей — ошибка.
+         */
+        patch: operations["update_handrule_ml_api_handrules__rule_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -759,6 +837,8 @@ export interface components {
             topic?: string | null;
             /** Subtopic */
             subtopic?: string | null;
+            /** Avg Turn Seconds */
+            avg_turn_seconds?: number | null;
             rating?: components["schemas"]["RatingOut"] | null;
         };
         /** ChatPage */
@@ -910,6 +990,64 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HandRule */
+        HandRule: {
+            /**
+             * Id
+             * @description Идентификатор правила, нужен для правки и удаления
+             */
+            id: string;
+            /**
+             * User Message
+             * @description Пример вопроса пользователя, по которому правило ищется. Пишите его так, как пишут пользователи — поиск сравнивает формулировки
+             * @example Не могу открыть страницу портала закупок, мне возвращают ошибку 500
+             */
+            user_message: string;
+            /**
+             * Instructions
+             * @description Что агенту делать в таком случае. Правило перебивает общие указания промпта
+             * @example Не перенаправляй в поддержку: скажи, что мы уже работаем над проблемой, и попроси зайти позже
+             */
+            instructions: string;
+            /**
+             * Created At
+             * @description Время создания, ISO 8601
+             */
+            created_at?: string | null;
+            /**
+             * Updated At
+             * @description Время последнего изменения, ISO 8601
+             */
+            updated_at?: string | null;
+        };
+        /** HandRuleIn */
+        HandRuleIn: {
+            /**
+             * User Message
+             * @description Пример вопроса пользователя
+             * @example Не могу открыть страницу портала закупок, мне возвращают ошибку 500
+             */
+            user_message: string;
+            /**
+             * Instructions
+             * @description Инструкция агенту на такой вопрос
+             * @example Не перенаправляй в поддержку, скажи что мы уже работаем над проблемой
+             */
+            instructions: string;
+        };
+        /** HandRulePatch */
+        HandRulePatch: {
+            /**
+             * User Message
+             * @description Пример вопроса пользователя
+             */
+            user_message?: string | null;
+            /**
+             * Instructions
+             * @description Инструкция агенту на такой вопрос
+             */
+            instructions?: string | null;
+        };
         /** LoginIn */
         LoginIn: {
             /** Login */
@@ -961,6 +1099,8 @@ export interface components {
              * @default false
              */
             is_redacted: boolean;
+            /** Duration Ms */
+            duration_ms?: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1278,6 +1418,9 @@ export type SchemaContractPartiesOut = components['schemas']['ContractPartiesOut
 export type SchemaDocumentCreateIn = components['schemas']['DocumentCreateIn'];
 export type SchemaDocumentOut = components['schemas']['DocumentOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaHandRule = components['schemas']['HandRule'];
+export type SchemaHandRuleIn = components['schemas']['HandRuleIn'];
+export type SchemaHandRulePatch = components['schemas']['HandRulePatch'];
 export type SchemaLoginIn = components['schemas']['LoginIn'];
 export type SchemaMessageIn = components['schemas']['MessageIn'];
 export type SchemaMessageOut = components['schemas']['MessageOut'];
@@ -2449,6 +2592,200 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_handrules_ml_api_handrules_get: {
+        parameters: {
+            query?: {
+                /** @description Сколько правил вернуть максимум */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandRule"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_handrule_ml_api_handrules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandRuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_handrules_ml_api_handrules_search_get: {
+        parameters: {
+            query: {
+                /** @description Вопрос пользователя */
+                q: string;
+                /** @description Сколько правил вернуть */
+                k?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandRule"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_handrule_ml_api_handrules__rule_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_handrule_ml_api_handrules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_handrule_ml_api_handrules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandRulePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

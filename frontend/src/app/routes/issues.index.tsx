@@ -14,14 +14,15 @@ export const Route = createFileRoute('/issues/')({
 })
 
 /** Sortable columns of the topics table. */
-type SortKey = 'chatCount' | 'averageAnswerMs'
+type SortKey = 'chatCount' | 'averageAnswerSeconds'
 type SortDirection = 'asc' | 'desc'
 
-/** Formats the average time to answer, or a placeholder when unavailable. */
-function formatAverageAnswer(ms: number | null): string {
-  if (ms === null) return '—'
-  const minutes = Math.round(ms / 60000)
-  return minutes < 60 ? `${minutes} мин` : `${(minutes / 60).toFixed(1)} ч`
+/** Formats an average answer time given in seconds. */
+function formatAverageAnswer(seconds: number | null): string {
+  if (seconds === null) return '—'
+  if (seconds < 60) return `${Math.round(seconds)} сек`
+  const minutes = seconds / 60
+  return minutes < 60 ? `${minutes.toFixed(1)} мин` : `${(minutes / 60).toFixed(1)} ч`
 }
 
 
@@ -88,7 +89,7 @@ function TopicRow({ summary }: { summary: TopicSummary }) {
       <span className="text-pale-black text-sm">
         {summary.chatCount}
       </span>
-      <span className="text-gray text-sm">{formatAverageAnswer(summary.averageAnswerMs)}</span>
+      <span className="text-gray text-sm">{formatAverageAnswer(summary.averageAnswerSeconds)}</span>
       <FaChevronRight className="text-gray size-4 justify-self-end" />
     </Link>
   )
@@ -141,7 +142,7 @@ function IssuesPage() {
             <SortableHeader label="Обращений" sortKey="chatCount" activeKey={sortKey} direction={direction} onSort={handleSort} />
             <SortableHeader
               label="Среднее время ответа"
-              sortKey="averageAnswerMs"
+              sortKey="averageAnswerSeconds"
               activeKey={sortKey}
               direction={direction}
               onSort={handleSort}
