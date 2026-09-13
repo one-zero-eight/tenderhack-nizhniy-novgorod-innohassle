@@ -1,0 +1,672 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_SupplierSupport" name="BPMN-схема проекта ИИ-ассистента чата поддержки портала поставщиков" targetNamespace="https://tenderhack.local/bpmn/support">
+  <bpmn:documentation>Визуальная транскрипция docs/bpmn.jpg. Сохранены подписи, расположение и направления связей исходной схемы. Модель предназначена для документирования, а не исполнения; особенности оригинала описаны в bpmn.md.</bpmn:documentation>
+  <bpmn:collaboration id="Collaboration_Support">
+    <bpmn:participant id="Participant_Support" name="Чат поддержки портала поставщиков" processRef="Process_Support" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Support" name="BPMN-схема проекта ИИ-ассистента чата поддержки портала поставщиков" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Support">
+      <bpmn:lane id="Lane_User" name="Пользователь">
+        <bpmn:flowNodeRef>Start_Chat</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Question</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_AIAnswer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_MoreQuestions</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Rate</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_AI" name="ИИ-помощник">
+        <bpmn:flowNodeRef>Task_AnalyzeMessage</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Profanity</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Moderation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Context</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Search</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Relevant</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AIAnswer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Handoff</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Save</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Chat</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_L1" name="Техподдержка&#10;1-й линии">
+        <bpmn:flowNodeRef>Task_L1Accept</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_L1Resolve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_L1Answer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_L2Handoff</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_L2" name="Техподдержка&#10;2-й линии">
+        <bpmn:flowNodeRef>Task_L2Accept</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_L2Resolve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_L2Answer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_L3Handoff</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_L3" name="Техподдержка&#10;3-й линии">
+        <bpmn:flowNodeRef>Task_L3Accept</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_L3Resolve</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Admin" name="Администратор">
+        <bpmn:flowNodeRef>Start_Audit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Review</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Problems</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Audit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AnalyzeProblems</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CorrectAnswer</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_Chat" name="Начало&#10;чата">
+      <bpmn:outgoing>Flow_StartQuestion</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Question" name="Сформулировать вопрос&#10;и при необходимости&#10;прикрепить файлы, прошлые чаты&#10;и сущности портала&#10;(закупки, предложения,&#10;контракты, документы)">
+      <bpmn:incoming>Flow_StartQuestion</bpmn:incoming>
+      <bpmn:outgoing>Flow_Submit</bpmn:outgoing>
+      <bpmn:incoming>Flow_MoreYes</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_AIAnswer" name="Ответ ИИ&#10;устраивает?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_ReviewAIAnswer</bpmn:incoming>
+      <bpmn:incoming>Flow_HandoffReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_AnotherQuestion</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Gateway_MoreQuestions" name="Есть ещё&#10;вопрос?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_AnotherQuestion</bpmn:incoming>
+      <bpmn:outgoing>Flow_MoreYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_MoreNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Rate" name="Оставить оценку&#10;собеседнику">
+      <bpmn:incoming>Flow_MoreNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_RateSave</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_AnalyzeMessage" name="Принять и&#10;проанализировать&#10;сообщение">
+      <bpmn:incoming>Flow_Submit</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckProfanity</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Profanity" name="Есть&#10;нецензурная&#10;лексика?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_CheckProfanity</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProfanityYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ProfanityNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_Moderation" name="Чат завершён:&#10;нарушение политики">
+      <bpmn:incoming>Flow_ProfanityYes</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Context" name="Обработать&#10;вложения&#10;и контекст">
+      <bpmn:incoming>Flow_ProfanityNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_Search</bpmn:outgoing>
+      <bpmn:ioSpecification id="IO_Task_Context">
+        <bpmn:dataInput id="Input_PreviousChats" />
+        <bpmn:dataInput id="Input_Attachments" />
+        <bpmn:inputSet id="InputSet_Task_Context">
+          <bpmn:dataInputRefs>Input_Attachments</bpmn:dataInputRefs>
+          <bpmn:dataInputRefs>Input_PreviousChats</bpmn:dataInputRefs>
+        </bpmn:inputSet>
+        <bpmn:outputSet id="OutputSet_Task_Context" />
+      </bpmn:ioSpecification>
+      <bpmn:dataInputAssociation id="DataFlow_Attachments">
+        <bpmn:sourceRef>DataRef_Attachments</bpmn:sourceRef>
+        <bpmn:targetRef>Input_Attachments</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:dataInputAssociation id="DataFlow_PreviousChats">
+        <bpmn:sourceRef>DataRef_PreviousChats</bpmn:sourceRef>
+        <bpmn:targetRef>Input_PreviousChats</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+    </bpmn:task>
+    <bpmn:task id="Task_Search" name="Найти ответ&#10;в базе знаний">
+      <bpmn:incoming>Flow_Search</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckRelevance</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Relevant" name="Найдена&#10;релевантная&#10;информация?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_CheckRelevance</bpmn:incoming>
+      <bpmn:outgoing>Flow_RelevantYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_RelevantNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_AIAnswer" name="Сформировать ответ&#10;и добавить ссылки&#10;на разделы базы знаний">
+      <bpmn:incoming>Flow_RelevantYes</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReviewAIAnswer</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Handoff" name="Передать чат&#10;1-й линии">
+      <bpmn:incoming>Flow_RelevantNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_HandoffReview</bpmn:outgoing>
+      <bpmn:outgoing>Flow_HandoffL1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Save" name="Сохранить статус чата,&#10;время ответа и оценку">
+      <bpmn:incoming>Flow_RateSave</bpmn:incoming>
+      <bpmn:outgoing>Flow_ChatComplete</bpmn:outgoing>
+      <bpmn:incoming>Flow_L1Save</bpmn:incoming>
+      <bpmn:incoming>Flow_L2Save</bpmn:incoming>
+      <bpmn:incoming>Flow_L3Save</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Chat" name="Чат завершён">
+      <bpmn:incoming>Flow_ChatComplete</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_L1Accept" name="Принять&#10;обращение">
+      <bpmn:incoming>Flow_HandoffL1</bpmn:incoming>
+      <bpmn:outgoing>Flow_L1Check</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_L1Resolve" name="Может&#10;решить?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_L1Check</bpmn:incoming>
+      <bpmn:outgoing>Flow_L1Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_L1No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_L1Answer" name="Ответить&#10;пользователю">
+      <bpmn:incoming>Flow_L1Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_L1Save</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_L2Handoff" name="Переадресовать&#10;2-й линии">
+      <bpmn:incoming>Flow_L1No</bpmn:incoming>
+      <bpmn:outgoing>Flow_EscalateL2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_L2Accept" name="Принять&#10;обращение">
+      <bpmn:outgoing>Flow_L2Check</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_L2Resolve" name="Может&#10;решить?" gatewayDirection="Unspecified">
+      <bpmn:incoming>Flow_EscalateL2</bpmn:incoming>
+      <bpmn:incoming>Flow_L2Check</bpmn:incoming>
+      <bpmn:outgoing>Flow_L2Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_L2No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_L2Answer" name="Ответить&#10;пользователю">
+      <bpmn:incoming>Flow_L2Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_L2Save</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_L3Handoff" name="Переадресовать&#10;3-й линии">
+      <bpmn:incoming>Flow_L2No</bpmn:incoming>
+      <bpmn:outgoing>Flow_EscalateL3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_L3Accept" name="Принять&#10;обращение">
+      <bpmn:outgoing>Flow_L3Accept</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_L3Resolve" name="Решить обращение&#10;и ответить&#10;пользователю">
+      <bpmn:incoming>Flow_EscalateL3</bpmn:incoming>
+      <bpmn:incoming>Flow_L3Accept</bpmn:incoming>
+      <bpmn:outgoing>Flow_L3Save</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:startEvent id="Start_Audit" name="Периодический&#10;контроль">
+      <bpmn:outgoing>Flow_AuditReview</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="Timer_Audit" />
+    </bpmn:startEvent>
+    <bpmn:task id="Task_Review" name="Просматривать чаты,&#10;статусы, время ответа&#10;и оценки">
+      <bpmn:incoming>Flow_AuditReview</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Problems" name="Есть низко оценённые&#10;темы / частые&#10;проблемы?" gatewayDirection="Unspecified">
+      <bpmn:outgoing>Flow_NoProblems</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_Audit" name="Конец">
+      <bpmn:incoming>Flow_NoProblems</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_AnalyzeProblems" name="Проанализировать&#10;проблемные темы">
+      <bpmn:outgoing>Flow_CorrectAnswer</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_CorrectAnswer" name="Внести правильный&#10;ответ в систему">
+      <bpmn:incoming>Flow_CorrectAnswer</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_StartQuestion" sourceRef="Start_Chat" targetRef="Task_Question" />
+    <bpmn:sequenceFlow id="Flow_Submit" sourceRef="Task_Question" targetRef="Task_AnalyzeMessage" />
+    <bpmn:sequenceFlow id="Flow_CheckProfanity" sourceRef="Task_AnalyzeMessage" targetRef="Gateway_Profanity" />
+    <bpmn:sequenceFlow id="Flow_ProfanityYes" sourceRef="Gateway_Profanity" targetRef="End_Moderation" name="Да" />
+    <bpmn:sequenceFlow id="Flow_ProfanityNo" sourceRef="Gateway_Profanity" targetRef="Task_Context" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_Search" sourceRef="Task_Context" targetRef="Task_Search" />
+    <bpmn:sequenceFlow id="Flow_CheckRelevance" sourceRef="Task_Search" targetRef="Gateway_Relevant" />
+    <bpmn:sequenceFlow id="Flow_RelevantYes" sourceRef="Gateway_Relevant" targetRef="Task_AIAnswer" name="Да" />
+    <bpmn:sequenceFlow id="Flow_RelevantNo" sourceRef="Gateway_Relevant" targetRef="Task_Handoff" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_ReviewAIAnswer" sourceRef="Task_AIAnswer" targetRef="Gateway_AIAnswer" />
+    <bpmn:sequenceFlow id="Flow_HandoffReview" sourceRef="Task_Handoff" targetRef="Gateway_AIAnswer" />
+    <bpmn:sequenceFlow id="Flow_AnotherQuestion" sourceRef="Gateway_AIAnswer" targetRef="Gateway_MoreQuestions" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_MoreYes" sourceRef="Gateway_MoreQuestions" targetRef="Task_Question" name="Да" />
+    <bpmn:sequenceFlow id="Flow_MoreNo" sourceRef="Gateway_MoreQuestions" targetRef="Task_Rate" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_RateSave" sourceRef="Task_Rate" targetRef="Task_Save" />
+    <bpmn:sequenceFlow id="Flow_ChatComplete" sourceRef="Task_Save" targetRef="End_Chat" />
+    <bpmn:sequenceFlow id="Flow_HandoffL1" sourceRef="Task_Handoff" targetRef="Task_L1Accept" />
+    <bpmn:sequenceFlow id="Flow_L1Check" sourceRef="Task_L1Accept" targetRef="Gateway_L1Resolve" />
+    <bpmn:sequenceFlow id="Flow_L1Yes" sourceRef="Gateway_L1Resolve" targetRef="Task_L1Answer" name="Да" />
+    <bpmn:sequenceFlow id="Flow_L1No" sourceRef="Gateway_L1Resolve" targetRef="Task_L2Handoff" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_L1Save" sourceRef="Task_L1Answer" targetRef="Task_Save" />
+    <bpmn:sequenceFlow id="Flow_EscalateL2" sourceRef="Task_L2Handoff" targetRef="Gateway_L2Resolve" />
+    <bpmn:sequenceFlow id="Flow_L2Check" sourceRef="Task_L2Accept" targetRef="Gateway_L2Resolve" />
+    <bpmn:sequenceFlow id="Flow_L2Yes" sourceRef="Gateway_L2Resolve" targetRef="Task_L2Answer" name="Да" />
+    <bpmn:sequenceFlow id="Flow_L2No" sourceRef="Gateway_L2Resolve" targetRef="Task_L3Handoff" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_L2Save" sourceRef="Task_L2Answer" targetRef="Task_Save" />
+    <bpmn:sequenceFlow id="Flow_EscalateL3" sourceRef="Task_L3Handoff" targetRef="Task_L3Resolve" />
+    <bpmn:sequenceFlow id="Flow_L3Accept" sourceRef="Task_L3Accept" targetRef="Task_L3Resolve" />
+    <bpmn:sequenceFlow id="Flow_L3Save" sourceRef="Task_L3Resolve" targetRef="Task_Save" />
+    <bpmn:sequenceFlow id="Flow_AuditReview" sourceRef="Start_Audit" targetRef="Task_Review" />
+    <bpmn:sequenceFlow id="Flow_NoProblems" sourceRef="Gateway_Problems" targetRef="End_Audit" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_CorrectAnswer" sourceRef="Task_AnalyzeProblems" targetRef="Task_CorrectAnswer" />
+    <bpmn:dataObject id="Data_Attachments" />
+    <bpmn:dataObjectReference id="DataRef_Attachments" name="Вложения" dataObjectRef="Data_Attachments" />
+    <bpmn:dataObject id="Data_PreviousChats" />
+    <bpmn:dataObjectReference id="DataRef_PreviousChats" name="Прошлые&#10;чаты" dataObjectRef="Data_PreviousChats" />
+    <bpmn:dataObject id="Data_PortalEntities" />
+    <bpmn:dataObjectReference id="DataRef_PortalEntities" name="Сущности&#10;портала" dataObjectRef="Data_PortalEntities" />
+    <bpmn:dataStoreReference id="StoreRef_Knowledge" name="База знаний:&#10;PDF-файлы + сайт&#10;портала поставщиков" dataStoreRef="Store_Knowledge" />
+    <bpmn:dataStoreReference id="StoreRef_ChatLog" name="Журнал чатов /&#10;статусы / SLA / оценки" dataStoreRef="Store_ChatLog" />
+    <bpmn:dataStoreReference id="StoreRef_AdminLog" name="Журнал чатов /&#10;статусы / SLA / оценки" dataStoreRef="Store_ChatLog" />
+    <bpmn:association id="Association_PortalEntities" sourceRef="Task_Context" targetRef="DataRef_PortalEntities" associationDirection="Both" />
+    <bpmn:association id="Association_SearchKnowledge" sourceRef="Task_Search" targetRef="StoreRef_Knowledge" associationDirection="Both" />
+    <bpmn:association id="Association_SaveLog" sourceRef="Task_Save" targetRef="StoreRef_ChatLog" associationDirection="Both" />
+    <bpmn:association id="Association_ReadLog" sourceRef="StoreRef_ChatLog" targetRef="Task_Save" associationDirection="One" />
+    <bpmn:association id="Association_ReviewLog" sourceRef="Task_Review" targetRef="StoreRef_AdminLog" associationDirection="Both" />
+    <bpmn:association id="Association_LogProblems" sourceRef="StoreRef_AdminLog" targetRef="Gateway_Problems" associationDirection="One" />
+    <bpmn:association id="Association_AuditFollowup" sourceRef="End_Audit" targetRef="Task_AnalyzeProblems" associationDirection="One" />
+    <bpmn:association id="Association_CorrectionLog" sourceRef="Task_CorrectAnswer" targetRef="StoreRef_ChatLog" associationDirection="Both" />
+    <bpmn:association id="Association_LogCorrection" sourceRef="StoreRef_ChatLog" targetRef="Task_CorrectAnswer" associationDirection="Both" />
+  </bpmn:process>
+  <bpmn:dataStore id="Store_Knowledge" name="База знаний" isUnlimited="true" />
+  <bpmn:dataStore id="Store_ChatLog" name="Журнал чатов / статусы / SLA / оценки" isUnlimited="true" />
+  <bpmndi:BPMNDiagram id="Diagram_Support" name="BPMN-схема проекта ИИ-ассистента чата поддержки портала поставщиков">
+    <bpmndi:BPMNPlane id="Plane_Support" bpmnElement="Collaboration_Support">
+      <bpmndi:BPMNShape id="Participant_Support_di" bpmnElement="Participant_Support" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="10.5" y="61.5" width="1902" height="1005" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_User_di" bpmnElement="Lane_User" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="61.5" width="1866" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_AI_di" bpmnElement="Lane_AI" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="241.5" width="1866" height="229.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_L1_di" bpmnElement="Lane_L1" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="471" width="1866" height="153" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_L2_di" bpmnElement="Lane_L2" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="624" width="1866" height="159" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_L3_di" bpmnElement="Lane_L3" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="783" width="1866" height="130.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Admin_di" bpmnElement="Lane_Admin" bioc:fill="#ffffff" bioc:stroke="#7f8792" isHorizontal="true">
+        <dc:Bounds x="46.5" y="913.5" width="1866" height="153" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Chat_di" bpmnElement="Start_Chat" bioc:fill="#edf6df" bioc:stroke="#356b3e">
+        <dc:Bounds x="207" y="111" width="39" height="39" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="189" y="157.5" width="78" height="39" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Question_di" bpmnElement="Task_Question" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="298.5" y="85.5" width="246" height="112.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_AIAnswer_di" bpmnElement="Gateway_AIAnswer" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="1440" y="145.5" width="46.5" height="46.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1410" y="99" width="108" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_MoreQuestions_di" bpmnElement="Gateway_MoreQuestions" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="1582.5" y="145.5" width="46.5" height="46.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1552.5" y="99" width="111" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Rate_di" bpmnElement="Task_Rate" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1744.5" y="117" width="144" height="66" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnalyzeMessage_di" bpmnElement="Task_AnalyzeMessage" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="339" y="282" width="160.5" height="81" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Profanity_di" bpmnElement="Gateway_Profanity" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="553.5" y="318" width="43.5" height="43.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="520.5" y="267" width="111" height="51" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Moderation_di" bpmnElement="End_Moderation" bioc:fill="#fff0ee" bioc:stroke="#ad2334">
+        <dc:Bounds x="555" y="406.5" width="40.5" height="40.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="607.5" y="411" width="159" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Context_di" bpmnElement="Task_Context" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="706.5" y="291" width="148.5" height="73.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Search_di" bpmnElement="Task_Search" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="909" y="291" width="129" height="73.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Relevant_di" bpmnElement="Gateway_Relevant" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="1096.5" y="327" width="46.5" height="46.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1062" y="271.5" width="117" height="51" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AIAnswer_di" bpmnElement="Task_AIAnswer" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1237.5" y="286.5" width="187.5" height="79.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Handoff_di" bpmnElement="Task_Handoff" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1264.5" y="396" width="148.5" height="57" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Save_di" bpmnElement="Task_Save" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1704" y="273" width="184.5" height="72" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Chat_di" bpmnElement="End_Chat" bioc:fill="#fff0ee" bioc:stroke="#ad2334">
+        <dc:Bounds x="1815" y="385.5" width="39" height="39" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1768.5" y="432" width="136.5" height="24" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L1Accept_di" bpmnElement="Task_L1Accept" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1159.5" y="499.5" width="133.5" height="55.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_L1Resolve_di" bpmnElement="Gateway_L1Resolve" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="1374" y="505.5" width="43.5" height="43.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1354.5" y="477" width="84" height="36" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L1Answer_di" bpmnElement="Task_L1Answer" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1483.5" y="499.5" width="129" height="55.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L2Handoff_di" bpmnElement="Task_L2Handoff" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1321.5" y="570" width="148.5" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L2Accept_di" bpmnElement="Task_L2Accept" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1159.5" y="652.5" width="133.5" height="57" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_L2Resolve_di" bpmnElement="Gateway_L2Resolve" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="1374" y="673.5" width="43.5" height="43.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1354.5" y="639" width="84" height="36" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L2Answer_di" bpmnElement="Task_L2Answer" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1483.5" y="652.5" width="129" height="57" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L3Handoff_di" bpmnElement="Task_L3Handoff" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1321.5" y="730.5" width="148.5" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L3Accept_di" bpmnElement="Task_L3Accept" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1159.5" y="817.5" width="130.5" height="63" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_L3Resolve_di" bpmnElement="Task_L3Resolve" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1344" y="814.5" width="183" height="70.5" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Audit_di" bpmnElement="Start_Audit" bioc:fill="#edf6df" bioc:stroke="#356b3e">
+        <dc:Bounds x="211.5" y="961.5" width="43.5" height="43.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="172.5" y="1011" width="127.5" height="40.5" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Review_di" bpmnElement="Task_Review" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="313.5" y="951" width="180" height="75" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Problems_di" bpmnElement="Gateway_Problems" bioc:fill="#ffffff" bioc:stroke="#40464b" isMarkerVisible="false">
+        <dc:Bounds x="823.5" y="985.5" width="45" height="45" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="756" y="936" width="180" height="51" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Audit_di" bpmnElement="End_Audit" bioc:fill="#fff0ee" bioc:stroke="#ad2334">
+        <dc:Bounds x="966" y="967.5" width="43.5" height="43.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="948" y="1024.5" width="81" height="24" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnalyzeProblems_di" bpmnElement="Task_AnalyzeProblems" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1095" y="951" width="156" height="75" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CorrectAnswer_di" bpmnElement="Task_CorrectAnswer" bioc:fill="#e7f1fa" bioc:stroke="#527d96">
+        <dc:Bounds x="1306.5" y="951" width="163.5" height="75" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataRef_Attachments_di" bpmnElement="DataRef_Attachments" bioc:fill="#ffffff" bioc:stroke="#4d4d4d">
+        <dc:Bounds x="720" y="153" width="31.5" height="45" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="691.5" y="202.5" width="90" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataRef_PreviousChats_di" bpmnElement="DataRef_PreviousChats" bioc:fill="#ffffff" bioc:stroke="#4d4d4d">
+        <dc:Bounds x="796.5" y="153" width="33" height="45" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="771" y="202.5" width="85.5" height="37.5" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataRef_PortalEntities_di" bpmnElement="DataRef_PortalEntities" bioc:fill="#ffffff" bioc:stroke="#4d4d4d">
+        <dc:Bounds x="874.5" y="153" width="31.5" height="45" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="849" y="202.5" width="85.5" height="37.5" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StoreRef_Knowledge_di" bpmnElement="StoreRef_Knowledge" bioc:fill="#e4e4e4" bioc:stroke="#454545">
+        <dc:Bounds x="972" y="135" width="52.5" height="52.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1033.5" y="135" width="174" height="52.5" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StoreRef_ChatLog_di" bpmnElement="StoreRef_ChatLog" bioc:fill="#e4e4e4" bioc:stroke="#454545">
+        <dc:Bounds x="1704" y="859.5" width="51" height="60" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1756.5" y="868.5" width="151.5" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StoreRef_AdminLog_di" bpmnElement="StoreRef_AdminLog" bioc:fill="#e4e4e4" bioc:stroke="#454545">
+        <dc:Bounds x="582" y="954" width="123" height="73.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="585" y="976.5" width="117" height="46.5" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_StartQuestion_di" bpmnElement="Flow_StartQuestion" bioc:stroke="#292d31">
+        <di:waypoint x="246" y="130.5" />
+        <di:waypoint x="298.5" y="130.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Submit_di" bpmnElement="Flow_Submit" bioc:stroke="#292d31">
+        <di:waypoint x="421.5" y="198" />
+        <di:waypoint x="421.5" y="282" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CheckProfanity_di" bpmnElement="Flow_CheckProfanity" bioc:stroke="#292d31">
+        <di:waypoint x="499.5" y="339.75" />
+        <di:waypoint x="553.5" y="339.75" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProfanityYes_di" bpmnElement="Flow_ProfanityYes" bioc:stroke="#292d31">
+        <di:waypoint x="575.25" y="361.5" />
+        <di:waypoint x="575.25" y="406.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="580.5" y="369" width="30" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProfanityNo_di" bpmnElement="Flow_ProfanityNo" bioc:stroke="#292d31">
+        <di:waypoint x="597" y="339.75" />
+        <di:waypoint x="706.5" y="339.75" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="634.5" y="310.5" width="40.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Search_di" bpmnElement="Flow_Search" bioc:stroke="#292d31">
+        <di:waypoint x="855" y="327.75" />
+        <di:waypoint x="909" y="327.75" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CheckRelevance_di" bpmnElement="Flow_CheckRelevance" bioc:stroke="#292d31">
+        <di:waypoint x="1038" y="350.25" />
+        <di:waypoint x="1096.5" y="350.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RelevantYes_di" bpmnElement="Flow_RelevantYes" bioc:stroke="#292d31">
+        <di:waypoint x="1143" y="350.25" />
+        <di:waypoint x="1183.5" y="350.25" />
+        <di:waypoint x="1183.5" y="326.25" />
+        <di:waypoint x="1237.5" y="326.25" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1191" y="303" width="30" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RelevantNo_di" bpmnElement="Flow_RelevantNo" bioc:stroke="#292d31">
+        <di:waypoint x="1119.75" y="373.5" />
+        <di:waypoint x="1119.75" y="424.5" />
+        <di:waypoint x="1264.5" y="424.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1131" y="400.5" width="40.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ReviewAIAnswer_di" bpmnElement="Flow_ReviewAIAnswer" bioc:stroke="#292d31">
+        <di:waypoint x="1398" y="286.5" />
+        <di:waypoint x="1398" y="168.75" />
+        <di:waypoint x="1440" y="168.75" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_HandoffReview_di" bpmnElement="Flow_HandoffReview" bioc:stroke="#292d31">
+        <di:waypoint x="1413" y="426.75" />
+        <di:waypoint x="1463.25" y="426.75" />
+        <di:waypoint x="1463.25" y="192" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AnotherQuestion_di" bpmnElement="Flow_AnotherQuestion" bioc:stroke="#292d31">
+        <di:waypoint x="1486.5" y="168.75" />
+        <di:waypoint x="1582.5" y="168.75" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1500" y="144" width="43.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_MoreYes_di" bpmnElement="Flow_MoreYes" bioc:stroke="#292d31">
+        <di:waypoint x="1605.75" y="145.5" />
+        <di:waypoint x="1656" y="117" />
+        <di:waypoint x="1656" y="82.5" />
+        <di:waypoint x="544.5" y="82.5" />
+        <di:waypoint x="544.5" y="85.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1657.5" y="87" width="33" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_MoreNo_di" bpmnElement="Flow_MoreNo" bioc:stroke="#292d31">
+        <di:waypoint x="1629" y="168.75" />
+        <di:waypoint x="1744.5" y="168.75" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1663.5" y="142.5" width="43.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RateSave_di" bpmnElement="Flow_RateSave" bioc:stroke="#292d31">
+        <di:waypoint x="1794" y="183" />
+        <di:waypoint x="1794" y="273" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ChatComplete_di" bpmnElement="Flow_ChatComplete" bioc:stroke="#292d31">
+        <di:waypoint x="1834.5" y="345" />
+        <di:waypoint x="1834.5" y="385.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_HandoffL1_di" bpmnElement="Flow_HandoffL1" bioc:stroke="#292d31">
+        <di:waypoint x="1338.75" y="453" />
+        <di:waypoint x="1338.75" y="483" />
+        <di:waypoint x="1119.75" y="483" />
+        <di:waypoint x="1119.75" y="527.25" />
+        <di:waypoint x="1159.5" y="527.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L1Check_di" bpmnElement="Flow_L1Check" bioc:stroke="#292d31">
+        <di:waypoint x="1293" y="527.25" />
+        <di:waypoint x="1374" y="527.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L1Yes_di" bpmnElement="Flow_L1Yes" bioc:stroke="#292d31">
+        <di:waypoint x="1417.5" y="527.25" />
+        <di:waypoint x="1483.5" y="527.25" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1434" y="498" width="36" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L1No_di" bpmnElement="Flow_L1No" bioc:stroke="#292d31">
+        <di:waypoint x="1395.75" y="549" />
+        <di:waypoint x="1395.75" y="570" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1402.5" y="541.5" width="40.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L1Save_di" bpmnElement="Flow_L1Save" bioc:stroke="#292d31">
+        <di:waypoint x="1612.5" y="527.25" />
+        <di:waypoint x="1644" y="524.25" />
+        <di:waypoint x="1644" y="310.5" />
+        <di:waypoint x="1704" y="310.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EscalateL2_di" bpmnElement="Flow_EscalateL2" bioc:stroke="#292d31">
+        <di:waypoint x="1395.75" y="615" />
+        <di:waypoint x="1395.75" y="634.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L2Check_di" bpmnElement="Flow_L2Check" bioc:stroke="#292d31">
+        <di:waypoint x="1293" y="681.75" />
+        <di:waypoint x="1354.5" y="681.75" />
+        <di:waypoint x="1374" y="695.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L2Yes_di" bpmnElement="Flow_L2Yes" bioc:stroke="#292d31">
+        <di:waypoint x="1417.5" y="695.25" />
+        <di:waypoint x="1440" y="681.75" />
+        <di:waypoint x="1483.5" y="681.75" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1434" y="649.5" width="36" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L2No_di" bpmnElement="Flow_L2No" bioc:stroke="#292d31">
+        <di:waypoint x="1395.75" y="717" />
+        <di:waypoint x="1395.75" y="730.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1402.5" y="702" width="40.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L2Save_di" bpmnElement="Flow_L2Save" bioc:stroke="#292d31">
+        <di:waypoint x="1612.5" y="681.75" />
+        <di:waypoint x="1644" y="678" />
+        <di:waypoint x="1644" y="310.5" />
+        <di:waypoint x="1704" y="310.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EscalateL3_di" bpmnElement="Flow_EscalateL3" bioc:stroke="#292d31">
+        <di:waypoint x="1395.75" y="775.5" />
+        <di:waypoint x="1395.75" y="814.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L3Accept_di" bpmnElement="Flow_L3Accept" bioc:stroke="#292d31">
+        <di:waypoint x="1290" y="849" />
+        <di:waypoint x="1344" y="849" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_L3Save_di" bpmnElement="Flow_L3Save" bioc:stroke="#292d31">
+        <di:waypoint x="1527" y="849.75" />
+        <di:waypoint x="1644" y="849.75" />
+        <di:waypoint x="1644" y="310.5" />
+        <di:waypoint x="1704" y="310.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AuditReview_di" bpmnElement="Flow_AuditReview" bioc:stroke="#292d31">
+        <di:waypoint x="255" y="983.25" />
+        <di:waypoint x="313.5" y="983.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NoProblems_di" bpmnElement="Flow_NoProblems" bioc:stroke="#292d31">
+        <di:waypoint x="868.5" y="1008" />
+        <di:waypoint x="940.5" y="1008" />
+        <di:waypoint x="966" y="989.25" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="891" y="982.5" width="40.5" height="21" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CorrectAnswer_di" bpmnElement="Flow_CorrectAnswer" bioc:stroke="#292d31">
+        <di:waypoint x="1251" y="988.5" />
+        <di:waypoint x="1306.5" y="988.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DataFlow_Attachments_di" bpmnElement="DataFlow_Attachments" bioc:stroke="#292d31">
+        <di:waypoint x="735.75" y="220.5" />
+        <di:waypoint x="735.75" y="291" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DataFlow_PreviousChats_di" bpmnElement="DataFlow_PreviousChats" bioc:stroke="#292d31">
+        <di:waypoint x="813" y="243" />
+        <di:waypoint x="813" y="291" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_PortalEntities_di" bpmnElement="Association_PortalEntities" bioc:stroke="#292d31">
+        <di:waypoint x="855" y="321" />
+        <di:waypoint x="890.25" y="321" />
+        <di:waypoint x="890.25" y="241.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_SearchKnowledge_di" bpmnElement="Association_SearchKnowledge" bioc:stroke="#292d31">
+        <di:waypoint x="973.5" y="291" />
+        <di:waypoint x="998.25" y="187.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_SaveLog_di" bpmnElement="Association_SaveLog" bioc:stroke="#292d31">
+        <di:waypoint x="1773.75" y="345" />
+        <di:waypoint x="1773.75" y="855" />
+        <di:waypoint x="1729.5" y="859.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_ReadLog_di" bpmnElement="Association_ReadLog" bioc:stroke="#292d31">
+        <di:waypoint x="1738.5" y="859.5" />
+        <di:waypoint x="1738.5" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_ReviewLog_di" bpmnElement="Association_ReviewLog" bioc:stroke="#292d31">
+        <di:waypoint x="493.5" y="983.25" />
+        <di:waypoint x="582" y="983.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_LogProblems_di" bpmnElement="Association_LogProblems" bioc:stroke="#292d31">
+        <di:waypoint x="705" y="1002" />
+        <di:waypoint x="798" y="1002" />
+        <di:waypoint x="823.5" y="1008" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_AuditFollowup_di" bpmnElement="Association_AuditFollowup" bioc:stroke="#292d31">
+        <di:waypoint x="1009.5" y="989.25" />
+        <di:waypoint x="1095" y="989.25" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_CorrectionLog_di" bpmnElement="Association_CorrectionLog" bioc:stroke="#292d31">
+        <di:waypoint x="1470" y="982.5" />
+        <di:waypoint x="1704" y="912" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_LogCorrection_di" bpmnElement="Association_LogCorrection" bioc:stroke="#292d31">
+        <di:waypoint x="1729.5" y="919.5" />
+        <di:waypoint x="1729.5" y="993" />
+        <di:waypoint x="1470" y="993" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

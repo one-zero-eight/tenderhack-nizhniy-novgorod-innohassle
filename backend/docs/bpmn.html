@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BPMN — ИИ-ассистент чата поддержки</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.28.0/dist/assets/diagram-js.css" />
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.28.0/dist/assets/bpmn-js.css" />
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@18.28.0/dist/assets/bpmn-font/css/bpmn.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #1a1a1a; font: 0.8125rem "Open Sans", sans-serif; }
+      header {
+        display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+        min-height: 3.5rem; padding: 0.5rem 1rem; border-bottom: 1px solid #d4dbe6;
+      }
+      h1 { margin: 0; font-size: 0.9375rem; font-weight: 700; }
+      nav { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+      button, nav a {
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 2.5rem; padding: 0 0.75rem; border: 1px solid #264b82;
+        border-radius: 0; background: white; color: #264b82;
+        font: 600 0.8125rem "Open Sans", sans-serif; text-decoration: none; cursor: pointer;
+      }
+      button:hover, nav a:hover { background: #e7eef7; }
+      button:disabled { background: #d4dbe6; border-color: #d4dbe6; color: #9aa4b5; cursor: not-allowed; }
+      #save { background: #db2b21; color: white; border-color: #db2b21; }
+      #save:hover { background: #b92119; }
+      #save:disabled { background: #d4dbe6; border-color: #d4dbe6; color: #9aa4b5; }
+      #status { min-height: 2rem; margin: 0; padding: 0.5rem 1rem; background: #e7eef7; font-size: 0.6875rem; }
+      #status[data-error="true"] { color: #db2b21; }
+      #canvas { height: calc(100dvh - 5.5rem); min-height: 450px; }
+      .djs-palette, .djs-context-pad .entry { border-radius: 0; box-shadow: none; }
+      @media (max-width: 1100px) {
+        header { align-items: flex-start; flex-direction: column; }
+        nav { flex-wrap: wrap; }
+        #canvas { height: calc(100dvh - 9rem); }
+      }
+    </style>
+    <script defer src="https://unpkg.com/bpmn-js@18.28.0/dist/bpmn-modeler.development.js"></script>
+    <script defer src="./bpmn.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>BPMN-схема проекта ИИ-ассистента чата поддержки портала поставщиков</h1>
+      <nav aria-label="Управление схемой">
+        <button id="fit" type="button" disabled>Вся схема</button>
+        <button id="zoom-out" type="button" aria-label="Уменьшить масштаб" disabled>−</button>
+        <button id="zoom-in" type="button" aria-label="Увеличить масштаб" disabled>+</button>
+        <a href="./bpmn.jpg" target="_blank" rel="noopener">Оригинал</a>
+        <button id="svg" type="button" disabled>Скачать SVG</button>
+        <button id="save" type="button" disabled>Скачать BPMN</button>
+      </nav>
+    </header>
+    <p id="status" role="status" aria-live="polite">Загрузка схемы…</p>
+    <main id="canvas" aria-label="Редактор BPMN-схемы"></main>
+  </body>
+</html>
