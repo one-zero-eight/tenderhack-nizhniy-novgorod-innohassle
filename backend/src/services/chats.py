@@ -233,6 +233,8 @@ class ChatService:
                     m_id = m.get("id")
                     if m_id and m_id not in existing_ids:
                         role = m.get("role", "user")
+                        if role != "user" and not (m.get("content") or "").strip():
+                            continue
                         sender_type = SenderType.USER if role == "user" else SenderType.AI
                         raw_att = m.get("attachments", [])
                         created_at = None
@@ -338,9 +340,7 @@ class ChatService:
         cleaned_text, mentions = extract_mentions(payload.text)
         resolved_entities = resolve_profile_entities(mentions, user)
         explicit_aliases = {e.alias for e in payload.entities}
-        all_entities = list(payload.entities) + [
-            e for e in resolved_entities if e.alias not in explicit_aliases
-        ]
+        all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
         entities_dicts = [e.model_dump() for e in all_entities]
 
         tool_calls: list[dict] = []
@@ -382,11 +382,26 @@ class ChatService:
                             ml_data = await self.ai.get_chat(chat_id)
                             _sync_ml_metadata(chat, ml_data)
                             msgs = ml_data.get("messages", [])
-                            if len(msgs) >= 1:
+                            if len(msgs) >= 2:
+                                user_msg_id = msgs[-2]["id"]
+                                user_att_raw = msgs[-2].get("attachments", [])
+                                if msgs[-2].get("created_at"):
+                                    try:
+                                        submitted_at = datetime.fromisoformat(msgs[-2]["created_at"])
+                                    except Exception:
+                                        pass
+                            elif len(msgs) == 1:
                                 user_msg_id = msgs[-1]["id"]
                                 user_att_raw = msgs[-1].get("attachments", [])
                         except Exception:
                             pass
+
+                        prev_msg = await session.scalar(
+                            select(Message).where(Message.chat_id == chat_id).order_by(Message.sequence.desc()).limit(1)
+                        )
+                        if prev_msg and prev_msg.created_at and submitted_at <= prev_msg.created_at:
+                            submitted_at = prev_msg.created_at + timedelta(milliseconds=1)
+
                         u_msg = append_message(
                             session,
                             chat,
@@ -411,6 +426,7 @@ class ChatService:
                         f"Обращение автоматически перенаправлено в «{line_name}» ({reason_str}). Ожидайте подключения оператора.",
                         sender_type=SenderType.SYSTEM,
                         reply_to=user_db_msg_id,
+                        created_at=submitted_at + timedelta(milliseconds=1),
                     )
             elif event == "done":
                 ai_completed_at = utcnow()
@@ -483,19 +499,20 @@ class ChatService:
                         user_persisted = True
                         user_db_msg_id = u_msg.id
 
-                    append_message(
-                        session,
-                        chat,
-                        content,
-                        sender_type=SenderType.AI,
-                        sender=None,
-                        reply_to=user_db_msg_id,
-                        citations=citations or _extract_citations(tool_calls),
-                        tool_calls=tool_calls,
-                        duration_ms=duration_ms,
-                        message_id=ai_msg_id,
-                        created_at=ai_created_at,
-                    )
+                    if not (chat.status == ChatStatus.WAITING_OPERATOR and not content.strip()):
+                        append_message(
+                            session,
+                            chat,
+                            content,
+                            sender_type=SenderType.AI,
+                            sender=None,
+                            reply_to=user_db_msg_id,
+                            citations=citations or _extract_citations(tool_calls),
+                            tool_calls=tool_calls,
+                            duration_ms=duration_ms,
+                            message_id=ai_msg_id,
+                            created_at=ai_created_at,
+                        )
 
             raw_data = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
             yield f"event: {event}\ndata: {raw_data}\n\n"
@@ -598,9 +615,7 @@ class ChatService:
             cleaned_text, mentions = extract_mentions(payload.text)
             resolved_entities = resolve_profile_entities(mentions, user)
             explicit_aliases = {e.alias for e in payload.entities}
-            all_entities = list(payload.entities) + [
-                e for e in resolved_entities if e.alias not in explicit_aliases
-            ]
+            all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
             entities_dicts = [e.model_dump() for e in all_entities]
 
             answer = None

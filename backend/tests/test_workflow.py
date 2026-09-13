@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import jwt
 from sqlalchemy import select
 
@@ -793,3 +794,71 @@ async def test_message_persistence_in_postgres_survives_restart_and_streaming(ca
     stream_user_time = datetime.fromisoformat(history2["items"][2]["created_at"])
     stream_ai_time = datetime.fromisoformat(history2["items"][3]["created_at"])
     assert stream_user_time < stream_ai_time
+
+
+async def test_stream_redirect_no_duplicate_user_message(case, monkeypatch):
+    chat = await case.chat()
+
+    original_call = case.ai.__class__.__call__
+
+    async def custom_call(self, request):
+        endpoint = request.url.path
+        if endpoint.endswith("/message"):
+            user_msg_id = "msg-user-redirect-1"
+            asst_msg_id = "msg-asst-redirect-1"
+            self.chats[chat]["messages"].append(
+                {
+                    "id": user_msg_id,
+                    "role": "user",
+                    "content": "Помогите с контрактом",
+                    "tools": [],
+                    "attachments": [],
+                }
+            )
+            self.chats[chat]["messages"].append(
+                {
+                    "id": asst_msg_id,
+                    "role": "assistant",
+                    "content": "",
+                    "tools": [],
+                    "attachments": [],
+                }
+            )
+            sse_text = (
+                'event: redirect\ndata: {"line": "1", "reason": "Перевод на оператора"}\n\n'
+                f'event: done\ndata: {{"message_id": "{asst_msg_id}", "content": ""}}\n\n'
+            )
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_text)
+        return await original_call(self, request)
+
+    monkeypatch.setattr(case.ai.__class__, "__call__", custom_call)
+
+    # 1. Stream message from user
+    client_msg_id = str(uuid4())
+    stream_resp = await case.client.post(
+        f"/chats/{chat}/stream",
+        headers=case.headers("user"),
+        json={"text": "Помогите с контрактом", "client_message_id": client_msg_id},
+    )
+    assert stream_resp.status_code == 200
+    assert "event: redirect" in stream_resp.text
+    assert "event: done" in stream_resp.text
+
+    # 2. Verify chat status
+    chat_data = (await case.request("GET", f"/chats/{chat}")).json()
+    assert chat_data["status"] == "waiting_operator"
+    assert chat_data["recipient"]["support_line"]["id"] == 1
+
+    # 3. Verify messages - user message must not be duplicated!
+    history = (await case.request("GET", f"/chats/{chat}/messages")).json()
+    items = history["items"]
+    user_msgs = [m for m in items if m["sender_type"] == "user"]
+    assert len(user_msgs) == 1, f"Expected 1 user message, found {len(user_msgs)}"
+    assert user_msgs[0]["id"] == "msg-user-redirect-1"
+    assert user_msgs[0]["text"] == "Помогите с контрактом"
+
+    # Total messages: 1 user + 1 system redirect
+    assert len(items) == 2
+    assert items[0]["sender_type"] == "user"
+    assert items[1]["sender_type"] == "system"
+    assert "Обращение автоматически перенаправлено" in items[1]["text"]
