@@ -46,6 +46,8 @@ class SQLAlchemyStorage(AbstractSQLAlchemyStorage):
             await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS topic VARCHAR(255)"))
             await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS subtopic VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS avg_turn_seconds DOUBLE PRECISION"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration_ms INTEGER"))
             # Required reference data, created atomically with the schema at startup.
             # Preserve any names and descriptions configured in an existing database.
             await conn.execute(

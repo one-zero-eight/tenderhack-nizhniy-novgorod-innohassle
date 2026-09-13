@@ -65,9 +65,13 @@ class FakeAI:
                 "closed_at": None,
                 "created_at": "2026-09-12T00:00:00Z",
                 "updated_at": "2026-09-12T00:00:00Z",
+                "avg_turn_seconds": None,
                 "messages": [],
             }
-            return httpx.Response(201, json={"id": chat_id, "title": "Новый чат", "topic": None, "subtopic": None})
+            return httpx.Response(
+                201,
+                json={"id": chat_id, "title": "Новый чат", "topic": None, "subtopic": None, "avg_turn_seconds": None},
+            )
 
         # File upload
         if request.method == "POST" and "/ml-api/chat/" in endpoint and endpoint.endswith("/upload"):
@@ -203,11 +207,21 @@ class FakeAI:
                         "content": "A supported answer",
                         "tools": [],
                         "attachments": [],
+                        "duration_ms": 1200,
                     }
                 )
+                assistant_durations = [
+                    m["duration_ms"]
+                    for m in self.chats[chat_id]["messages"]
+                    if m.get("role") == "assistant" and m.get("duration_ms") is not None
+                ]
+                if assistant_durations:
+                    self.chats[chat_id]["avg_turn_seconds"] = round(
+                        sum(assistant_durations) / (len(assistant_durations) * 1000), 2
+                    )
             sse_text = (
                 f'event: start\ndata: {{"message_id": "{msg_id}"}}\n\n'
-                f'event: done\ndata: {{"message_id": "{msg_id}", "content": "A supported answer"}}\n\n'
+                f'event: done\ndata: {{"message_id": "{msg_id}", "content": "A supported answer", "duration_ms": 1200}}\n\n'
             )
             return httpx.Response(
                 200,

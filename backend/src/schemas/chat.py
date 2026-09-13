@@ -93,6 +93,7 @@ class ChatOut(Schema):
     moderation_reason: str | None
     topic: str | None = None
     subtopic: str | None = None
+    avg_turn_seconds: float | None = None
     rating: RatingOut | None = None
 
 
@@ -134,6 +135,7 @@ class MessageOut(Schema):
     attachments: list[ChatFileOut] = Field(default_factory=list)
     reply_to_message_id: str | None = None
     is_redacted: bool = False
+    duration_ms: int | None = None
     created_at: datetime
 
 

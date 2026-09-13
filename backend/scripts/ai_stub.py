@@ -61,6 +61,7 @@ async def create_chat(payload: ChatIn | None = None):
         "closed_at": None,
         "created_at": now,
         "updated_at": now,
+        "avg_turn_seconds": None,
         "messages": [],
     }
     _CHATS[chat_id] = record
@@ -198,8 +199,16 @@ async def send_message(chat_id: str, payload: MessageIn):
                 "content": content,
                 "tools": [],
                 "attachments": [],
+                "duration_ms": 100,
             }
         )
+        assistant_durations = [
+            m["duration_ms"]
+            for m in _CHATS[chat_id]["messages"]
+            if m.get("role") == "assistant" and m.get("duration_ms") is not None
+        ]
+        if assistant_durations:
+            _CHATS[chat_id]["avg_turn_seconds"] = round(sum(assistant_durations) / (len(assistant_durations) * 1000), 2)
 
     async def sse_generator():
         start_data = json.dumps({"message_id": msg_id})
@@ -208,7 +217,7 @@ async def send_message(chat_id: str, payload: MessageIn):
         token_data = json.dumps({"delta": content, "content": content})
         yield f"event: token\ndata: {token_data}\n\n"
 
-        done_data = json.dumps({"message_id": msg_id, "content": content})
+        done_data = json.dumps({"message_id": msg_id, "content": content, "duration_ms": 100})
         yield f"event: done\ndata: {done_data}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")

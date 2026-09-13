@@ -53,6 +53,7 @@ def append_message(
     is_redacted: bool = False,
     citations: list[dict] | None = None,
     tool_calls: list[dict] | None = None,
+    duration_ms: int | None = None,
 ) -> Message:
     """The caller holds the chat row lock, which also orders committed message sequences."""
     chat.next_sequence += 1
@@ -71,6 +72,7 @@ def append_message(
         input_hash=input_hash,
         reply_to_message_id=reply_to,
         is_redacted=is_redacted,
+        duration_ms=duration_ms,
         citations=citations or [],
         tool_calls=tool_calls or [],
         created_at=utcnow(),
@@ -146,6 +148,7 @@ async def chat_view(
         moderation_reason=chat.moderation_reason,
         topic=chat.topic,
         subtopic=chat.subtopic,
+        avg_turn_seconds=chat.avg_turn_seconds,
         rating=rating_out,
     )
 

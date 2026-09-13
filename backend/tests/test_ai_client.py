@@ -42,6 +42,25 @@ async def test_send_message_sse_success():
         answer = await client.send_message("chat-1", "Hello")
         assert answer.message_id == "m1"
         assert answer.content == "Hi there!"
+        assert answer.duration_ms is None
+
+
+async def test_send_message_sse_duration_ms():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-1/message"
+        sse_data = (
+            'event: start\ndata: {"message_id": "m1"}\n\n'
+            'event: token\ndata: {"delta": "Hi", "content": "Hi"}\n\n'
+            'event: done\ndata: {"message_id": "m1", "content": "Hi there!", "duration_ms": 3200}\n\n'
+        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_data)
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        answer = await client.send_message("chat-1", "Hello")
+        assert answer.message_id == "m1"
+        assert answer.content == "Hi there!"
+        assert answer.duration_ms == 3200
 
 
 async def test_send_message_sse_error_event(caplog):
@@ -150,6 +169,9 @@ async def test_development_stub_matches_client_contract(monkeypatch):
         assert chat_id.startswith("stub-chat-")
         answer = await client.send_message(chat_id, "ordinary message")
         assert "Демонстрационный ответ" in answer.content
+        assert answer.duration_ms == 100
+        chat_data = await client.get_chat(chat_id)
+        assert chat_data["avg_turn_seconds"] == 0.1
         assert (await client.health())["mode"] == "stub"
 
 

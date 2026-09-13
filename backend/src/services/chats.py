@@ -76,6 +76,16 @@ def _sync_ml_metadata(chat: Chat, ml_data: dict) -> None:
         chat.topic = ml_data.get("topic")
     if ml_data.get("subtopic") is not None:
         chat.subtopic = ml_data.get("subtopic")
+    if ml_data.get("avg_turn_seconds") is not None:
+        chat.avg_turn_seconds = ml_data.get("avg_turn_seconds")
+    elif "messages" in ml_data:
+        durations = [
+            m["duration_ms"]
+            for m in ml_data["messages"]
+            if m.get("role") == "assistant" and m.get("duration_ms") is not None
+        ]
+        if durations:
+            chat.avg_turn_seconds = round(sum(durations) / (len(durations) * 1000), 2)
 
 
 class ChatService:
@@ -112,7 +122,12 @@ class ChatService:
             chat = await load_chat(session, chat_id, lock=True)
             check_read_access(chat, user)
             # Sync title from ML service if it was updated from default
-            if chat.title == "Новый чат" or chat.topic is None or chat.subtopic is None:
+            if (
+                chat.title == "Новый чат"
+                or chat.topic is None
+                or chat.subtopic is None
+                or chat.avg_turn_seconds is None
+            ):
                 try:
                     ml_data = await self.ai.get_chat(chat_id)
                     _sync_ml_metadata(chat, ml_data)
@@ -211,6 +226,7 @@ class ChatService:
                             citations=_extract_citations(tools),
                             tool_calls=tools,
                             attachments=attachments,
+                            duration_ms=m.get("duration_ms"),
                             is_redacted=False,
                             created_at=chat.created_at,
                         )
@@ -475,6 +491,7 @@ class ChatService:
                             text=answer.content,
                             citations=answer.citations,
                             tool_calls=answer.tool_calls,
+                            duration_ms=answer.duration_ms,
                             is_redacted=False,
                             created_at=utcnow(),
                         )
@@ -490,6 +507,7 @@ class ChatService:
                             text=answer.content,
                             citations=answer.citations,
                             tool_calls=answer.tool_calls,
+                            duration_ms=answer.duration_ms,
                             is_redacted=False,
                             created_at=utcnow(),
                         )

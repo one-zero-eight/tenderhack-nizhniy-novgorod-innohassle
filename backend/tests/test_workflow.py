@@ -515,3 +515,43 @@ async def test_chat_topic_and_subtopic_sync_and_filtering(case):
     assert admin_matched["total"] == 1
     admin_unmatched = (await case.request("GET", "/admin/chats?topic=Другое", login="admin")).json()
     assert admin_unmatched["total"] == 0
+
+
+async def test_chat_response_time_propagation(case):
+    chat = await case.chat()
+
+    # 1. Initially chat has None for avg_turn_seconds
+    detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert detail["avg_turn_seconds"] is None
+
+    # 2. Send message and verify JSON response contains duration_ms and updated avg_turn_seconds
+    send_resp = await case.request(
+        "POST",
+        f"/chats/{chat}/messages",
+        json={"text": "Каковы сроки поставки?", "client_message_id": str(uuid4())},
+    )
+    assert send_resp.status_code == 200
+    send_data = send_resp.json()
+    assert send_data["chat"]["avg_turn_seconds"] == 1.2
+
+    user_msg = next(m for m in send_data["messages"] if m["sender_type"] == "user")
+    ai_msg = next(m for m in send_data["messages"] if m["sender_type"] == "ai")
+    assert user_msg["duration_ms"] is None
+    assert ai_msg["duration_ms"] == 1200
+
+    # 3. GET /chats/{chat}/messages returns duration_ms on messages
+    msg_page = (await case.request("GET", f"/chats/{chat}/messages")).json()
+    ai_turn = next(m for m in msg_page["items"] if m["sender_type"] == "ai")
+    assert ai_turn["duration_ms"] == 1200
+
+    # 4. GET /chats/{chat} returns synced avg_turn_seconds
+    chat_detail = (await case.request("GET", f"/chats/{chat}")).json()
+    assert chat_detail["avg_turn_seconds"] == 1.2
+
+    # 5. GET /chats returns avg_turn_seconds in list
+    chats_page = (await case.request("GET", "/chats")).json()
+    assert chats_page["items"][0]["avg_turn_seconds"] == 1.2
+
+    # 6. GET /admin/chats returns avg_turn_seconds
+    admin_page = (await case.request("GET", "/admin/chats", login="admin")).json()
+    assert admin_page["items"][0]["avg_turn_seconds"] == 1.2

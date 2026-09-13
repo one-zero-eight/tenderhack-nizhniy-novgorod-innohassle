@@ -24,6 +24,7 @@ class MLAnswer(BaseModel):
     citations: list[dict] = Field(default_factory=list)
     redirect_line: int | None = None
     redirect_reason: str | None = None
+    duration_ms: int | None = None
 
 
 class AIClient:
@@ -104,6 +105,7 @@ class AIClient:
         citations = []
         redirect_line = None
         redirect_reason = None
+        duration_ms = None
 
         try:
             async for event, data in self.stream_message(ml_chat_id, message):
@@ -129,6 +131,7 @@ class AIClient:
                 elif event == "done":
                     final_message_id = data.get("message_id")
                     final_content = data.get("content")
+                    duration_ms = data.get("duration_ms")
 
             if final_content is None and redirect_line is None:
                 raise ValueError("SSE stream closed without 'done' or 'redirect' event")
@@ -140,6 +143,7 @@ class AIClient:
                 citations=citations,
                 redirect_line=redirect_line,
                 redirect_reason=redirect_reason,
+                duration_ms=duration_ms,
             )
         except (ValueError, AIUnavailable) as exc:
             if not isinstance(exc, AIUnavailable):

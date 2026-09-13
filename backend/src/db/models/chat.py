@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -120,6 +120,7 @@ class Chat(Base):
     moderation_reason: Mapped[str | None] = mapped_column(String(40))
     topic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     subtopic: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    avg_turn_seconds: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
 
 class Message(Base):
@@ -143,6 +144,7 @@ class Message(Base):
     client_message_id: Mapped[UUID | None]
     input_hash: Mapped[str | None] = mapped_column(String(64))
     is_redacted: Mapped[bool] = mapped_column(default=False)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
