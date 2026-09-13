@@ -208,7 +208,9 @@ def resolve_profile_entities(aliases: list[str], user: User) -> list[EntityIn]:
                         "category": doc.category,
                         "file_type": doc.file_type,
                         "size_bytes": doc.size_bytes,
-                        "uploaded_at": doc.uploaded_at.isoformat() if hasattr(doc.uploaded_at, "isoformat") else str(doc.uploaded_at),
+                        "uploaded_at": doc.uploaded_at.isoformat()
+                        if hasattr(doc.uploaded_at, "isoformat")
+                        else str(doc.uploaded_at),
                     },
                 )
             )
@@ -516,4 +518,3 @@ async def resolve_chat_entities(
         )
 
     return resolved
-

@@ -33,9 +33,7 @@ class AIClient:
         self.http = http
         self.settings = settings
 
-    async def create_chat(
-        self, system_prompt: str | None = None, username: str | None = None
-    ) -> tuple[str, str]:
+    async def create_chat(self, system_prompt: str | None = None, username: str | None = None) -> tuple[str, str]:
         """Create a chat session in the ML service (POST /ml-api/chat) and return (chat_id, title)."""
         try:
             async with asyncio.timeout(10.0):
@@ -104,9 +102,7 @@ class AIClient:
             body["entities"] = entities
         try:
             async with asyncio.timeout(self.settings.ai_answer_timeout):
-                async with aconnect_sse(
-                    self.http, "POST", endpoint, json=body, timeout=timeout
-                ) as event_source:
+                async with aconnect_sse(self.http, "POST", endpoint, json=body, timeout=timeout) as event_source:
                     async for sse in event_source.aiter_sse():
                         event_name = sse.event or "message"
                         try:
@@ -125,9 +121,7 @@ class AIClient:
             )
             raise AIUnavailable(endpoint) from exc
 
-    async def send_message(
-        self, ml_chat_id: str, message: str, entities: list[dict] | None = None
-    ) -> MLAnswer:
+    async def send_message(self, ml_chat_id: str, message: str, entities: list[dict] | None = None) -> MLAnswer:
         """Send a message to ML service agent via SSE and consume response (JSON fallback)."""
         final_content = None
         final_message_id = None

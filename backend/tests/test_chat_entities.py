@@ -37,11 +37,7 @@ def test_extract_mentions_basic():
 
 
 def test_extract_mentions_frontend_contract_tokens():
-    text = (
-        "Пользователь выбрал контракт: cntr-26-004-gk\n\n"
-        "[[contract:cntr-26-004-gk]]\n\n"
-        "Не открывается акт"
-    )
+    text = "Пользователь выбрал контракт: cntr-26-004-gk\n\n[[contract:cntr-26-004-gk]]\n\nНе открывается акт"
     cleaned, aliases = extract_mentions(text)
     assert "cntr-26-004-gk" in aliases
     assert "@cntr-26-004-gk" in cleaned
