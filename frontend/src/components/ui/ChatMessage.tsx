@@ -1,7 +1,11 @@
 import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
-import { FaPencil } from 'react-icons/fa6'
+import { Link } from '@tanstack/react-router'
+import { FaFileContract, FaPaperclip, FaPencil } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
 import { resolveAssetSrc } from '@/lib/assets'
+import { chatFileUrl } from '@/api/chat'
+import { extractContracts, contractLabel } from '@/lib/contracts'
+import type { SchemaContractOut } from '@/api/types'
 import TypingDots from '@/components/ui/TypingDots'
 import { formatTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
@@ -15,6 +19,8 @@ interface ChatMessageProps {
    * instead of «Вы».
    */
   isParticipant?: boolean
+  /** Contracts available to the user, used to resolve referenced contract names. */
+  contracts?: SchemaContractOut[]
   /**
    * When provided, hovering the row highlights it across the full chat width
    * and offers a pencil action that creates a hand-rule from this exchange.
@@ -23,8 +29,14 @@ interface ChatMessageProps {
   className?: string
 }
 
-/** Props passed to custom components; the parser adds a `node` field we drop. */
-type ElementProps<Tag extends keyof React.JSX.IntrinsicElements> = MarkdownComponentProps<Tag> & { node?: unknown }
+/** Formats a byte count as a short human-readable size. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+/** Props passed to custom components; the parser adds a `node` field we drop. */type ElementProps<Tag extends keyof React.JSX.IntrinsicElements> = MarkdownComponentProps<Tag> & { node?: unknown }
 
 /** Removes the non-DOM `node` prop before spreading onto an element. */
 function withoutNode<T extends { node?: unknown }>({ node, ...rest }: T): Omit<T, 'node'> {
@@ -72,9 +84,16 @@ const components = {
   },
 } satisfies MarkdownComponents
 
-export default function ChatMessage({ message, isParticipant = true, onCreateRule, className }: ChatMessageProps) {
+export default function ChatMessage({ message, isParticipant = true, contracts = [], onCreateRule, className }: ChatMessageProps) {
   const mine = message.senderType === SenderType.user
   const actionable = !!onCreateRule
+
+  // Referenced contracts are sent as text but shown as attachments, so the
+  // header lines and markers are stripped from the rendered body.
+  const { contractIds, text: bodyText } = extractContracts(message.text)
+
+  // Resolve display names for the referenced contracts.
+  const contractById = new Map(contracts.map((contract) => [contract.id, contract]))
 
   // The backend reports the requester as the sender for every user message, so
   // for those we use a viewer-relative label rather than `sender_name`.
@@ -98,15 +117,78 @@ export default function ChatMessage({ message, isParticipant = true, onCreateRul
       >
         {/* The user's own text is shown verbatim; assistant replies may contain Markdown. */}
         {mine ? (
-          <span className="whitespace-pre-wrap">{message.text}</span>
-        ) : message.text ? (
-          <Markdown components={components}>{message.text}</Markdown>
+          bodyText ? (
+            <span className="whitespace-pre-wrap">{bodyText}</span>
+          ) : null
+        ) : bodyText ? (
+          <Markdown components={components}>{bodyText}</Markdown>
         ) : (
           // Before the first token arrives the bubble only shows the indicator.
           <span className="text-gray">Ответ формируется</span>
         )}
         {/* Animated ellipsis while tokens are still streaming in. */}
         {message.isStreaming && <TypingDots className="ml-1.5 align-middle" />}
+        {/* Contracts referenced in the message, rendered as attachments. */}
+        {contractIds.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {contractIds.map((id) => {
+              const contract = contractById.get(id)
+              return (
+                <Link
+                  key={id}
+                  to="/contracts/$contractId"
+                  params={{ contractId: id }}
+                  title="Открыть контракт"
+                  className={cn(
+                    'flex max-w-full flex-col gap-0.5 px-2 py-1.5 text-xs no-underline transition-opacity hover:opacity-80',
+                    mine ? 'bg-white/15 text-white' : 'bg-pale-blue/60 text-main-blue',
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <FaFileContract className="size-3 shrink-0" />
+                    <span className="truncate font-medium">{contract ? contractLabel(contract) : id}</span>
+                  </span>
+                  {contract && <span className={cn('font-mono', mine ? 'text-white/70' : 'text-gray')}>{id}</span>}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+        {/* Files attached to the message: images as thumbnails, the rest as links. */}
+        {message.attachments.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {message.attachments.map((file) =>
+              file.is_image ? (
+                <a key={file.id} href={chatFileUrl(file)} target="_blank" rel="noopener noreferrer" className="block">
+                  <img
+                    src={chatFileUrl(file)}
+                    alt={file.filename}
+                    loading="lazy"
+                    className="border-gray-blue max-h-72 max-w-full border bg-white"
+                  />
+                </a>
+              ) : (
+                <a
+                  key={file.id}
+                  href={chatFileUrl(file)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={file.filename}
+                  className={cn(
+                    'flex max-w-full items-center gap-2 px-2 py-1.5 text-xs no-underline',
+                    mine ? 'bg-white/15 text-white' : 'bg-pale-blue/60 text-main-blue',
+                  )}
+                >
+                  <FaPaperclip className="size-3 shrink-0" />
+                  <span className="truncate">{file.filename}</span>
+                  <span className={cn('shrink-0', mine ? 'text-white/70' : 'text-gray')}>
+                    {formatFileSize(file.size)}
+                  </span>
+                </a>
+              ),
+            )}
+          </div>
+        )}
         {/* Timestamp pinned to the bubble's bottom-right corner. */}
         <span
           className={cn(

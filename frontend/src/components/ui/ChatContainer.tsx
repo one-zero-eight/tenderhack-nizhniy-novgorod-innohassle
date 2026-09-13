@@ -7,6 +7,8 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import RatingInput from '@/components/ui/RatingInput'
 import type { ChatCommand } from '@/components/ui/ChatCommandsMenu'
 import { useFileAttachments } from '@/hooks/useFileAttachments'
+import { useContracts } from '@/hooks/useContracts'
+import { extractContracts, withContractHeader } from '@/lib/contracts'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
@@ -14,7 +16,12 @@ import type { MessageView } from '@/lib/chat-view'
 
 interface ChatContainerProps {
   messages: MessageView[]
-  onSend?: (text: string) => void
+  /**
+   * Called with the message text and any pending files. The caller uploads the
+   * files and sends the text; files are uploaded before sending because the AI
+   * attaches everything pending to the next message.
+   */
+  onSend?: (text: string, files: File[]) => void | Promise<void>
   onRate?: (stars: number, comment: string) => void
   disabled?: boolean
   /** Text shown in the composer while `disabled` (defaults to a waiting hint). */
@@ -91,6 +98,8 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
   const [ratingComment, setRatingComment] = useState('')
   const trimmed = text.trim()
   const { attachments, addFiles, removeFile, clearFiles } = useFileAttachments()
+  // Contracts offered by the `@` mention popup in the composer.
+  const { contracts } = useContracts()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // Whether the view is pinned to the newest message. Cleared when the user
@@ -121,7 +130,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
     if (stickToBottom.current) scrollToBottom()
   }, [messages.length, lastMessageText, toolStatus, scrollToBottom])
 
-  const submit = () => {
+  const submit = async () => {
     if (!trimmed || disabled) return
     // `/оценить` opens the rating dialog instead of sending a message. Any text
     // after the command becomes the comment, e.g. `/оценить было быстро`.
@@ -135,10 +144,18 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
     // `/запросить_помощь` is replaced with a readable message so the request
     // reads naturally in the conversation.
     const outgoing = trimmed === HELP_COMMAND ? HELP_MESSAGE : trimmed
-    onSend?.(outgoing)
+    const files = attachments.map((item) => item.file)
+
+    // Referenced contracts travel as plain text (a header line + an inline
+    // marker) while the UI renders them as attachments.
+    const { contractIds } = extractContracts(outgoing)
+    const withContracts = withContractHeader(outgoing, contractIds)
+
+    // Clear the composer immediately so the UI feels responsive while the
+    // upload and the (potentially long) answer happen.
     setText('')
-    // Attachments are local-only for now; dropped once the message is sent.
     clearFiles()
+    await onSend?.(withContracts, files)
   }
 
   const submitRating = (stars: number, comment: string) => {
@@ -151,7 +168,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
   // Also allow submitting via the "Отправить" button (native form submit).
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    submit()
+    void submit()
   }
 
   return (
@@ -175,6 +192,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
                   <ChatMessage
                     message={message}
                     isParticipant={!readOnly}
+                    contracts={contracts}
                     onCreateRule={
                       // Only assistant replies can seed a rule, and only when
                       // there is a preceding user question to prefill.
@@ -209,6 +227,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
           onFilesAdded={addFiles}
           onRemoveAttachment={removeFile}
           commands={COMMANDS}
+          contracts={contracts}
         />
       </form>
       )}

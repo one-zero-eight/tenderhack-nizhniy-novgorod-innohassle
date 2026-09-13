@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAuth } from '@/app/providers/auth-context'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { requireAuth } from '@/app/routes/-guards'
@@ -213,9 +213,15 @@ function ProfilePage() {
         ) : (
           <ul className="flex flex-col gap-3">
             {profile.contracts.map((contract) => (
-              <li key={contract.id} className="border-gray-blue flex flex-col gap-2 border p-3">
+              <li key={contract.id} className="border-gray-blue hover:border-main-blue/40 flex flex-col gap-2 border p-3 transition-colors">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-black font-medium">{contract.title}</span>
+                  <Link
+                    to="/contracts/$contractId"
+                    params={{ contractId: contract.id }}
+                    className="text-main-blue min-w-0 font-medium break-words underline underline-offset-2"
+                  >
+                    {contract.title}
+                  </Link>
                   <span className="bg-pale-blue text-main-blue px-2 py-0.5 text-xs font-medium">{contract.status}</span>
                 </div>
                 <div className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">

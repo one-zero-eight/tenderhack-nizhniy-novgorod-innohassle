@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { streamChatMessage, sendChatMessage } from '@/api/chat'
+import { streamChatMessage, sendChatMessage, uploadChatFile } from '@/api/chat'
 import { chatQueryKey } from '@/hooks/useChat'
 import { chatsQueryKey } from '@/hooks/useChats'
 import { SenderType } from '@/api/types'
@@ -71,7 +71,7 @@ export function useStreamMessage(chatId: string | undefined) {
   }, [])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, files: File[] = []) => {
       if (!chatId || !text.trim()) return
       setError(null)
 
@@ -79,6 +79,18 @@ export function useStreamMessage(chatId: string | undefined) {
       const controller = new AbortController()
       abortRef.current = controller
       const clientMessageId = crypto.randomUUID()
+
+      // Files are uploaded first: the AI service attaches everything pending in
+      // the chat to the next message, so the upload must precede the send.
+      try {
+        for (const file of files) {
+          await uploadChatFile(chatId, file)
+        }
+      } catch (uploadError) {
+        abortRef.current = null
+        setError(uploadError as Error)
+        return
+      }
 
       const now = new Date().toISOString()
       const maxSequence = (queryClient.getQueryData<MessageView[]>(key) ?? []).reduce(
@@ -108,6 +120,7 @@ export function useStreamMessage(chatId: string | undefined) {
         createdAt: now,
         isRedacted: false,
         replyToMessageId: null,
+        attachments: [],
       }
 
       queryClient.setQueryData<MessageView[]>(key, (prev) =>

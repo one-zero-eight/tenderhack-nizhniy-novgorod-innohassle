@@ -1,6 +1,7 @@
 import { eventsFetch } from '@/api'
-import type { SchemaChatOut, SchemaChatPage, SchemaMessagePage, SchemaProfileViewOut, SchemaRatingIn, SchemaRatingOut, SchemaSendResult, Role } from '@/api/types'
+import type { SchemaChatFileOut, SchemaChatOut, SchemaChatPage, SchemaContractOut, SchemaMessagePage, SchemaProfileViewOut, SchemaRatingIn, SchemaRatingOut, SchemaSendResult, Role } from '@/api/types'
 import { getToken } from '@/lib/auth-storage'
+import { resolveAssetSrc } from '@/lib/assets'
 import { postSse } from '@/lib/sse'
 
 /**
@@ -166,11 +167,76 @@ export async function rateChat(chatId: string, body: SchemaRatingIn): Promise<Sc
   return unwrap(data, error)
 }
 
+/* ----------------------------------------------------------------- chat files */
+
+/**
+ * Uploads a file to a chat via `POST /chats/{chat_id}/upload`.
+ *
+ * Uploaded files stay pending until the next message is sent: the AI service
+ * attaches them to that turn, so callers upload first and then send the text.
+ */
+export async function uploadChatFile(chatId: string, file: File): Promise<SchemaChatFileOut> {
+  const token = getToken()
+  const body = new FormData()
+  body.append('file', file, file.name)
+
+  const baseUrl = import.meta.env.VITE_API_URL ?? '/api'
+  const response = await fetch(`${baseUrl}/chats/${encodeURIComponent(chatId)}/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body,
+  })
+
+  if (!response.ok) {
+    let message = 'Не удалось загрузить файл'
+    try {
+      const payload = await response.json()
+      const detail = payload?.detail
+      if (typeof detail === 'string') message = detail
+      else if (detail && typeof detail.message === 'string') message = detail.message
+    } catch {
+      // Non-JSON error body.
+    }
+    throw new ApiError(response.status, message)
+  }
+
+  return (await response.json()) as SchemaChatFileOut
+}
+
+/** Lists the pending files uploaded to a chat. */
+export async function fetchChatFiles(chatId: string): Promise<SchemaChatFileOut[]> {
+  const { data, error } = await eventsFetch.GET('/chats/{chat_id}/files', {
+    params: { path: { chat_id: chatId } },
+  })
+  return unwrap(data, error)
+}
+
+/** Removes a pending file from a chat. */
+export async function deleteChatFile(chatId: string, fileId: string): Promise<void> {
+  const { error } = await eventsFetch.DELETE('/chats/{chat_id}/files/{file_id}', {
+    params: { path: { chat_id: chatId, file_id: fileId } },
+  })
+  if (error) throw toApiError(error)
+}
+
+/** Absolute URL for a chat file, resolved against the API origin. */
+export function chatFileUrl(file: SchemaChatFileOut): string {
+  return resolveAssetSrc(file.url)
+}
+
 /* -------------------------------------------------------------------- profile */
 
 /** Full profile of the signed-in user: company, procurements, offers, contracts. */
 export async function fetchProfile(): Promise<SchemaProfileViewOut> {
   const { data, error } = await eventsFetch.GET('/profile')
+  return unwrap(data, error)
+}
+
+/** Loads a single contract by id (`GET /profile/contracts/{contract_id}`). */
+export async function fetchContract(contractId: string): Promise<SchemaContractOut> {
+  const { data, error } = await eventsFetch.GET('/profile/contracts/{contract_id}', {
+    params: { path: { contract_id: contractId } },
+  })
   return unwrap(data, error)
 }
 

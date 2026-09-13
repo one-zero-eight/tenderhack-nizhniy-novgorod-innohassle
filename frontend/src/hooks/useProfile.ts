@@ -1,8 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProfile, updateUserRole } from '@/api/chat'
-import type { SchemaProfileViewOut, Role } from '@/api/types'
+import { fetchContract, fetchProfile, updateUserRole } from '@/api/chat'
+import type { SchemaContractOut, SchemaProfileViewOut, Role } from '@/api/types'
 
 export const profileQueryKey = ['profile'] as const
+export const contractQueryKey = (contractId: string) => ['contract', contractId] as const
+
+/** Loads a single contract by id. */
+export function useContract(contractId: string | undefined) {
+  return useQuery<SchemaContractOut, Error>({
+    queryKey: contractQueryKey(contractId ?? ''),
+    queryFn: () => fetchContract(contractId as string),
+    enabled: !!contractId,
+    staleTime: 1000 * 60 * 5,
+  })
+}
 
 /** Loads the signed-in user's full profile (company, procurements, offers…). */
 export function useProfile() {

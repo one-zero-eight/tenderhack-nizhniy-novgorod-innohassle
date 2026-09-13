@@ -22,6 +22,7 @@ import { Route as SupportChatIdRouteImport } from './routes/support.$chatId';
 import { Route as KnowledgeBaseSlugRouteImport } from './routes/knowledge-base.$slug';
 import { Route as IssuesTopicRouteImport } from './routes/issues.$topic';
 import { Route as HistoryChatIdRouteImport } from './routes/history.$chatId';
+import { Route as ContractsContractIdRouteImport } from './routes/contracts.$contractId';
 import { Route as KnowledgeBaseSlugIndexRouteImport } from './routes/knowledge-base.$slug.index';
 import { Route as IssuesTopicIndexRouteImport } from './routes/issues.$topic.index';
 import { Route as KnowledgeBaseSlugSectionIdRouteImport } from './routes/knowledge-base.$slug.$sectionId';
@@ -92,6 +93,11 @@ const HistoryChatIdRoute = HistoryChatIdRouteImport.update({
   path: '/history/$chatId',
   getParentRoute: () => rootRouteImport,
 } as any);
+const ContractsContractIdRoute = ContractsContractIdRouteImport.update({
+  id: '/contracts/$contractId',
+  path: '/contracts/$contractId',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const KnowledgeBaseSlugIndexRoute = KnowledgeBaseSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/contracts/$contractId': typeof ContractsContractIdRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
   '/issues/$topic': typeof IssuesTopicRouteWithChildren;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
@@ -137,6 +144,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/contracts/$contractId': typeof ContractsContractIdRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/handrules': typeof HandrulesIndexRoute;
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
+  '/contracts/$contractId': typeof ContractsContractIdRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
   '/issues/$topic': typeof IssuesTopicRouteWithChildren;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/contracts/$contractId'
     | '/history/$chatId'
     | '/issues/$topic'
     | '/knowledge-base/$slug'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/contracts/$contractId'
     | '/history/$chatId'
     | '/support/$chatId'
     | '/handrules'
@@ -212,6 +223,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/register'
+    | '/contracts/$contractId'
     | '/history/$chatId'
     | '/issues/$topic'
     | '/knowledge-base/$slug'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AuthRoute: typeof AuthRoute;
   RegisterRoute: typeof RegisterRoute;
+  ContractsContractIdRoute: typeof ContractsContractIdRoute;
   HistoryChatIdRoute: typeof HistoryChatIdRoute;
   IssuesTopicRoute: typeof IssuesTopicRouteWithChildren;
   KnowledgeBaseSlugRoute: typeof KnowledgeBaseSlugRouteWithChildren;
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryChatIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/contracts/$contractId': {
+      id: '/contracts/$contractId';
+      path: '/contracts/$contractId';
+      fullPath: '/contracts/$contractId';
+      preLoaderRoute: typeof ContractsContractIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/knowledge-base/$slug/': {
       id: '/knowledge-base/$slug/';
       path: '/';
@@ -399,6 +419,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   RegisterRoute: RegisterRoute,
+  ContractsContractIdRoute: ContractsContractIdRoute,
   HistoryChatIdRoute: HistoryChatIdRoute,
   IssuesTopicRoute: IssuesTopicRouteWithChildren,
   KnowledgeBaseSlugRoute: KnowledgeBaseSlugRouteWithChildren,

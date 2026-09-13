@@ -12,8 +12,11 @@ import { FaPaperclip, FaPaperPlane } from 'react-icons/fa6'
 import Button from '@/components/ui/Button'
 import ChatAttachments from '@/components/ui/ChatAttachments'
 import ChatCommandsMenu, { type ChatCommand } from '@/components/ui/ChatCommandsMenu'
+import ContractMentionMenu from '@/components/ui/ContractMentionMenu'
 import { cn } from '@/lib/cn'
+import { contractLabel, contractToken } from '@/lib/contracts'
 import type { Attachment } from '@/hooks/useFileAttachments'
+import type { SchemaContractOut } from '@/api/types'
 
 type NativeTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value' | 'rows'>
 
@@ -36,20 +39,9 @@ interface ChatInputProps extends NativeTextareaProps {
   accept?: string
   /** Slash-commands offered by the commands button next to the send button. */
   commands?: ChatCommand[]
+  /** Contracts offered by the `@` mention popup. */
+  contracts?: SchemaContractOut[]
 }
-
-/**
- * Multi-line chat composer with attachments.
- *
- * Layout (top to bottom):
- *  1. Attachment chips (when any are present).
- *  2. The textarea, which grows with content up to `maxHeight`.
- *  3. A control row with the attach button and the send button.
- *
- * - `Enter` submits; `+Enter` inserts a newline.
- * - The attach button opens the system file picker.
- * - Files can also be dropped anywhere on the composer.
- */
 const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
   (
     {
@@ -63,6 +55,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       onRemoveAttachment,
       accept,
       commands = [],
+      contracts = [],
       className,
       onKeyDown,
       ...props
@@ -75,6 +68,46 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     // Drag events fire for every child element; count enter/leave to know when
     // the pointer really left the composer.
     const dragDepth = useRef(0)
+    // `@` mention state: the query after `@` and where it starts in the text.
+    const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
+    const [mentionIndex, setMentionIndex] = useState(0)
+
+    const matches = mention
+      ? contracts.filter((contract) => {
+          const q = mention.query.toLowerCase()
+          return contract.id.toLowerCase().includes(q) || contractLabel(contract).toLowerCase().includes(q)
+        })
+      : []
+
+    /** Recomputes the mention state from the text and the caret position. */
+    const syncMention = (text: string, caret: number) => {
+      // Walk back from the caret to the nearest `@` on the same line.
+      const before = text.slice(0, caret)
+      const at = before.lastIndexOf('@')
+      if (at === -1) return setMention(null)
+
+      const between = before.slice(at + 1)
+      // A mention ends at whitespace or a line break.
+      if (/[\s\n]/.test(between)) return setMention(null)
+      setMention({ query: between, start: at })
+      setMentionIndex(0)
+    }
+
+    /** Replaces the `@query` fragment with the contract token. */
+    const acceptContract = (contract: SchemaContractOut) => {
+      const el = innerRef.current
+      if (!el || !mention) return
+      const caret = el.selectionStart ?? value.length
+      const next = `${value.slice(0, mention.start)}${contractToken(contract.id)} ${value.slice(caret)}`
+      onChange(next)
+      setMention(null)
+      // Restore focus and place the caret after the inserted token.
+      requestAnimationFrame(() => {
+        const position = mention.start + contractToken(contract.id).length + 1
+        el.focus()
+        el.setSelectionRange(position, position)
+      })
+    }
 
     // Keep the height synced with the content, resetting first so it can shrink.
     useLayoutEffect(() => {
@@ -99,6 +132,31 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       onKeyDown?.(event)
       if (event.defaultPrevented) return
+
+      // While the mention popup is open, keys navigate it instead of submitting.
+      if (mention && matches.length > 0) {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          setMentionIndex((index) => (index + 1) % matches.length)
+          return
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          setMentionIndex((index) => (index - 1 + matches.length) % matches.length)
+          return
+        }
+        // Tab and Enter accept the highlighted contract.
+        if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+          event.preventDefault()
+          acceptContract(matches[mentionIndex])
+          return
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setMention(null)
+          return
+        }
+      }
 
       // Enter submits; Shift+Enter falls through to insert a newline.
       if (event.key === 'Enter' && !event.shiftKey) {
@@ -155,19 +213,36 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       >
         <ChatAttachments attachments={attachments} onRemove={onRemoveAttachment} />
 
-        <textarea
-          ref={setRefs}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          rows={1}
-          className={cn(
-            'block min-h-9 w-full resize-none bg-transparent px-2 py-1 text-sm text-black',
-            'placeholder:text-gray outline-none disabled:cursor-not-allowed',
+        <div className="relative">
+          <textarea
+            ref={setRefs}
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value)
+              syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+            }}
+            onKeyDown={handleKeyDown}
+            // Clicking elsewhere in the text re-evaluates the mention context.
+            onClick={(e) => syncMention(value, e.currentTarget.selectionStart ?? value.length)}
+            onBlur={() => setMention(null)}
+            disabled={disabled}
+            rows={1}
+            className={cn(
+              'block min-h-9 w-full resize-none bg-transparent px-2 py-1 text-sm text-black',
+              'placeholder:text-gray outline-none disabled:cursor-not-allowed',
+            )}
+            {...props}
+          />
+
+          {mention && matches.length > 0 && (
+            <ContractMentionMenu
+              contracts={matches}
+              activeIndex={mentionIndex}
+              onSelect={acceptContract}
+              onHover={setMentionIndex}
+            />
           )}
-          {...props}
-        />
+        </div>
 
         <div className="flex items-center justify-between gap-2">
           <input

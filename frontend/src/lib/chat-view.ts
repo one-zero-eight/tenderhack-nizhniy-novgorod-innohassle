@@ -1,4 +1,4 @@
-import { ChatStatus, SenderType, type SchemaActorOut, type SchemaChatOut, type SchemaMessageOut } from '@/api/types'
+import { ChatStatus, SenderType, type SchemaActorOut, type SchemaChatFileOut, type SchemaChatOut, type SchemaMessageOut } from '@/api/types'
 
 /**
  * View models for the support chat UI.
@@ -48,6 +48,8 @@ export interface MessageView {
   createdAt: string
   isRedacted: boolean
   replyToMessageId: string | null
+  /** Files attached to this message (documents or images). */
+  attachments: SchemaChatFileOut[]
   /** Set while tokens are still streaming into this message. */
   isStreaming?: boolean
   /**
@@ -99,6 +101,7 @@ export function toMessageView(message: SchemaMessageOut): MessageView {
     createdAt: message.created_at,
     isRedacted: message.is_redacted,
     replyToMessageId: message.reply_to_message_id ?? null,
+    attachments: message.attachments ?? [],
     redirectLine: leakedLine,
   }
 }
