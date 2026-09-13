@@ -49,7 +49,7 @@ export default function HandRuleModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label={isEdit ? 'Изменение правила обработки' : 'Новое правило обработки'}
+      aria-label={isEdit ? 'Изменение правила администратора' : 'Новое правило администратора'}
     >
       <form
         onSubmit={handleSubmit}
@@ -59,7 +59,7 @@ export default function HandRuleModal({
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-black text-base font-bold">{isEdit ? 'Изменение правила' : 'Новое правило обработки'}</h2>
+          <h2 className="text-black text-base font-bold">{isEdit ? 'Изменение правила' : 'Новое правило администратора'}</h2>
           <button
             type="button"
             onClick={onClose}

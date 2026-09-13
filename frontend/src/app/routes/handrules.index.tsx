@@ -108,12 +108,12 @@ function HandRulesPage() {
       </Link>
 
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-black text-2xl font-bold">Правила обработки</h1>
+        <h1 className="text-black text-2xl font-bold">Правила заданные администратору</h1>
         {!list.isLoading && <span className="text-gray text-sm">Правил: {rules.length}</span>}
       </div>
 
       <p className="text-gray text-sm">
-        Правила перебивают общие указания ассистента: подходящий по смыслу вопрос получает заданную инструкцию вместо
+        Правила перебивают общие указания администратора: подходящий по смыслу вопрос получает заданную инструкцию вместо
         обычного ответа.
       </p>
 

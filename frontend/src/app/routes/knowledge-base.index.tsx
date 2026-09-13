@@ -27,9 +27,9 @@ function KnowledgeIndexPage() {
           <div className="flex items-center gap-3">
             <FaWandMagicSparkles className="text-main-blue size-5 shrink-0" />
             <div className="flex flex-col">
-              <span className="text-black text-sm font-medium">Правила обработки</span>
+              <span className="text-black text-sm font-medium">Правила заданные администратору</span>
               <span className="text-gray text-xs">
-                Инструкции ассистенту для отдельных вопросов. Перебивают общие указания промпта.
+                Инструкции администратору (ИИ-ассистенту) для отдельных вопросов. Перебивают общие указания промпта.
               </span>
             </div>
           </div>
