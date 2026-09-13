@@ -8,6 +8,12 @@ import { SenderType } from '@/api/types'
 interface ChatMessageProps {
   message: MessageView
   /**
+   * True when the viewer is a participant (the user themselves). In the
+   * read-only admin view this is false, so the user is labelled «Пользователь»
+   * instead of «Вы».
+   */
+  isParticipant?: boolean
+  /**
    * When provided, hovering the row highlights it across the full chat width
    * and offers a pencil action that creates a hand-rule from this exchange.
    */
@@ -50,14 +56,22 @@ const components = {
   h3: (props: ElementProps<'h3'>) => <p {...withoutNode(props)} className="mt-2 mb-1 font-semibold" />,
 } satisfies MarkdownComponents
 
-export default function ChatMessage({ message, onCreateRule, className }: ChatMessageProps) {
+export default function ChatMessage({ message, isParticipant = true, onCreateRule, className }: ChatMessageProps) {
   const mine = message.senderType === SenderType.user
   const actionable = !!onCreateRule
+
+  // The backend reports the requester as the sender for every user message, so
+  // for those we use a viewer-relative label rather than `sender_name`.
+  const senderLabel = mine
+    ? isParticipant
+      ? 'Вы'
+      : 'Пользователь'
+    : message.senderName || SENDER_LABELS[message.senderType]
 
   const body = (
     <>
       <span className="text-gray text-xs">
-        <span className="font-medium">{message.senderName || SENDER_LABELS[message.senderType]}</span>
+        <span className="font-medium">{senderLabel}</span>
       </span>
       <div
         className={cn(

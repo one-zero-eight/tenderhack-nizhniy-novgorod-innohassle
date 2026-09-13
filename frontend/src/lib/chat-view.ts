@@ -28,6 +28,10 @@ export interface ChatView {
   operator: SchemaActorOut | null
   /** Rating left on the chat, when the backend provides one. */
   rating: SchemaChatOut['rating']
+  /** Display name of the chat owner, shown to admins in the history view. */
+  userName: string
+  /** Identifier of the chat owner (the only other identifier the API exposes). */
+  userId: string
 }
 
 export interface MessageView {
@@ -72,6 +76,8 @@ export function toChatView(chat: SchemaChatOut): ChatView {
     closeReason: chat.close_reason,
     operator: chat.operator,
     rating: chat.rating ?? null,
+    userName: chat.user_display_name || chat.user?.display_name || chat.display_name || chat.user_id,
+    userId: chat.user_id,
   }
 }
 

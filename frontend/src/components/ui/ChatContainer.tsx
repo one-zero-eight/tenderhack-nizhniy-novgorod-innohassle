@@ -17,6 +17,8 @@ interface ChatContainerProps {
   onSend?: (text: string) => void
   onRate?: (stars: number, comment: string) => void
   disabled?: boolean
+  /** Text shown in the composer while `disabled` (defaults to a waiting hint). */
+  disabledPlaceholder?: string
   /** Hides the composer entirely (e.g. the read-only admin history view). */
   readOnly?: boolean
   /**
@@ -65,7 +67,7 @@ const COMMANDS: ChatCommand[] = [
   },
 ]
 
-export default function ChatContainer({ messages, onSend, onRate, disabled = false, readOnly = false, onCreateRule, toolStatus, className }: ChatContainerProps) {
+export default function ChatContainer({ messages, onSend, onRate, disabled = false, disabledPlaceholder, readOnly = false, onCreateRule, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const [showRating, setShowRating] = useState(false)
   const trimmed = text.trim()
@@ -124,6 +126,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
                 ) : (
                   <ChatMessage
                     message={message}
+                    isParticipant={!readOnly}
                     onCreateRule={
                       // Only assistant replies can seed a rule, and only when
                       // there is a preceding user question to prefill.
@@ -151,7 +154,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
           value={text}
           onChange={setText}
           onSubmit={submit}
-          placeholder={disabled ? 'Ожидайте ответа...' : 'Введите сообщение...'}
+          placeholder={disabled ? (disabledPlaceholder ?? 'Ожидайте ответа...') : 'Введите сообщение...'}
           disabled={disabled}
           aria-label="Сообщение"
           attachments={attachments}

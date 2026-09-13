@@ -7,6 +7,7 @@ import { useChat } from '@/hooks/useChat'
 import { useChatMessages } from '@/hooks/useChatMessages'
 import { useRateChat } from '@/hooks/useRateMessage'
 import { useStreamMessage } from '@/hooks/useStreamMessage'
+import { CloseReason } from '@/api/types'
 
 export const Route = createFileRoute('/support/$chatId')({
   beforeLoad: requireUser,
@@ -40,6 +41,13 @@ function ChatPage() {
   }
 
   const isClosed = chat.status === 'closed'
+  // A moderation block permanently bars the user from writing in this chat.
+  const isBanned = isClosed && chat.closeReason === CloseReason.moderation
+  const disabledReason = isBanned
+    ? 'Вы больше не можете писать в этот чат'
+    : isClosed
+      ? 'Обращение закрыто'
+      : undefined
 
   // The rating applies to the whole conversation.
   const handleRate = (stars: number, comment: string) => {
@@ -83,6 +91,7 @@ function ChatPage() {
               onSend={stream.send}
               onRate={handleRate}
               disabled={stream.isStreaming || isClosed}
+              disabledPlaceholder={stream.isStreaming ? undefined : disabledReason}
               toolStatus={stream.toolStatus}
               className="min-h-0"
             />

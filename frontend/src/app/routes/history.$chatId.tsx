@@ -69,6 +69,10 @@ function HistoryChatPage() {
             ← История обращений
           </Link>
           <h1 className="text-pale-black text-2xl font-bold">{chat.title}</h1>
+          {/* Admins see whose conversation this is. */}
+          <span className="text-pale-black text-sm">
+            Пользователь: {chat.userName}
+          </span>
           <ChatRating rating={chat.rating} showEmpty className="mt-1" />
         </div>
 

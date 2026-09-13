@@ -43,6 +43,15 @@ export interface StreamingState {
 const IDLE: StreamingState = { text: '', toolStatus: null, isStreaming: false }
 
 /**
+ * Whether an error message reports a moderation block. Such blocks are already
+ * surfaced as a system message in the conversation, so the banner is redundant.
+ */
+function isModerationMessage(message: string): boolean {
+  const lower = message.toLowerCase()
+  return lower.includes('moderation') || lower.includes('moderat') || lower.includes('нецензур') || lower.includes('blocked')
+}
+
+/**
  * Sends a message and consumes the assistant's reply as a Server-Sent Events
  * stream, writing the partial answer into the messages cache as tokens arrive.
  *
@@ -158,7 +167,10 @@ export function useStreamMessage(chatId: string | undefined) {
               setState((prev) => ({ ...prev, toolStatus: null }))
               break
             case 'error':
-              setError(new Error(event.message))
+              // A moderation block also closes the chat with a system message,
+              // so the outcome is already visible as a divider in the timeline.
+              // Avoid showing the same information as a red banner.
+              if (!isModerationMessage(event.message)) setError(new Error(event.message))
               break
             case 'done':
               content = event.content || content
