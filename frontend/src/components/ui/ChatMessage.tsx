@@ -2,6 +2,7 @@ import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '
 import { FaPencil } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
 import { resolveAssetSrc } from '@/lib/assets'
+import TypingDots from '@/components/ui/TypingDots'
 import { formatTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
 import { SenderType } from '@/api/types'
@@ -101,11 +102,11 @@ export default function ChatMessage({ message, isParticipant = true, onCreateRul
         ) : message.text ? (
           <Markdown components={components}>{message.text}</Markdown>
         ) : (
-          // Before the first token arrives the bubble would be empty.
-          <span className="text-gray">…</span>
+          // Before the first token arrives the bubble only shows the indicator.
+          <span className="text-gray">Ответ формируется</span>
         )}
-        {/* Blinking caret while tokens are still streaming in. */}
-        {message.isStreaming && <span className="bg-main-blue ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-text-bottom" aria-hidden="true" />}
+        {/* Animated ellipsis while tokens are still streaming in. */}
+        {message.isStreaming && <TypingDots className="ml-1.5 align-middle" />}
         {/* Timestamp pinned to the bubble's bottom-right corner. */}
         <span
           className={cn(

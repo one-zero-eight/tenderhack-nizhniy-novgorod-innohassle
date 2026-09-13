@@ -1,14 +1,14 @@
 import type { SchemaChatOut } from '@/api/types'
 
-/** Topic name used for chats without a classified topic. */
-export const NO_TOPIC = 'Без темы'
-
 /** Subtopic name used for chats without a classified subtopic. */
 export const NO_SUBTOPIC = 'Без подтемы'
 
-/** Topic name of a chat, with a fallback for unclassified chats. */
-export function chatTopic(chat: SchemaChatOut): string {
-  return chat.topic?.trim() || NO_TOPIC
+/**
+ * Topic of a chat, or `null` when it has not been classified. Unclassified
+ * chats are excluded from the issues views.
+ */
+export function chatTopic(chat: SchemaChatOut): string | null {
+  return chat.topic?.trim() || null
 }
 
 /** Subtopic name of a chat, with a fallback for unclassified chats. */
@@ -29,12 +29,18 @@ export interface TopicSummary {
   averageAnswerSeconds: number | null
 }
 
-/** Groups chats by topic and computes per-topic counts and averages. */
+/**
+ * Groups chats by topic and computes per-topic counts and averages.
+ *
+ * Chats without a topic are skipped entirely: an unclassified chat does not
+ * represent a recurring problem.
+ */
 export function summarizeTopics(chats: SchemaChatOut[]): TopicSummary[] {
   const byTopic = new Map<string, { chats: SchemaChatOut[]; subtopics: Set<string> }>()
 
   for (const chat of chats) {
     const topic = chatTopic(chat)
+    if (!topic) continue
     if (!byTopic.has(topic)) byTopic.set(topic, { chats: [], subtopics: new Set() })
     const entry = byTopic.get(topic) as { chats: SchemaChatOut[]; subtopics: Set<string> }
     entry.chats.push(chat)
@@ -48,11 +54,7 @@ export function summarizeTopics(chats: SchemaChatOut[]): TopicSummary[] {
       subtopicCount: entry.subtopics.size,
       averageAnswerSeconds: averageTurnSeconds(entry.chats),
     }))
-    .sort((a, b) => {
-      if (a.topic === NO_TOPIC) return 1
-      if (b.topic === NO_TOPIC) return -1
-      return a.topic.localeCompare(b.topic, 'ru')
-    })
+    .sort((a, b) => a.topic.localeCompare(b.topic, 'ru'))
 }
 
 /**

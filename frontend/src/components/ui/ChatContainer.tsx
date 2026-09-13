@@ -1,4 +1,4 @@
-import { Fragment, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import ChatDateDivider from '@/components/ui/ChatDateDivider'
 import ChatInput from '@/components/ui/ChatInput'
 import ChatMessage from '@/components/ui/ChatMessage'
@@ -33,6 +33,24 @@ interface ChatContainerProps {
 
 const RATE_COMMAND = "/оценить"
 const HELP_COMMAND = "/запросить_помощь"
+
+/** Message actually sent when the user requests a human operator. */
+const HELP_MESSAGE = 'Пожалуйста, переведите меня на оператора поддержки.'
+
+/**
+ * Recognises `/оценить` at the start of a message, returning the optional
+ * trailing text to use as the rating comment. `null` when it is not that
+ * command.
+ */
+function parseRateCommand(text: string): { comment: string } | null {
+  const value = text.trim()
+  if (value === RATE_COMMAND) return { comment: '' }
+  if (!value.startsWith(RATE_COMMAND)) return null
+  // Require a separator so `/оценитьчто-то` is not treated as the command.
+  const rest = value.slice(RATE_COMMAND.length)
+  if (rest === '' || !/\s/.test(rest[0])) return null
+  return { comment: rest.trim() }
+}
 
 /** Whether a message is a reply from the assistant/operator side. */
 function isAssistantReply(message: MessageView): boolean {
@@ -70,25 +88,54 @@ const COMMANDS: ChatCommand[] = [
 export default function ChatContainer({ messages, onSend, onRate, disabled = false, disabledPlaceholder, readOnly = false, onCreateRule, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const [showRating, setShowRating] = useState(false)
+  const [ratingComment, setRatingComment] = useState('')
   const trimmed = text.trim()
   const { attachments, addFiles, removeFile, clearFiles } = useFileAttachments()
 
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  // Whether the view is pinned to the newest message. Cleared when the user
+  // scrolls up so incoming tokens do not yank them back down.
+  const stickToBottom = useRef(true)
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    // Treat "within 48px of the bottom" as pinned.
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  }, [])
+
+  // Jump to the newest message on open, before the browser paints.
+  useLayoutEffect(() => {
+    scrollToBottom()
+  }, [scrollToBottom])
+
+  // Follow the conversation as messages and streamed tokens arrive. The last
+  // message's text is part of the dependency list so token updates scroll too.
+  const lastMessageText = messages.length > 0 ? messages[messages.length - 1].text : ''
+  useEffect(() => {
+    if (stickToBottom.current) scrollToBottom()
+  }, [messages.length, lastMessageText, toolStatus, scrollToBottom])
+
   const submit = () => {
     if (!trimmed || disabled) return
-    // Submitting `/оценить` opens the rating dialog instead of sending a
-    // regular streaming message. Other commands (`/передать`) are handled
-    // elsewhere and fall through to the regular send above.
-    if (trimmed === RATE_COMMAND) {
+    // `/оценить` opens the rating dialog instead of sending a message. Any text
+    // after the command becomes the comment, e.g. `/оценить было быстро`.
+    const rate = parseRateCommand(trimmed)
+    if (rate) {
       setText('')
+      setRatingComment(rate.comment)
       setShowRating(true)
       return
     }
-    if (trimmed === HELP_COMMAND) {
-        setText('')
-        alert("Запрошена поддержка от реальных людей")
-        return
-    }
-    onSend?.(trimmed)
+    // `/запросить_помощь` is replaced with a readable message so the request
+    // reads naturally in the conversation.
+    const outgoing = trimmed === HELP_COMMAND ? HELP_MESSAGE : trimmed
+    onSend?.(outgoing)
     setText('')
     // Attachments are local-only for now; dropped once the message is sent.
     clearFiles()
@@ -98,6 +145,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
     if (disabled) return
     onRate?.(stars, comment)
     setShowRating(false)
+    setRatingComment('')
   }
 
   // Also allow submitting via the "Отправить" button (native form submit).
@@ -108,7 +156,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
 
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col gap-4', className)}>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {messages.length === 0 ? (
           <p className="text-gray py-10 text-center text-sm">Сообщений пока нет. Задайте свой вопрос.</p>
         ) : (
@@ -165,7 +213,15 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
       </form>
       )}
       {showRating && (
-        <RatingInput onSubmit={submitRating} onClose={() => setShowRating(false)} disabled={disabled} />
+        <RatingInput
+          defaultComment={ratingComment}
+          onSubmit={submitRating}
+          onClose={() => {
+            setShowRating(false)
+            setRatingComment('')
+          }}
+          disabled={disabled}
+        />
       )}
     </div>
   )

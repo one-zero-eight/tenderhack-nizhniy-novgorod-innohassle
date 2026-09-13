@@ -19,3 +19,18 @@
     background-position: 17px 0;
   }
 }
+
+/*
+ * Animated ellipsis used while the assistant is composing an answer. The three
+ * dots fade with staggered delays, so it reads as `.` -> `..` -> `...` and back.
+ */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}

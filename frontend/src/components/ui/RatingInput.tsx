@@ -10,8 +10,8 @@ interface RatingInputProps {
   onClose?: () => void
   /** Renders the composer in a non-interactive, waiting state. */
   disabled?: boolean
-  /** Hint shown above the inputs. */
-  prompt?: string
+  /** Initial comment, e.g. the text typed after `/оценить`. */
+  defaultComment?: string
   /** Used as the dialog's accessible name. */
   title?: string
   className?: string
@@ -30,12 +30,12 @@ export default function RatingInput({
   onSubmit,
   onClose,
   disabled = false,
-  prompt = 'Оцените работу поддержки и введите комментарий',
+  defaultComment = '',
   title = 'Оценка поддержки',
   className,
 }: RatingInputProps) {
   const [stars, setStars] = useState<number | null>(null)
-  const [comment, setComment] = useState('')
+  const [comment, setComment] = useState(defaultComment)
   const [hovered, setHovered] = useState<number | null>(null)
 
   const handleSubmit = (event: FormEvent) => {
@@ -60,7 +60,7 @@ export default function RatingInput({
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-pale-black text-base font-bold">{title}</h2>
+          <h2 className="text-black text-base font-bold">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -72,9 +72,7 @@ export default function RatingInput({
           </button>
         </div>
 
-        <p className="text-pale-black text-sm">{prompt}</p>
-
-        <div className="flex items-center justify-center gap-1" role="radiogroup" aria-label="Оценка от 1 до 5">
+        <div className="flex items-center gap-1" role="radiogroup" aria-label="Оценка от 1 до 5">
           {STARS.map((star) => {
             const active = star <= (hovered ?? stars ?? 0)
             return (

@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { FaChevronRight, FaSort, FaSortDown, FaSortUp } from 'react-icons/fa6'
+import { FaArrowDown, FaArrowUp, FaChevronRight } from 'react-icons/fa6'
+import { LuArrowUpDown } from 'react-icons/lu'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { requireRole } from '@/app/routes/-guards'
 import { useAllAdminChats } from '@/hooks/useAdminChats'
@@ -58,7 +59,9 @@ function SortableHeader({
   className?: string
 }) {
   const active = activeKey === sortKey
-  const Icon = !active ? FaSort : direction === 'asc' ? FaSortUp : FaSortDown
+  // Inactive: the conventional side-by-side ↑↓ (unsorted) glyph. Active: a
+  // single solid arrow for the current direction.
+  const Icon = !active ? LuArrowUpDown : direction === 'asc' ? FaArrowUp : FaArrowDown
   return (
     <button
       type="button"

@@ -23,7 +23,9 @@ import { Route as KnowledgeBaseSlugRouteImport } from './routes/knowledge-base.$
 import { Route as IssuesTopicRouteImport } from './routes/issues.$topic';
 import { Route as HistoryChatIdRouteImport } from './routes/history.$chatId';
 import { Route as KnowledgeBaseSlugIndexRouteImport } from './routes/knowledge-base.$slug.index';
+import { Route as IssuesTopicIndexRouteImport } from './routes/issues.$topic.index';
 import { Route as KnowledgeBaseSlugSectionIdRouteImport } from './routes/knowledge-base.$slug.$sectionId';
+import { Route as IssuesTopicChatIdRouteImport } from './routes/issues.$topic.$chatId';
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -95,19 +97,29 @@ const KnowledgeBaseSlugIndexRoute = KnowledgeBaseSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => KnowledgeBaseSlugRoute,
 } as any);
+const IssuesTopicIndexRoute = IssuesTopicIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => IssuesTopicRoute,
+} as any);
 const KnowledgeBaseSlugSectionIdRoute =
   KnowledgeBaseSlugSectionIdRouteImport.update({
     id: '/$sectionId',
     path: '/$sectionId',
     getParentRoute: () => KnowledgeBaseSlugRoute,
   } as any);
+const IssuesTopicChatIdRoute = IssuesTopicChatIdRouteImport.update({
+  id: '/$chatId',
+  path: '/$chatId',
+  getParentRoute: () => IssuesTopicRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
-  '/issues/$topic': typeof IssuesTopicRoute;
+  '/issues/$topic': typeof IssuesTopicRouteWithChildren;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/handrules': typeof HandrulesIndexRoute;
@@ -116,7 +128,9 @@ export interface FileRoutesByFullPath {
   '/knowledge-base': typeof KnowledgeBaseIndexRoute;
   '/profile': typeof ProfileIndexRoute;
   '/support': typeof SupportIndexRoute;
+  '/issues/$topic/$chatId': typeof IssuesTopicChatIdRoute;
   '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/issues/$topic/': typeof IssuesTopicIndexRoute;
   '/knowledge-base/$slug/': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRoutesByTo {
@@ -124,7 +138,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
-  '/issues/$topic': typeof IssuesTopicRoute;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/handrules': typeof HandrulesIndexRoute;
   '/history': typeof HistoryIndexRoute;
@@ -132,7 +145,9 @@ export interface FileRoutesByTo {
   '/knowledge-base': typeof KnowledgeBaseIndexRoute;
   '/profile': typeof ProfileIndexRoute;
   '/support': typeof SupportIndexRoute;
+  '/issues/$topic/$chatId': typeof IssuesTopicChatIdRoute;
   '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/issues/$topic': typeof IssuesTopicIndexRoute;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRoutesById {
@@ -141,7 +156,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute;
   '/register': typeof RegisterRoute;
   '/history/$chatId': typeof HistoryChatIdRoute;
-  '/issues/$topic': typeof IssuesTopicRoute;
+  '/issues/$topic': typeof IssuesTopicRouteWithChildren;
   '/knowledge-base/$slug': typeof KnowledgeBaseSlugRouteWithChildren;
   '/support/$chatId': typeof SupportChatIdRoute;
   '/handrules/': typeof HandrulesIndexRoute;
@@ -150,7 +165,9 @@ export interface FileRoutesById {
   '/knowledge-base/': typeof KnowledgeBaseIndexRoute;
   '/profile/': typeof ProfileIndexRoute;
   '/support/': typeof SupportIndexRoute;
+  '/issues/$topic/$chatId': typeof IssuesTopicChatIdRoute;
   '/knowledge-base/$slug/$sectionId': typeof KnowledgeBaseSlugSectionIdRoute;
+  '/issues/$topic/': typeof IssuesTopicIndexRoute;
   '/knowledge-base/$slug/': typeof KnowledgeBaseSlugIndexRoute;
 }
 export interface FileRouteTypes {
@@ -169,7 +186,9 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/profile'
     | '/support'
+    | '/issues/$topic/$chatId'
     | '/knowledge-base/$slug/$sectionId'
+    | '/issues/$topic/'
     | '/knowledge-base/$slug/';
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -177,7 +196,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/register'
     | '/history/$chatId'
-    | '/issues/$topic'
     | '/support/$chatId'
     | '/handrules'
     | '/history'
@@ -185,7 +203,9 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/profile'
     | '/support'
+    | '/issues/$topic/$chatId'
     | '/knowledge-base/$slug/$sectionId'
+    | '/issues/$topic'
     | '/knowledge-base/$slug';
   id:
     | '__root__'
@@ -202,7 +222,9 @@ export interface FileRouteTypes {
     | '/knowledge-base/'
     | '/profile/'
     | '/support/'
+    | '/issues/$topic/$chatId'
     | '/knowledge-base/$slug/$sectionId'
+    | '/issues/$topic/'
     | '/knowledge-base/$slug/';
   fileRoutesById: FileRoutesById;
 }
@@ -211,7 +233,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute;
   RegisterRoute: typeof RegisterRoute;
   HistoryChatIdRoute: typeof HistoryChatIdRoute;
-  IssuesTopicRoute: typeof IssuesTopicRoute;
+  IssuesTopicRoute: typeof IssuesTopicRouteWithChildren;
   KnowledgeBaseSlugRoute: typeof KnowledgeBaseSlugRouteWithChildren;
   SupportChatIdRoute: typeof SupportChatIdRoute;
   HandrulesIndexRoute: typeof HandrulesIndexRoute;
@@ -322,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KnowledgeBaseSlugIndexRouteImport;
       parentRoute: typeof KnowledgeBaseSlugRoute;
     };
+    '/issues/$topic/': {
+      id: '/issues/$topic/';
+      path: '/';
+      fullPath: '/issues/$topic/';
+      preLoaderRoute: typeof IssuesTopicIndexRouteImport;
+      parentRoute: typeof IssuesTopicRoute;
+    };
     '/knowledge-base/$slug/$sectionId': {
       id: '/knowledge-base/$slug/$sectionId';
       path: '/$sectionId';
@@ -329,8 +358,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KnowledgeBaseSlugSectionIdRouteImport;
       parentRoute: typeof KnowledgeBaseSlugRoute;
     };
+    '/issues/$topic/$chatId': {
+      id: '/issues/$topic/$chatId';
+      path: '/$chatId';
+      fullPath: '/issues/$topic/$chatId';
+      preLoaderRoute: typeof IssuesTopicChatIdRouteImport;
+      parentRoute: typeof IssuesTopicRoute;
+    };
   }
 }
+
+interface IssuesTopicRouteChildren {
+  IssuesTopicChatIdRoute: typeof IssuesTopicChatIdRoute;
+  IssuesTopicIndexRoute: typeof IssuesTopicIndexRoute;
+}
+
+const IssuesTopicRouteChildren: IssuesTopicRouteChildren = {
+  IssuesTopicChatIdRoute: IssuesTopicChatIdRoute,
+  IssuesTopicIndexRoute: IssuesTopicIndexRoute,
+};
+
+const IssuesTopicRouteWithChildren = IssuesTopicRoute._addFileChildren(
+  IssuesTopicRouteChildren,
+);
 
 interface KnowledgeBaseSlugRouteChildren {
   KnowledgeBaseSlugSectionIdRoute: typeof KnowledgeBaseSlugSectionIdRoute;
@@ -350,7 +400,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   RegisterRoute: RegisterRoute,
   HistoryChatIdRoute: HistoryChatIdRoute,
-  IssuesTopicRoute: IssuesTopicRoute,
+  IssuesTopicRoute: IssuesTopicRouteWithChildren,
   KnowledgeBaseSlugRoute: KnowledgeBaseSlugRouteWithChildren,
   SupportChatIdRoute: SupportChatIdRoute,
   HandrulesIndexRoute: HandrulesIndexRoute,

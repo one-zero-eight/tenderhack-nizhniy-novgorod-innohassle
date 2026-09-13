@@ -10,17 +10,19 @@ import type { SchemaChatOut } from '@/api/types'
 interface ChatRowProps {
   chat: SchemaChatOut
   /** Where clicking the row navigates: the chat page within the given section. */
-  to: '/history/$chatId' | '/support/$chatId'
+  to: '/history/$chatId' | '/support/$chatId' | '/issues/$topic/$chatId'
+  /** Extra route params (e.g. the topic for the issues route). */
+  params?: Record<string, string>
   className?: string
 }
 
 /** A single clickable chat row, used by the history and issues lists. */
-export default function ChatRow({ chat, to, className }: ChatRowProps) {
+export default function ChatRow({ chat, to, params, className }: ChatRowProps) {
   const navigate = useNavigate()
   return (
     <button
       type="button"
-      onClick={() => navigate({ to, params: { chatId: chat.id } })}
+      onClick={() => navigate({ to, params: { chatId: chat.id, ...params } })}
       className={cn(
         CHAT_ROW_GRID,
         'border-gray-blue hover:bg-pale-blue/60 w-full border-b py-4 text-left transition-colors',
