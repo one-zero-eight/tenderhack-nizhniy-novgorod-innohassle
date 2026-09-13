@@ -1,0 +1,74 @@
+{# ВРЕМЕННО: вариант публичной страницы с командами вместо inline-кнопок оценки.
+   Существует только чтобы сравнить два интерфейса. Удаляется вместе с блоком
+   /chats2 в app.py и CSS-блоком «/chats2» в style.css. #}
+{% extends "base.html" %}
+
+{% block title %}Поддержка (команды) — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="support-layout">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      Чаты
+      {# Быстрое переключение между двумя вариантами страницы. #}
+      <a class="link-btn chats2-switch" href="{% if chat %}/chats/{{ chat.id }}{% else %}/{% endif %}">вариант с кнопками</a>
+    </div>
+    <button
+      type="button"
+      class="btn-primary new-chat"
+      hx-post="/chats2"
+      hx-target="body"
+      hx-swap="outerHTML"
+    >Новый чат</button>
+    {% include "chats2_list.html" %}
+  </aside>
+  <div id="chat-panel">
+    {% include "chats2_panel.html" %}
+  </div>
+</div>
+
+<script>
+  // Команды ведут себя как во фронтенде (../frontend): выбранная команда
+  // подставляется в поле ввода, а не уходит агенту. Отправка команды перехватывается,
+  // чтобы в демо-варианте показать заглушку и не тревожить LLM.
+  (function () {
+    // tojson отдаёт готовую строку, safe — чтобы кавычки не превратились в HTML-сущности
+    // (внутри тега script они не декодируются и сломали бы литерал).
+    const COMMANDS = {{ commands | map(attribute="value") | list | tojson | safe }};
+    const NOTE = {
+      "/оценить": "Команда /оценить: здесь оценка обращения — заглушка (в варианте с кнопками это две кнопки под ответом).",
+      "/запросить_помощь": "Команда /запросить_помощь: перевод на оператора — заглушка.",
+    };
+
+    document.body.addEventListener("click", (event) => {
+      const item = event.target.closest(".cmd-item");
+      if (!item) return;
+      const form = item.closest("form");
+      const field = form && form.querySelector("textarea[name=message]");
+      if (!field) return;
+      field.value = item.dataset.command || "";
+      field.focus();
+      const note = document.getElementById("chats2-note");
+      if (note) note.textContent = "";
+    });
+
+    // capture: обработчик на body срабатывает раньше, чем htmx повесит запрос
+    // на форму, поэтому команда до сервера не доходит.
+    document.body.addEventListener(
+      "submit",
+      (event) => {
+        const field = event.target.querySelector && event.target.querySelector("textarea[name=message]");
+        if (!field) return;
+        const value = field.value.trim();
+        if (!COMMANDS.includes(value)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const note = document.getElementById("chats2-note");
+        if (note) note.textContent = NOTE[value] || "";
+        field.value = "";
+      },
+      true,
+    );
+  })();
+</script>
+{% endblock %}

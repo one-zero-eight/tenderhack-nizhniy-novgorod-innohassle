@@ -21,6 +21,19 @@
   </div>
   {% endif %}
   <div class="body markdown" sse-swap="token" hx-swap="innerHTML">{% if chat.message_is_streaming(assistant_msg) and not assistant_msg.content %}<div class="pending" aria-label="Модель отвечает"><span></span><span></span><span></span></div>{% else %}{{ assistant_msg.content | markdown }}{% endif %}</div>
+  {# Списки выбора контракта/закупки/предложения: одна колонка шириной 2/3 сообщения.
+     Кнопки готовы только после ответа агента (их пишет тул во время генерации),
+     поэтому контейнер у последнего ответа есть всегда, а содержимое приезжает
+     отдельным запросом на sse:done (см. base.html и app._chat_choices). #}
+  {% set choices = chat.entity_choices(assistant_msg) %}
+  {% if not readonly and (choices or chat.is_feedback_target(assistant_msg)) %}
+  <div
+    class="entity-choices"
+    {% if chat.is_feedback_target(assistant_msg) %}data-refresh-on-done
+    hx-get="{{ base }}/chats/{{ chat.id }}/messages/{{ assistant_msg.id }}/choices"
+    hx-swap="innerHTML"{% endif %}
+  >{% if choices %}{% include "message_choices.html" %}{% endif %}</div>
+  {% endif %}
   {# Оценка ответа: кнопки оценки и (при negative без причины) список причин.
      Только в публичной части (админка только смотрит) и только под последним
      ответом. Кнопки оценки остаются всегда — новая оценка перетирает прежнюю.

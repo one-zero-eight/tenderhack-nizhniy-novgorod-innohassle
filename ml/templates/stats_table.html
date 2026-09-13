@@ -1,18 +1,20 @@
 {# Таблица статистики: строки тем или подтем со сортировкой.
 
-   Ждёт: rows (список StatsNode), sort (текущий ключ), desc (направление),
-   sort_base (URL, к которому добавляются параметры), name_header (заголовок первой колонки).
+   Ждёт: rows (список StatsNode-строк), sort (текущий ключ), desc (направление),
+   name_header (заголовок первой колонки) и sort_link — функция
+   sort_link(key, next_desc) → URL. Фильтр по меткам и раскрытые подтемы уже
+   зашиты в этот URL вызывающей страницей, поэтому таблица о них не знает.
 
    Сортировка — обычные ссылки: страница отдаётся SSR, поэтому переключение
    ключа/направления это просто переход на тот же URL с другими query-параметрами. #}
 {% from "stats_sort_icon.html" import sort_icon %}
+{% from "stats_badges.html" import badge_list %}
 
-{% macro sort_link(key, label, sort, desc, sort_base) %}
-  {% set active = sort == key %}
-  {% set next_desc = (not desc) if active else true %}
+{% macro sort_header(key, label, current, desc, link) %}
+  {% set active = current == key %}
   <a
     class="stats-sort{% if active %} active{% endif %}"
-    href="{{ sort_base }}?sort={{ key }}&desc={{ 'true' if next_desc else 'false' }}"
+    href="{{ link(key, not (active and desc)) }}"
     title="Сортировать по «{{ label }}»"
   >{{ label }}{{ sort_icon(active, desc) }}</a>
 {% endmacro %}
@@ -21,12 +23,9 @@
   <thead>
     <tr>
       <th>{{ name_header }}</th>
-      <th class="stats-num">
-        {{ sort_link('count', 'Обращений', sort, desc, sort_base) }}
-      </th>
-      <th class="stats-num">
-        {{ sort_link('avg', 'Среднее время ответа', sort, desc, sort_base) }}
-      </th>
+      <th>{{ sort_header('badges', 'Метки', sort, desc, sort_link) }}</th>
+      <th class="stats-num">{{ sort_header('count', 'Обращений', sort, desc, sort_link) }}</th>
+      <th class="stats-num">{{ sort_header('avg', 'Среднее время ответа', sort, desc, sort_link) }}</th>
     </tr>
   </thead>
   <tbody>
@@ -39,6 +38,7 @@
             <span class="stats-name">{{ row.name }}</span>
           {% endif %}
         </td>
+        <td>{{ badge_list(row.badges) }}</td>
         <td class="stats-num">{{ row.count }}</td>
         <td class="stats-num">{{ avg_turn_label(row.avg_seconds) }}</td>
       </tr>

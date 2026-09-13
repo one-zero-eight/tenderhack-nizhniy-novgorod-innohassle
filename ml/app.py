@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import html
 import json
@@ -24,11 +25,21 @@ import chat as chat_service
 import feedback
 import handrules
 import stats
+import summaries
 from api import router as api_router
 from assets import router as assets_router
 from manuals import Manual, Section, section_body
 from rag import langfuse, state
-from storage import ChatRecord, MessageRecord, UserRecord, clean_username, get_storage
+from storage import (
+    ChatRecord,
+    EntityChoiceRecord,
+    MessageRecord,
+    UserRecord,
+    clean_username,
+    get_storage,
+)
+import companies
+import entities
 from support import LINE_NAMES
 from topic_classifier import FALLBACK, TOPICS
 from turns import TURNS
@@ -68,6 +79,31 @@ def _format_datetime(value: object) -> str:
 
 
 templates.env.filters["datetime"] = _format_datetime
+
+
+def _format_date(value: object) -> str:
+    """Только дата: «12.09.2026» — для списков в профиле."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            value = datetime.fromisoformat(value)
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y")
+    return str(value)
+
+
+def _format_money(value: object) -> str:
+    """Сумма в рублях с неразрывными пробелами: «1 450 000 ₽»."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{number:,.0f} ₽".replace(",", "\u00a0")
+
+
+templates.env.filters["date"] = _format_date
+templates.env.filters["money"] = _format_money
 
 
 def _tool_label(tool: object) -> Markup:
@@ -126,10 +162,19 @@ def _avg_turn_label(seconds: float | None) -> str:
 templates.env.globals["duration_label"] = _duration_label
 templates.env.globals["avg_turn_label"] = _avg_turn_label
 
+# Метки проблем в статистике: как их считать и подписывать — решает stats.py,
+# шаблоны только рисуют.
+templates.env.globals["badge_kind"] = stats.badge_kind
+templates.env.globals["badge_kinds"] = stats.badge_kinds
+templates.env.globals["badge_order"] = stats.BADGE_ORDER
+templates.env.globals["badge_titles"] = stats.BADGE_TITLES
+templates.env.globals["badge_labels"] = stats.BADGE_LABELS
+
 # Кнопки оценки ответа: тексты берём из feedback.py, чтобы шаблон и подсказки
 # для LLM не разъезжались. ChatView.feedback_context решает, какие именно кнопки рисовать.
 templates.env.globals["feedback_positive_label"] = feedback.POSITIVE_LABEL
 templates.env.globals["feedback_negative_label"] = feedback.NEGATIVE_LABEL
+templates.env.globals["entity_kind_label"] = lambda kind: entities.KIND_LABELS.get(kind, kind).capitalize()
 templates.env.globals["feedback_operator_label"] = feedback.OPERATOR_LABEL
 templates.env.globals["feedback_reasons"] = feedback.REASONS
 
@@ -144,9 +189,21 @@ def _user_active_key(username: str) -> str:
 
 
 class ChatView(ChatRecord):
-    """ChatRecord + флаг для шаблонов (стримится ли последний ответ)."""
+    """ChatRecord + флаг для шаблонов (стримится ли последний ответ).
 
-    def __init__(self, record: ChatRecord, streaming_id: str | None = None) -> None:
+    readonly=True — режим админки (только просмотр): в нём не показываются ни
+    кнопки оценки, ни выбор сущностей. _choices — уже загруженные списки выбора
+    (см. ChatStorage.list_entity_choices), грузятся один раз на страницу.
+    """
+
+    def __init__(
+        self,
+        record: ChatRecord,
+        streaming_id: str | None = None,
+        *,
+        readonly: bool = False,
+        choices: dict[str, list[EntityChoiceRecord]] | None = None,
+    ) -> None:
         super().__init__(
             id=record.id,
             title=record.title,
@@ -165,6 +222,8 @@ class ChatView(ChatRecord):
             messages=record.messages,
         )
         self.streaming_id = streaming_id
+        self.readonly = readonly
+        self._choices = choices or {}
 
     @property
     def redirect_line_title(self) -> str:
@@ -196,10 +255,15 @@ class ChatView(ChatRecord):
 
         Кнопки живут под последним ответом ассистента всегда, пока чат не закрыт
         и ответ не стримится: оценку можно поменять, новая перетирает прежнюю
-        (оценка всё равно одна на чат). Исключение — служебная благодарность
-        на кнопку «Спасибо за помощь»: это не ответ на вопрос, оценивать нечего.
+        (оценка всё равно одна на чат). Два исключения:
+        - служебная благодарность на кнопку «Спасибо за помощь» — это не ответ
+          на вопрос, оценивать нечего;
+        - ответ, под которым показан выбор сущности (контракт/закупка/предложение):
+          разговор ещё не закончен, ждём выбора пользователя.
         """
         if not self.is_feedback_target(message) or self.message_is_streaming(message):
+            return False
+        if self.entity_choices(message):
             return False
         return not feedback.is_service_reply(message.content)
 
@@ -235,6 +299,16 @@ class ChatView(ChatRecord):
             elif message.role == "assistant":
                 mapping[message.id] = last_question
         return mapping
+
+    def entity_choices(self, message: MessageRecord) -> list[EntityChoiceRecord]:
+        """Списки выбора сущностей под сообщением — кнопки контракта/закупки/предложения.
+
+        Уже использованные выборы не отдаём: пользователь нажал кнопку, и список
+        ему больше не нужен. Пусто также в админке и в закрытом чате.
+        """
+        if self.readonly or self.is_closed:
+            return []
+        return [c for c in self._choices.get(message.id, []) if not c.used and c.options]
 
 
 def _manuals() -> list[dict[str, str | int]]:
@@ -345,7 +419,7 @@ def _render(request: Request, name: str, **ctx: object) -> HTMLResponse:
     )
 
 
-def _panel_chat(chat_id: str | None = None) -> ChatView | None:
+def _panel_chat(chat_id: str | None = None, *, readonly: bool = False) -> ChatView | None:
     """Открытый чат для панели. chat_id — конкретный чат, иначе активный для /admin."""
     if chat_id is None:
         chat_id = _active_id()
@@ -355,7 +429,42 @@ def _panel_chat(chat_id: str | None = None) -> ChatView | None:
     if record is None:
         _set_active(None)
         return None
-    return ChatView(record, streaming_id=_streaming_message_id(chat_id))
+    return ChatView(
+        record,
+        streaming_id=_streaming_message_id(chat_id),
+        readonly=readonly,
+        choices=_entity_choices(record, readonly=readonly),
+    )
+
+
+def _user_chat_view(
+    record: ChatRecord,
+    *,
+    streaming_id: str | None = None,
+    streaming: bool = True,
+) -> ChatView:
+    """ChatView для публичной части: со списками выбора сущностей (кнопками).
+
+    Все пользовательские страницы создают панель через этот хелпер — иначе легко
+    забыть передать choices, и кнопки исчезнут после перезагрузки страницы.
+    """
+    return ChatView(
+        record,
+        streaming_id=streaming_id if streaming else None,
+        choices=_entity_choices(record),
+    )
+
+
+def _entity_choices(
+    record: ChatRecord, *, readonly: bool = False
+) -> dict[str, list[EntityChoiceRecord]]:
+    """Списки выбора сущностей по всем сообщениям чата — одним запросом.
+
+    В админке списки не нужны (там только просмотр), поэтому не грузим их вовсе.
+    """
+    if readonly:
+        return {}
+    return get_storage().list_entity_choices([m.id for m in record.messages])
 
 
 def _chat_files(chat_id: str | None) -> list[dict[str, object]]:
@@ -425,7 +534,15 @@ def _upload_failed(message: str) -> HTMLResponse:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Прогрев эмбеддера handrules: torch и веса bge-m3 грузятся здесь, на старте,
+    # а не лениво при первом вопросе. При `--reload` процесс пересоздаётся,
+    # поэтому прогрев повторяется на каждую правку — так и задумано.
+    # В отдельном потоке: torch — блокирующий вызов, в event loop ему нельзя.
+    await asyncio.to_thread(handrules.warmup)
+    # Фоновая витрина: сводки по темам статистики на основе новых отзывов.
+    summaries.start_background()
     yield
+    await summaries.stop_background()
     # Аккуратно гасим незавершённые ходы, чтобы не терять записи в SQLite.
     await TURNS.shutdown()
     if langfuse is not None:
@@ -605,7 +722,9 @@ def _chat_feedback(request: Request, chat: ChatRecord, *, base: str, readonly: b
     """
     if readonly:
         return HTMLResponse("")
-    view = chat if isinstance(chat, ChatView) else ChatView(chat)
+    # Списки выбора грузим и здесь: от них зависит, показывать ли кнопки оценки —
+    # пока пользователь не выбрал сущность, оценивать нечего (см. feedback_visible).
+    view = chat if isinstance(chat, ChatView) else _user_chat_view(chat)
     state = view.feedback_context(view.messages[-1]) if view.messages else {"rate": False, "reasons": False}
     if not state["rate"]:
         return HTMLResponse("")
@@ -613,6 +732,26 @@ def _chat_feedback(request: Request, chat: ChatRecord, *, base: str, readonly: b
         request,
         "chat_feedback.html",
         {"chat": view, "base": base, "feedback": state},
+    )
+
+
+def _chat_choices(request: Request, chat: ChatView, message_id: str, *, base: str) -> HTMLResponse:
+    """Кнопки выбора сущности под ответом — обновляемый фрагмент (см. base.html).
+
+    Списки пишет тул во время генерации, поэтому в момент отрисовки страницы их
+    ещё нет: контейнер перезапрашивается на sse:done. Пустой ответ — выбора нет,
+    ещё не пришёл или уже потрачен; контейнер схлопывается через :empty.
+    """
+    message = next((item for item in chat.messages if item.id == message_id), None)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    choices = chat.entity_choices(message)
+    if not choices:
+        return HTMLResponse("")
+    return templates.TemplateResponse(
+        request,
+        "message_choices.html",
+        {"chat": chat, "base": base, "choices": choices},
     )
 
 
@@ -682,7 +821,7 @@ def _login_response(request: Request, *, error: str | None = None, username: str
     return templates.TemplateResponse(
         request,
         "user_login.html",
-        {"error": error, "username": username},
+        {"error": error, "username": username, "companies": companies.company_options()},
     )
 
 
@@ -1100,22 +1239,82 @@ def _query_url(base: str, **params: object) -> str:
     return f"{base}?{query}" if query else base
 
 
+def _order_badges(kinds: object) -> list[str]:
+    """Приводит набор метк к порядку badge_order и выкидывает незнакомые.
+
+    Нужно и для разбора query, и для сборки ссылок: так URL фильтра стабилен
+    и одинаков, с какого бы порядка клика его ни собрали.
+    """
+    wanted = set(kinds) if isinstance(kinds, (list, tuple, set, frozenset)) else set()
+    return [kind for kind in stats.BADGE_ORDER if kind in wanted]
+
+
+def _badge_args(badge: list[str] | None) -> list[str]:
+    """Выбранные метки из query. Пусто — фильтр выключен (показываем всё)."""
+    return _order_badges(badge)
+
+
+def _badge_filter_link(base: str, selected: list[str], **params: object):
+    """Строит функцию ссылки-переключателя для одного бейджа.
+
+    Семантика: пустой выбор — показано всё; клик по бейджу оставляет только его;
+    клики по другим добавляют их, повторный клик по выбранному убирает. Когда
+    не остаётся ни одного — снова показано всё. parameters (sort/desc/open)
+    переносятся, чтобы фильтр не сбрасывал сортировку и раскрытые подтемы.
+    """
+
+    def link(kind: str | None) -> str:
+        if kind is None:
+            chosen: list[str] = []
+        elif kind in selected:
+            chosen = [k for k in selected if k != kind]
+        else:
+            chosen = [*selected, kind]
+        # badge задаёт именно эта функция, поэтому из перенесённых параметров его убираем.
+        extra = {name: value for name, value in params.items() if name != "badge"}
+        return _query_url(base, badge=_order_badges(chosen), **extra)
+
+    return link
+
+
 @app.get("/stats", response_class=HTMLResponse, include_in_schema=False)
-async def stats_topics(request: Request, sort: str | None = None, desc: bool | None = None) -> HTMLResponse:
-    """Темы: количество обращений и среднее время ответа. Строка ведёт на /stats/<topic>."""
+async def stats_topics(
+    request: Request,
+    sort: str | None = None,
+    desc: bool | None = None,
+    badge: list[str] | None = Query(default=None),
+) -> HTMLResponse:
+    """Темы: число обращений, метки и среднее время ответа. Строка ведёт на /stats/<topic>.
+
+    `badge` — выбранные фильтры; пусто — показано всё.
+    """
     key, descending = _sort_args(sort, desc)
-    tree = stats.build_tree(stats.non_empty_chats())
+    selected = _badge_args(badge)
+    tree = stats.build_tree(stats.filter_chats(stats.non_empty_chats(), selected))
     rows = [
         {
             "name": node.name,
             "count": node.count,
             "avg_seconds": node.avg_seconds,
-            "href": f"/stats/{quote(node.name)}",
+            "badges": node.badges,
+            # Фильтр переносим и в переход на тему: сравнение метк сохраняется.
+            "href": _query_url(f"/stats/{quote(node.name)}", badge=selected),
         }
         for node in stats.sort_nodes(tree, key, descending=descending)
     ]
+
+    def sort_href(next_key: str, next_desc: bool) -> str:
+        return _query_url("/stats", sort=next_key, desc=str(next_desc).lower(), badge=selected)
+
     return _stats_page(
-        request, "stats_topics.html", rows=rows, sort=key, desc=descending, sort_base="/stats"
+        request,
+        "stats_topics.html",
+        rows=rows,
+        sort=key,
+        desc=descending,
+        sort_link=sort_href,
+        selected_badges=selected,
+        filter_link=_badge_filter_link("/stats", selected, sort=key, desc=str(descending).lower()),
     )
 
 
@@ -1126,41 +1325,57 @@ async def stats_subtopics(
     sort: str | None = None,
     desc: bool | None = None,
     open: list[str] | None = Query(default=None),
+    badge: list[str] | None = Query(default=None),
 ) -> HTMLResponse:
     """Подтемы темы; каждая разворачивается в список своих чатов.
 
     Чаты сортируются внутри своей подтемы — независимо от порядка подтем.
     Раскрытые подтемы приходят в `open` (по имени), поэтому смена сортировки
     их не сбрасывает: ссылки сортировки и тогглы пересобираются с тем же open.
+    `badge` — выбранные фильтры; пусто — показано всё.
     """
     key, descending = _sort_args(sort, desc)
-    tree = stats.build_tree(stats.non_empty_chats())
-    topic_node = stats.find_topic(tree, topic)
-    if topic_node is None:
+    selected = _badge_args(badge)
+    records = stats.non_empty_chats()
+    all_tree = stats.build_tree(records)
+    # Тема должна существовать сама по себе: иначе при фильтре, который ничего
+    # в ней не оставил, мы получили бы 404 вместо пустой таблицы.
+    known = stats.find_topic(all_tree, topic)
+    if known is None:
         raise HTTPException(status_code=404, detail="Тема не найдена")
+    topic_node = stats.find_topic(stats.build_tree(stats.filter_chats(records, selected)), topic)
+    if topic_node is None:
+        topic_node = stats.StatsNode(name=topic, count=0, avg_seconds=None)
+
+    # AI-сводка считается фоновой задачей (см. summaries.py); страница только
+    # показывает готовое. Пусто у темы с отзывами — значит, генерация ещё идёт.
+    saved_summary = get_storage().get_topic_summary(topic_node.name)
+    has_reviews = any(chat.rating for chat in stats.chats_of(known))
 
     open_names = _open_args(open)
     base = f"/stats/{quote(topic_node.name)}"
+    params = {"sort": key, "desc": str(descending).lower(), "open": open_names, "badge": selected}
 
     def sort_href(next_key: str, next_desc: bool) -> str:
-        """Ссылка сортировки: меняет sort/desc, но сохраняет раскрытые подтемы."""
-        return _query_url(base, sort=next_key, desc=str(next_desc).lower(), open=open_names)
+        """Ссылка сортировки: меняет sort/desc, но сохраняет open и фильтр."""
+        return _query_url(base, **{**params, "sort": next_key, "desc": str(next_desc).lower()})
 
     def toggle_query(name: str) -> str:
         """Ссылка для клика по подтеме: её имя добавляется или убирается из open.
 
-        sort/desc тоже переносим — клик по подтеме не должен сбрасывать сортировку.
+        sort/desc и фильтр тоже переносим — клик по подтеме ничего не сбрасывает.
         """
         toggled = [n for n in open_names if n != name]
         if name not in open_names:
             toggled.append(name)
-        return _query_url(base, sort=key, desc=str(descending).lower(), open=toggled)
+        return _query_url(base, **{**params, "open": toggled})
 
     groups = [
         {
             "name": node.name,
             "count": node.count,
             "avg_seconds": node.avg_seconds,
+            "badges": node.badges,
             "chats": stats.sort_chats(node.chats, key, descending=descending),
         }
         for node in stats.sort_nodes(topic_node.subtopics, key, descending=descending)
@@ -1172,10 +1387,13 @@ async def stats_subtopics(
         groups=groups,
         sort=key,
         desc=descending,
-        sort_base=base,
         open_names=set(open_names),
         sort_link=sort_href,
         toggle_query=toggle_query,
+        selected_badges=selected,
+        filter_link=_badge_filter_link(base, selected, **params),
+        summary=saved_summary,
+        summary_pending=has_reviews and saved_summary is None,
     )
 
 
@@ -1203,7 +1421,7 @@ async def stats_chat(request: Request, topic: str, chat_id: str) -> HTMLResponse
         active_id=None,
         tab="stats",
         topic_name=topic,
-        chat=ChatView(chat, streaming_id=_streaming_message_id(chat.id)),
+        chat=_user_chat_view(chat, streaming_id=_streaming_message_id(chat.id)),
     )
 
 
@@ -1227,6 +1445,7 @@ async def _start_turn(
     template: str,
     username: str | None = None,
     turn_hint: str | None = None,
+    display_text: str | None = None,
 ) -> HTMLResponse:
     """Общий запуск хода для / и /admin.
 
@@ -1234,6 +1453,8 @@ async def _start_turn(
     Никаких изменений системного промпта — он остаётся кешируемым.
     turn_hint — служебная подсказка модели для этого хода (оценка ответа,
     запрос оператора): дописывается к вопросу только для модели.
+    display_text — что видит пользователь, если для модели текст другой
+    (выбор сущности: агенту — фраза с id, в UI — подпись кнопки).
     """
     chat = chat_service.get_chat(chat_id)
     if chat is None:
@@ -1252,7 +1473,9 @@ async def _start_turn(
     else:
         _set_active(chat_id, key=_user_active_key(username))
 
-    _user_msg, assistant_msg, _updated = await chat_service.prepare_turn(chat_id, text)
+    _user_msg, assistant_msg, _updated = await chat_service.prepare_turn(
+        chat_id, text, display_text=display_text
+    )
 
     # Вложения уходят в контекст этого хода. Привязываем их к сообщению и чистим таблицу
     # прямо здесь, до рендера страницы: иначе фоновая генерация успевала бы не всегда,
@@ -1278,7 +1501,7 @@ async def _start_turn(
     return _user_page(
         request,
         username,
-        chat=ChatView(_require_chat(chat_id), streaming_id=assistant_msg.id),
+        chat=_user_chat_view(_require_chat(chat_id), streaming_id=assistant_msg.id),
         push_url=f"{base}/chats/{chat_id}",
         template=template,
     )
@@ -1323,7 +1546,7 @@ async def _scripted_turn(
     return _user_page(
         request,
         username,
-        chat=ChatView(_require_chat(chat_id), streaming_id=assistant_msg.id),
+        chat=_user_chat_view(_require_chat(chat_id), streaming_id=assistant_msg.id),
         push_url=f"{base}/chats/{chat_id}",
     )
 
@@ -1386,12 +1609,35 @@ async def login_page(request: Request) -> Response:
 
 @app.post("/login", include_in_schema=False)
 async def login_submit(request: Request, username: str = Form("")) -> Response:
-    """Сохраняем имя в куке. Пароля нет: имя — просто ярлык для чатов."""
+    """Вход гостем: сохраняем имя в куке. Пароля нет — имя просто ярлык для чатов."""
     name = _clean_username(username)
     if not name:
         return _login_response(request, error="Введите имя, чтобы продолжить.", username="")
 
     get_storage().upsert_user(name)
+    return _set_username_cookie(name)
+
+
+@app.post("/login/company", include_in_schema=False)
+async def login_company(request: Request, inn: str = Form("")) -> Response:
+    """Вход по компании: username — её ИНН, ставим флаг is_authorized.
+
+    Роль компании берётся из companies.py и записывается в users.role — именно она
+    решает, какие сущности показывает профиль и какие инструменты получает агент
+    (см. rag.build_agent).
+    """
+    company = companies.get_company(_clean_username(inn))
+    if company is None:
+        return _login_response(request, error="Выберите компанию из списка.", username="")
+
+    storage = get_storage()
+    storage.upsert_user(company.inn, is_authorized=True)
+    storage.set_user_role(company.inn, company.role)
+    return _set_username_cookie(company.inn)
+
+
+def _set_username_cookie(name: str) -> Response:
+    """Общий ответ входа: кука с именем и редирект на /."""
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
         USERNAME_COOKIE,
@@ -1422,7 +1668,7 @@ async def user_index(request: Request) -> HTMLResponse:
 
 @app.get("/profile", response_class=HTMLResponse, include_in_schema=False)
 async def profile_page(request: Request) -> HTMLResponse:
-    """Профиль: имя и выбор роли (по умолчанию «не указано»)."""
+    """Профиль: у гостя — только имя, у компании — реквизиты и её сделки."""
     user = _current_user(request)
     if user is None:
         raise _NeedLogin()
@@ -1430,19 +1676,16 @@ async def profile_page(request: Request) -> HTMLResponse:
         request,
         "user_profile.html",
         username=user.username,
-        role=user.role,
+        company=companies.get_company(user.username) if user.is_authorized else None,
         chats=chat_service.list_chats(owner=user.username),
         tab="profile",
     )
 
 
 @app.post("/profile", include_in_schema=False)
-async def profile_save(request: Request, role: str = Form("none")) -> Response:
-    """Сохраняем роль. 'none' — сброс в NULL («не указано»)."""
-    username = _require_user(request)
-    chosen = role if role in ("supplier", "customer") else None
-    get_storage().set_user_role(username, chosen)
-    return RedirectResponse("/profile", status_code=303)
+async def profile_save() -> Response:
+    """Смена роли убрана: роль приходит только из companies.py вместе с компанией."""
+    raise HTTPException(status_code=405, detail="Роль теперь задаётся входом по компании")
 
 
 @app.get("/knowledge-base", response_class=HTMLResponse, include_in_schema=False)
@@ -1481,7 +1724,7 @@ async def user_get_chat(request: Request, chat_id: str) -> HTMLResponse:
     return _user_page(
         request,
         username,
-        chat=ChatView(chat, streaming_id=_streaming_message_id(chat.id)),
+        chat=_user_chat_view(chat, streaming_id=_streaming_message_id(chat.id)),
         push_url=f"/chats/{chat.id}",
     )
 
@@ -1492,7 +1735,7 @@ async def user_create_chat(request: Request) -> HTMLResponse:
     username = _require_user(request)
     chat = chat_service.create_chat(owner=username)
     _set_active(chat.id, key=_user_active_key(username))
-    return _user_page(request, username, chat=ChatView(chat), push_url=f"/chats/{chat.id}")
+    return _user_page(request, username, chat=_user_chat_view(chat), push_url=f"/chats/{chat.id}")
 
 
 @app.delete("/chats/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
@@ -1512,13 +1755,14 @@ async def user_send_message(request: Request, chat_id: str, message: str = Form(
     """Отправка сообщения: роль пользователя дописывается к вопросу."""
     username = _require_user(request)
     _user_chat(username, chat_id)
-    user = get_storage().get_user(username)
     return await _start_turn(
         request,
         chat_id,
         message,
         base="",
-        role=None if user is None else user.role,
+        # В stream_answer уходит username: для компании это ИНН, по нему
+        # поднимаются её реквизиты и сущности (см. companies.get_company).
+        role=username,
         template="user_index.html",
         username=username,
     )
@@ -1536,6 +1780,14 @@ async def user_chat_footer(request: Request, chat_id: str) -> HTMLResponse:
     """Низ панели чата для публичной части: форма отправки или плашка перевода."""
     username = _require_user(request)
     return _chat_footer(request, _user_chat(username, chat_id), base="", readonly=False, hide_readonly_note=False)
+
+
+@app.get("/chats/{chat_id}/messages/{message_id}/choices", response_class=HTMLResponse, include_in_schema=False)
+async def user_message_choices(request: Request, chat_id: str, message_id: str) -> HTMLResponse:
+    """Кнопки выбора сущности под ответом — фрагмент, который обновляется на sse:done."""
+    username = _require_user(request)
+    record = _user_chat(username, chat_id)
+    return _chat_choices(request, _user_chat_view(record), message_id, base="")
 
 
 @app.get("/chats/{chat_id}/feedback", response_class=HTMLResponse, include_in_schema=False)
@@ -1578,6 +1830,62 @@ async def user_feedback(request: Request, chat_id: str, value: str = Form(...)) 
     raise HTTPException(status_code=400, detail="Неизвестная оценка ответа")
 
 
+@app.post("/chats/{chat_id}/entity", response_class=HTMLResponse, include_in_schema=False)
+async def user_entity_select(
+    request: Request,
+    chat_id: str,
+    kind: str = Form(...),
+    entity_id: str = Form(...),
+) -> HTMLResponse:
+    """Нажатие кнопки выбора контракта/закупки/предложения.
+
+    Пользователь видит в чате описание выбранной сущности (ту же подпись, что была
+    на кнопке), а агенту уходит и служебная фраза с id, и те же поля текстом —
+    чтобы ему не пришлось догадываться, о чём речь (см. entities.selection_text).
+
+    Кнопки после выбора гасим: выбор сделан, повторять его незачем.
+    Подделка исключена: id сверяем с сущностями компании из куки.
+    """
+    username = _require_user(request)
+    chat = _user_chat(username, chat_id)
+    if chat.is_closed:
+        raise HTTPException(status_code=409, detail="Чат уже переведён на линию поддержки")
+
+    choice = entities.find_choice(username, kind, entity_id)
+    if choice is None:
+        raise HTTPException(status_code=400, detail="Неизвестная сущность")
+
+    # Кнопки под сообщением с выбором больше не показываем: он уже сделан.
+    _mark_choices_used(chat, kind)
+
+    return await _start_turn(
+        request,
+        chat_id,
+        entities.selection_text(kind, choice),
+        base="",
+        role=username,
+        template="user_index.html",
+        username=username,
+        # В UI — подпись с кнопки (номер, сумма, дата), без служебных id.
+        display_text=choice.label,
+    )
+
+
+def _mark_choices_used(chat: ChatRecord, kind: str) -> None:
+    """Гасит кнопки выбора этого вида во всех сообщениях чата.
+
+    Так снимаются и остальные кнопки из того же сообщения: пользователь уже выбрал,
+    второй список ему только мешает.
+    """
+    store = get_storage()
+    for message in chat.messages:
+        if message.role != "assistant":
+            continue
+        for record in store.list_entity_choices([message.id]).get(message.id, []):
+            if record.entity_kind == kind:
+                store.mark_entity_choices_used(message.id)
+
+
 @app.post("/chats/{chat_id}/feedback/reason", response_class=HTMLResponse, include_in_schema=False)
 async def user_feedback_reason(request: Request, chat_id: str, reason: str = Form(...)) -> HTMLResponse:
     """Выбранная причина: обычный ход с LLM, которая перегенерирует ответ с замечанием.
@@ -1591,13 +1899,14 @@ async def user_feedback_reason(request: Request, chat_id: str, reason: str = For
     if not feedback.is_reason(chosen):
         raise HTTPException(status_code=400, detail="Неизвестная причина")
     get_storage().set_chat_rating(chat_id, "negative", chosen)
-    user = get_storage().get_user(username)
     return await _start_turn(
         request,
         chat_id,
         chosen,
         base="",
-        role=None if user is None else user.role,
+        # В stream_answer уходит username: для компании это ИНН, по нему
+        # поднимаются её реквизиты и сущности (см. companies.get_company).
+        role=username,
         template="user_index.html",
         username=username,
         turn_hint=feedback.reason_hint(chosen),
@@ -1610,13 +1919,14 @@ async def user_feedback_operator(request: Request, chat_id: str) -> HTMLResponse
     username = _require_user(request)
     _user_chat(username, chat_id)
     get_storage().set_chat_rating(chat_id, "negative", feedback.OPERATOR_LABEL)
-    user = get_storage().get_user(username)
     return await _start_turn(
         request,
         chat_id,
         feedback.OPERATOR_LABEL,
         base="",
-        role=None if user is None else user.role,
+        # В stream_answer уходит username: для компании это ИНН, по нему
+        # поднимаются её реквизиты и сущности (см. companies.get_company).
+        role=username,
         template="user_index.html",
         username=username,
         turn_hint=feedback.operator_hint(),
@@ -1639,7 +1949,7 @@ async def user_upload_file(request: Request, chat_id: str, file: UploadFile) -> 
     return _user_page(
         request,
         username,
-        chat=ChatView(_require_chat(chat_id), streaming_id=_streaming_message_id(chat_id)),
+        chat=_user_chat_view(_require_chat(chat_id), streaming_id=_streaming_message_id(chat_id)),
     )
 
 
@@ -1652,7 +1962,7 @@ async def user_delete_file(request: Request, chat_id: str, file_id: str) -> HTML
     return _user_page(
         request,
         username,
-        chat=ChatView(_require_chat(chat_id), streaming_id=_streaming_message_id(chat_id)),
+        chat=_user_chat_view(_require_chat(chat_id), streaming_id=_streaming_message_id(chat_id)),
     )
 
 
@@ -1662,6 +1972,157 @@ async def user_file_content(request: Request, chat_id: str, file_id: str) -> Res
     username = _require_user(request)
     _user_chat(username, chat_id)
     return _file_content_response(chat_id, file_id)
+
+
+# ------------------------------------------------ /chats2 (временный вариант страницы)
+#
+# Второй вид публичной страницы: вместо inline-кнопок оценки — кнопка «Команды»
+# с поповером слэш-команд (как в ../frontend). Нужен только чтобы сравнить два
+# интерфейса, поэтому блок самодостаточный и легко вырезается:
+#   1. удалить этот блок целиком;
+#   2. удалить templates/chats2_*.html;
+#   3. удалить CSS-блок «/chats2» в static/style.css.
+# Боевые шаблоны и роуты он не трогает.
+
+CHATS2_TEMPLATE = "chats2_index.html"
+
+CHATS2_COMMANDS = (
+    {
+        "value": "/оценить",
+        "description": "Оценить работу поддержки: поставить звёзды и оставить комментарий",
+    },
+    {
+        "value": "/запросить_помощь",
+        "description": "Перевести диалог на оператора-человека",
+    },
+)
+
+
+def _chats2_page(
+    request: Request,
+    username: str,
+    *,
+    chat_id: str | None = None,
+    chat: ChatView | None = None,
+    push_url: str | None = None,
+) -> HTMLResponse:
+    """Страница /chats2: те же свои чаты, но композер с командами."""
+    key = _user_active_key(username)
+    if chat is None and chat_id is not None:
+        record = _user_chat(username, chat_id)
+        chat = _user_chat_view(record, streaming_id=_streaming_message_id(chat_id))
+    response = _render(
+        request,
+        CHATS2_TEMPLATE,
+        chat=chat,
+        chats=chat_service.list_chats(owner=username),
+        active_id=_active_id(key),
+        tab="support",
+        commands=CHATS2_COMMANDS,
+    )
+    if push_url is not None:
+        response.headers["HX-Push-Url"] = push_url
+    return response
+
+
+@app.get("/chats2", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_index(request: Request) -> HTMLResponse:
+    """Без id: открываем активный чат пользователя либо пустую панель."""
+    username = _require_user(request)
+    active = _active_id(_user_active_key(username))
+    if active is not None and chat_service.get_chat(active) is not None:
+        return _chats2_page(request, username, chat_id=active, push_url=f"/chats2/{active}")
+    return _chats2_page(request, username)
+
+
+@app.get("/chats2/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_get_chat(request: Request, chat_id: str) -> HTMLResponse:
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    _set_active(chat_id, key=_user_active_key(username))
+    return _chats2_page(request, username, chat_id=chat_id, push_url=f"/chats2/{chat_id}")
+
+
+@app.post("/chats2", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_create_chat(request: Request) -> HTMLResponse:
+    """Новый чат из /chats2 — тот же, что и в публичной части."""
+    username = _require_user(request)
+    chat = chat_service.create_chat(owner=username)
+    _set_active(chat.id, key=_user_active_key(username))
+    return _chats2_page(request, username, chat=_user_chat_view(chat), push_url=f"/chats2/{chat.id}")
+
+
+@app.post("/chats2/{chat_id}/messages", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_send_message(request: Request, chat_id: str, message: str = Form(...)) -> HTMLResponse:
+    """Отправка сообщения из /chats2: тот же ход, что и в публичной части."""
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    text = message.strip()
+    if not text:
+        return HTMLResponse("", status_code=204)
+    chat = _require_chat(chat_id)
+    if chat.is_closed:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Чат закрыт: обращение переведено на линию поддержки {chat.redirect_line}",
+        )
+    _set_active(chat_id, key=_user_active_key(username))
+
+    _user_msg, assistant_msg, _updated = await chat_service.prepare_turn(chat_id, text)
+    files = attachment_service.list_files(chat_id, with_blobs=True)
+    chat_service.bind_attachments(chat_id, _user_msg.id, files)
+    TURNS.start(
+        chat_id,
+        assistant_msg,
+        on_event=lambda event, payload: _turn_event_to_sse(event, payload, show_tools=False),
+        # ИНН компании (или имя гостя) — по нему stream_answer находит компанию.
+        user_role=username,
+        files=files,
+    )
+    return _chats2_page(
+        request,
+        username,
+        chat=_user_chat_view(_require_chat(chat_id), streaming_id=assistant_msg.id),
+        push_url=f"/chats2/{chat_id}",
+    )
+
+
+@app.get("/chats2/{chat_id}/messages/{message_id}/stream", include_in_schema=False)
+async def chats2_stream_message(request: Request, chat_id: str, message_id: str) -> StreamingResponse:
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    return _stream(chat_id, message_id)
+
+
+@app.get("/chats2/{chat_id}/footer", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_footer(request: Request, chat_id: str) -> HTMLResponse:
+    """Низ чата для /chats2: композер с кнопкой «Команды»."""
+    username = _require_user(request)
+    view = _user_chat_view(_user_chat(username, chat_id), streaming_id=_streaming_message_id(chat_id))
+    return templates.TemplateResponse(
+        request,
+        "chats2_footer.html",
+        {"chat": view, "max_upload_mb": MAX_UPLOAD_MB, "commands": CHATS2_COMMANDS},
+    )
+
+
+@app.post("/chats2/{chat_id}/upload", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_upload_file(request: Request, chat_id: str, file: UploadFile) -> HTMLResponse:
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    try:
+        await _store_upload(chat_id, file)
+    except HTTPException as exc:
+        return _upload_failed(str(exc.detail))
+    return _chats2_page(request, username, chat_id=chat_id)
+
+
+@app.delete("/chats2/{chat_id}/files/{file_id}", response_class=HTMLResponse, include_in_schema=False)
+async def chats2_delete_file(request: Request, chat_id: str, file_id: str) -> HTMLResponse:
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    attachment_service.delete_file(chat_id, file_id)
+    return _chats2_page(request, username, chat_id=chat_id)
 
 
 if __name__ == "__main__":

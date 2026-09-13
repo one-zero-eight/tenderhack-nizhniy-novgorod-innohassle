@@ -1,0 +1,48 @@
+{# Бейджи проблем в статистике: перевод в поддержку, недовольство ответом и оба сразу.
+
+   Цвета и порядок берутся из stats.py (badge_order, badge_titles, badge_labels) —
+   единственный источник правды. У чата метка ровно одна, у темы/подтемы — счётчики.
+
+   Макросы:
+   * badge(kind, count) — один бейджик; без count рисуется только цветной маркер (для чата);
+   * badge_list(counts) — все ненулевые метки набора (для темы/подтемы);
+   * chat_badge(chat)   — метки конкретного чата;
+   * badge_filter(selected, filter_link) — кликабельный фильтр по меткам. #}
+
+{% macro badge(kind, count=None) %}
+  <span class="stat-badge {{ kind }}{% if count is none %} marker{% endif %}" title="{{ badge_titles[kind] }}">{% if count is not none %}{{ count }}{% endif %}</span>
+{% endmacro %}
+
+{% macro badge_list(counts) %}
+  <span class="stat-badges">
+    {% for kind in badge_order %}{% if counts.get(kind) %}{{ badge(kind, counts[kind]) }}{% endif %}{% endfor %}
+  </span>
+{% endmacro %}
+
+{% macro chat_badge(chat) %}
+  {% set kinds = badge_kinds(chat) %}
+  {% if kinds %}
+    <span class="stat-badges">{% for kind in kinds %}{{ badge(kind) }}{% endfor %}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro badge_filter(selected, filter_link) %}
+  {# Фильтр работает как мультивыбор: пусто — показано всё, выбрано несколько —
+     только они. Ссылки строит app._badge_filter_link: клик добавляет/убирает метку,
+     а снятие последней снова показывает всё. Заодно это и легенда — цвета те же. #}
+  <div class="stat-filter" role="group" aria-label="Фильтр по меткам">
+    <span class="stat-filter-label">Метки:</span>
+    {% for kind in badge_order %}
+      {% set active = (not selected) or (kind in selected) %}
+      <a
+        class="stat-filter-item {{ kind }}{% if active %} active{% endif %}"
+        href="{{ filter_link(kind) }}"
+        title="{{ badge_titles[kind] }}"
+        aria-pressed="{{ 'true' if active else 'false' }}"
+      ><span class="stat-filter-dot"></span>{{ badge_labels[kind] }}</a>
+    {% endfor %}
+    {% if selected %}
+      <a class="stat-filter-reset" href="{{ filter_link(none) }}">сбросить</a>
+    {% endif %}
+  </div>
+{% endmacro %}

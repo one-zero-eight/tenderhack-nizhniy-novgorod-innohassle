@@ -1,0 +1,24 @@
+{# Списки выбора сущности (контракт / закупка / предложение) под ответом ассистента.
+
+   Один шаблон на два случая: полная отрисовка страницы и фрагмент, который
+   base.html перезапрашивает на sse:done (см. app._chat_choices). Кнопки готовы
+   только после ответа агента, поэтому контейнер в message_assistant.html есть
+   всегда, а содержимое приезжает отдельным запросом.
+
+   Ждёт: chat, base, choices. #}
+{% for choice in choices %}
+<div class="entity-group">
+  <div class="entity-group-title">{{ entity_kind_label(choice.entity_kind) }}</div>
+  {% for option in choice.options %}
+  <button
+    type="button"
+    class="entity-option"
+    hx-post="{{ base }}/chats/{{ chat.id }}/entity"
+    hx-vals='{"kind": "{{ choice.entity_kind }}", "entity_id": "{{ option.id }}"}'
+    hx-target="body"
+    hx-swap="outerHTML"
+    hx-disabled-elt="this"
+  >{{ option.label }}</button>
+  {% endfor %}
+</div>
+{% endfor %}

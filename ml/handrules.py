@@ -29,7 +29,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
 from llama_index.core import Settings, StorageContext, VectorStoreIndex
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.core.retrievers.fusion_retriever import FUSION_MODES
@@ -38,15 +37,14 @@ from llama_index.core.vector_stores import MetadataFilters
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
+import settings
 from storage import HandRuleRecord, get_storage
-
-load_dotenv(Path(__file__).resolve().parent / ".env")
 
 HERE = Path(__file__).resolve().parent
 
 # Индекс правил — отдельная chroma-коллекция, чтобы не путаться с мануалами (если
 # RAG по мануалам когда-нибудь вернут — коллекции не пересекутся).
-CHROMA_DIR = Path(os.getenv("HANDRULES_CHROMA_DIR") or (HERE / "chroma_handrules"))
+CHROMA_DIR = Path(settings.get("HANDRULES_CHROMA_DIR") or (HERE / "chroma_handrules"))
 COLLECTION_NAME = "handrules"
 
 # Сколько правил подмешивается в промпт одного хода.
@@ -76,8 +74,11 @@ MIN_SCORE = 0.42
 def _configure_embeddings() -> None:
     """Ставит модель эмбеддингов в глобальный Settings, если её там ещё нет.
 
-    Импорт тяжёлый (torch), поэтому происходит лениво и только когда поиск реально
-    понадобился. device=cpu по умолчанию: на macOS MPS падает в кернелах при повторном
+    Загружается один раз на процесс (см. warmup): при `--reload` процесс
+    пересоздаётся, и модель грузится заново — это ожидаемо, зато к моменту
+    первого вопроса она уже готова.
+
+    device=cpu по умолчанию: на macOS MPS падает в кернелах при повторном
     эмбеддинге (см. историю rag.py).
 
     Читаем `_embed_model` напрямую, а не через свойство `Settings.embed_model`:
@@ -89,8 +90,8 @@ def _configure_embeddings() -> None:
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
     Settings.embed_model = HuggingFaceEmbedding(
-        model_name=os.getenv("EMBED_MODEL", "BAAI/bge-m3"),
-        device=os.getenv("EMBED_DEVICE", "cpu"),
+        model_name=settings.get("EMBED_MODEL", "BAAI/bge-m3"),
+        device=settings.get("EMBED_DEVICE", "cpu"),
     )
 
 
@@ -110,12 +111,13 @@ def _llm():
     from llama_index.llms.openai_like import OpenAILike
 
     return OpenAILike(
-        model=os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
-        api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
-        api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+        model=settings.llm_model(),
+        api_base=settings.llm_base(),
+        api_key=settings.llm_key(),
         is_chat_model=True,
-        context_window=128_000,
+        context_window=settings.llm_context_window(),
         is_function_calling_model=True,
+        timeout=settings.llm_timeout(),
     )
 
 
@@ -246,6 +248,25 @@ def invalidate() -> None:
     """
     global _index
     _index = None
+
+
+def warmup() -> bool:
+    """Готовит эмбеддер и индекс заранее — на старте приложения.
+
+    Без этого torch и веса bge-m3 грузятся лениво — прямо в первом ходе, и
+    пользователь ждёт несколько секунд лишнего. Здесь мы платим это время при
+    запуске, а не при первом вопросе. При `--reload` процесс пересоздаётся,
+    поэтому прогрев повторяется — это нормально.
+
+    Возвращает True, если модели/индекс готовы. Ошибку не пробрасываем: без
+    правил приложение всё равно должно подняться (поиск просто вернёт пусто).
+    """
+    try:
+        _configure_embeddings()
+        _ensure_index()
+    except Exception:  # noqa: BLE001 — прогрев не должен ломать старт
+        return False
+    return True
 
 
 async def retrieve(question: str, k: int = TOP_K, min_score: float = MIN_SCORE) -> list[HandRuleRecord]:

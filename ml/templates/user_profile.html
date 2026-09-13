@@ -1,4 +1,7 @@
-{# Профиль: имя из куки + выбор роли. Роль уходит в вопрос к агенту, не в промпт. #}
+{# Профиль в двух режимах:
+   - гость (company нет): только имя и кнопка выхода;
+   - компания: реквизиты и краткие списки контрактов/закупок/предложений.
+   Роли вручную больше не выбираются: роль приходит из companies.py при входе. #}
 {% extends "base.html" %}
 
 {% block title %}Профиль — Портал поставщиков{% endblock %}
@@ -6,37 +9,85 @@
 {% block content %}
 <section class="profile">
   <div class="profile-row">
-    <span class="profile-label">Имя</span>
-    <span class="profile-value">{{ username }}</span>
+    <span class="profile-avatar" aria-hidden="true">
+      {# Иконка профиля: одинаковая для всех, без аватарок. #}
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8" r="4"></circle>
+        <path d="M4 21v-1a8 8 0 0 1 16 0v1"></path>
+      </svg>
+    </span>
+    <span class="profile-value">{{ company.name if company else username }}</span>
+    {% if company %}<span class="profile-role">{{ company.role_label }}</span>{% endif %}
+    <form class="profile-logout" method="post" action="/logout">
+      <button type="submit" class="btn-outline">Выйти из аккаунта</button>
+    </form>
   </div>
 
-  <form class="profile-form" method="post" action="/profile">
-    <div class="field-label">Кто вы на Портале поставщиков</div>
-    <p class="profile-hint">
-      Агент подставляет роль в вопрос, чтобы не переспрашивать. Если не указывать —
-      он будет уточнять по ходу разговора.
-    </p>
+  {% if company %}
+  {# Реквизиты компании: пары «подпись — значение», без крупных заголовков. #}
+  <dl class="profile-facts">
+    <div class="profile-fact"><dt>Полное название</dt><dd>{{ company.full_name }}</dd></div>
+    <div class="profile-fact"><dt>ИНН</dt><dd>{{ company.inn }}</dd></div>
+    <div class="profile-fact"><dt>КПП</dt><dd>{{ company.kpp }}</dd></div>
+    <div class="profile-fact"><dt>ОГРН</dt><dd>{{ company.ogrn }}</dd></div>
+    <div class="profile-fact"><dt>Адрес</dt><dd>{{ company.address }}</dd></div>
+    <div class="profile-fact"><dt>Руководитель</dt><dd>{{ company.ceo }}</dd></div>
+    <div class="profile-fact"><dt>Телефон</dt><dd>{{ company.phone }}</dd></div>
+    <div class="profile-fact"><dt>Email</dt><dd>{{ company.email }}</dd></div>
+    <div class="profile-fact"><dt>Сайт</dt><dd>{{ company.website }}</dd></div>
+    <div class="profile-fact"><dt>Роль</dt><dd>{{ company.role_label }}</dd></div>
+  </dl>
 
-    <label class="radio">
-      <input type="radio" name="role" value="none" {% if not role %}checked{% endif %}>
-      <span>Не указано</span>
-    </label>
-    <label class="radio">
-      <input type="radio" name="role" value="supplier" {% if role == "supplier" %}checked{% endif %}>
-      <span>Поставщик</span>
-    </label>
-    <label class="radio">
-      <input type="radio" name="role" value="customer" {% if role == "customer" %}checked{% endif %}>
-      <span>Заказчик</span>
-    </label>
-
-    <div class="profile-actions">
-      <button type="submit" class="btn-primary">Сохранить</button>
-      <button type="submit" class="btn-outline" form="logout-form">Выйти из профиля</button>
+  {# Сделки компании: показываем только релевантные роли списки (см. visible_documents). #}
+  {% set procurements, offers, contracts = company.visible_documents() %}
+  <div class="profile-deals">
+    {% if contracts %}
+    <div class="profile-deal">
+      <div class="field-label">Контракты</div>
+      <ul class="profile-list">
+        {% for c in contracts %}
+        <li>
+          <span class="profile-list-main">№ {{ c.id }} — {{ c.title }}</span>
+          <span class="profile-list-meta">{{ c.counterparty }} · {{ c.price | money }} · {{ c.status }}</span>
+        </li>
+        {% endfor %}
+      </ul>
     </div>
-  </form>
+    {% endif %}
 
-  {# Отдельная форма: кнопка «Выйти» в неё попадает через form="logout-form". #}
-  <form id="logout-form" method="post" action="/logout"></form>
+    {% if procurements %}
+    <div class="profile-deal">
+      <div class="field-label">Закупки</div>
+      <ul class="profile-list">
+        {% for p in procurements %}
+        <li>
+          <span class="profile-list-main">№ {{ p.number }} — {{ p.title }}</span>
+          <span class="profile-list-meta">{{ p.status }} · {{ p.initial_price | money }} · до {{ p.submission_deadline | date }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if offers %}
+    <div class="profile-deal">
+      <div class="field-label">Предложения</div>
+      <ul class="profile-list">
+        {% for o in offers %}
+        <li>
+          <span class="profile-list-main">№ {{ o.procurement_number }} — {{ o.title }}</span>
+          <span class="profile-list-meta">{{ o.status }} · {{ o.price | money }} · {{ o.submitted_at | date }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="profile-note">
+    Вы вошли как гость: доступны вопросы по Порталу поставщиков, но не данные компаний.
+  </p>
+  {% endif %}
 </section>
 {% endblock %}

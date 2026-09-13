@@ -25,6 +25,10 @@ RAW_DIR = HERE / "raw-md"
 OUT_DIR = HERE / "jsons"
 IMG_PLACEHOLDER = "__IMG_PREFIX__"
 
+# Служебные файлы raw-md: не мануалы, в jsons/ им не место.
+# topics.md собирает build_topics.py, остальные — рабочие источники парсера обращений.
+SKIP_FILES = {"topics.md", "Темы_подтемы_обращений.md", "support-redirect-manual.md"}
+
 IMAGE_RE = re.compile(r"^!\[[^\]]*\]\((?P<src>[^)]+)\)\s*$")
 CAPTION_RE = re.compile(r"^(?:##\s+|- |\*\s+)?Рисунок\s+(?P<id>\d+)\s*[-–—]\s*(?P<caption>.*?)\s*$")
 SECTION_RE = re.compile(r"^##\s+(?P<id>\d+(?:\.\d+)*)\.?(?![\w)])\s*(?P<heading>.*?)\s*$")
@@ -218,6 +222,9 @@ def process(md_path: Path) -> tuple[str, dict[str, dict], int, dict[str, str]]:
 
 def main() -> None:
     for md_path in sorted(RAW_DIR.glob("*.md")):
+        if md_path.name in SKIP_FILES:
+            print(f"{md_path.name}\n  -- пропущен (служебный)")
+            continue
         slug, nodes, images, meta = process(md_path)
         print(
             f"{md_path.name}\n  -> jsons/{slug}.json  nodes={len(nodes)} "

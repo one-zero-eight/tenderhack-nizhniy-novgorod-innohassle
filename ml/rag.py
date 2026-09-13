@@ -19,10 +19,10 @@ import asyncio
 # import hashlib     # RAG ОТКЛЮЧЁН
 import json
 import os
+import re
 from pathlib import Path
 
 # import chromadb  # RAG ОТКЛЮЧЁН
-from dotenv import load_dotenv
 from llama_index.core import Settings  # , StorageContext, VectorStoreIndex  # RAG ОТКЛЮЧЁН
 from llama_index.core.agent.workflow import AgentWorkflow
 
@@ -40,6 +40,7 @@ from llama_index.llms.openai_like import OpenAILike
 from manuals import (
     Manual,
     Section,
+    _id_sort_key,
     load_manuals,
     manuals_overview,
     render_section,
@@ -49,8 +50,11 @@ from manuals import (
 # render_tree и JSONS_DIR нужны были только для поиска и сборки индекса.
 # from manuals import JSONS_DIR, render_tree  # RAG ОТКЛЮЧЁН
 from support import SupportSession, load_lines_manual
-
-load_dotenv(Path(__file__).resolve().parent / ".env")
+import companies
+import entities
+import settings
+from companies import Company
+from entities import EntitySink
 
 from langfuse import get_client, propagate_attributes
 from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
@@ -72,16 +76,21 @@ HERE = Path(__file__).resolve().parent
 #     device=os.getenv("EMBED_DEVICE", "cpu"),
 # )
 Settings.llm = OpenAILike(
-    model=os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
-    api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
-    api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+    model=settings.llm_model(),
+    api_base=settings.llm_base(),
+    api_key=settings.llm_key(),
     is_chat_model=True,
-    context_window=128_000,
+    context_window=settings.llm_context_window(),
     is_function_calling_model=True,
+    temperature=settings.llm_temperature(),
+    timeout=settings.llm_timeout(),
+    additional_kwargs={"extra_headers": settings.llm_extra_headers()}
+    if settings.llm_extra_headers()
+    else {},
 )
 
 langfuse = None
-if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+if settings.get("LANGFUSE_PUBLIC_KEY") and settings.get("LANGFUSE_SECRET_KEY"):
     LlamaIndexInstrumentor().instrument()
     langfuse = get_client()
 else:
@@ -293,6 +302,74 @@ def read(manual: str, section_id: str) -> str:  # имя инструмента 
     return render_section(found, resolved)
 
 
+# Сколько секций максимум возвращает regexp_search.
+REGEXP_LIMIT = 10
+
+
+def regexp_search(pattern: str) -> str:  # имя инструмента задано агенту
+    """Найти разделы инструкций по регулярному выражению (без эмбеддингов).
+
+    Поиск идёт по номеру, заголовку и тексту каждого раздела всех мануалов сразу.
+    Регистр не важен, ищется подстрока: regexp_search("франшиз") найдёт «франшиза».
+    Возвращает до 10 самых «густых» разделов, сгруппированных по мануалам:
+
+        Мануал `bulk-price-list-import` (total 4 found)
+        `1.5.3.3` Лицензиар, франшиза и персонаж (4 found)
+
+    Мануалы отсортированы по суммарному числу вхождений, разделы внутри — по своему.
+    Перейти к чтению: read(<slug из заголовка группы>, <номер в бэктиках>).
+    """
+    manuals, _ = state()
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error as exc:
+        return f"Неверное регулярное выражение '{pattern}': {exc}"
+
+    # Мануал -> его разделы-попадания. Попадания собираем сразу по мануалам,
+    # чтобы сгруппировать вывод, не пересобирая список второй раз.
+    per_manual: list[tuple[int, Manual, list[tuple[int, Section]]]] = []
+    for manual in manuals.values():
+        sections: list[tuple[int, Section]] = []
+        for section in manual.sections.values():
+            haystack = f"{section.id} {section.heading}\n{section.text}"
+            count = sum(1 for _ in rx.finditer(haystack))
+            if count:
+                sections.append((count, section))
+        if sections:
+            # Внутри мануала — по числу вхождений, при равенстве по номеру раздела
+            # (2.9 раньше 2.10), иначе порядок плавал бы от dict.
+            sections.sort(key=lambda s: (-s[0], _id_sort_key(s[1].id)))
+            per_manual.append((sum(count for count, _ in sections), manual, sections))
+
+    if not per_manual:
+        return f"По запросу '{pattern}' ничего не найдено в инструкциях."
+
+    # Мануалы — по суммарному числу вхождений; при равенстве по slug для стабильности.
+    per_manual.sort(key=lambda m: (-m[0], m[1].slug))
+
+    # Всего попаданий (для хвостовой пометки) и всего найденных разделов —
+    # разные числа, поэтому считаем оба: сравнивать показанное надо с разделами.
+    total_hits = sum(m[0] for m in per_manual)
+    total_sections = sum(len(m[2]) for m in per_manual)
+    lines: list[str] = []
+    shown = 0
+    for manual_total, manual, sections in per_manual:
+        if shown >= REGEXP_LIMIT:
+            break
+        lines.append(f"Мануал `{manual.slug}` (total {manual_total} found)")
+        for count, section in sections:
+            if shown >= REGEXP_LIMIT:
+                break
+            lines.append(f"`{section.id}` {section.heading} ({count} found)")
+            shown += 1
+    if shown < total_sections:
+        lines.append(
+            f"--- показаны {shown} разделов из {total_sections} (всего вхождений: {total_hits}); "
+            f"уточни regexp, чтобы сузить выдачу"
+        )
+    return "\n".join(lines)
+
+
 SYSTEM_PROMPT = """Ты — консультант по Порталу поставщиков (zakupki.mos.ru).
 Отвечай на русском, только по содержимому инструкций. Не выдумывай функции и кнопки,
 которых нет в прочитанных разделах.
@@ -306,14 +383,24 @@ SYSTEM_PROMPT = """Ты — консультант по Порталу пост�
 в заголовке мануала, а section_id — номер слева от двоеточия. Инструмент read 
 возвращает список дочерних разделов, по которым можно конкретизировать ответ.
 
+Когда по оглавлению не понять, есть ли ответ в базе знаний, — пользуйся
+regexp_search("термин"). Заголовки в оглавлении короткие, а термин пользователя
+может встречаться только в тексте или называться иначе (синоним, формулировка
+интерфейса, аббревиатура). Вызов стоит одного шага и даёт до 10 разделов с числом
+вхождений, поэтому его дешевле сделать, чем ошибиться с выводом «инструкции этого
+не покрывают». Ищи не всю фразу целиком, а ключевой термин: regexp_search("франшиз"),
+не regexp_search("как оформить франшизу в лицензии"). Если ничего не нашлось —
+пробуй синоним или часть слова. Разные термины — разные вызовы.
+
 {hierarchy}
 
 {lines}
 
 Перевод на линию:
 1. Прежде чем утверждать, что ответа нет, проверь оглавление и открой 1—2 наиболее
-   подходящих раздела. Не переводи «как сделать X» вопрос, не убедившись, что инструкции
-   его не покрывают.
+   подходящих раздела. Если подходящих разделов нет — вызови regexp_search
+   по ключевому термину. Не переводи «как сделать X» вопрос, не убедившись, что
+   инструкции его не покрывают. "Ответа нет" без попытки regexp_search — ошибка.
 2. Если у пользователя есть четко сформулированный вопрос, выбери одну из линий и 
    вызови transfer_to_support(line, reason). Это завершит чат: напиши пользователю,
    что вопрос передан на линию, скоро ответит специалист. Не называй код линии (L1, L2).
@@ -364,8 +451,55 @@ BASE_SYSTEM_PROMPT = SYSTEM_PROMPT.format(
     lines=load_lines_manual(),
 )
 
+def build_entity_tools(role: str | None, sink: "EntitySink | None" = None) -> list:
+    """Инструменты выбора сущностей под роль компании.
+
+    Гость (role=None) не получает ни одного: ему нечего выбирать, реквизитов у него нет.
+    Заказчик получает контракты и закупки, поставщик — контракты и предложения.
+    """
+    kinds = entities.available_kinds(role)
+    tools: list = []
+    for kind in kinds:
+        name = f"list_{kind}s"
+        description = _ENTITY_TOOL_DESCRIPTIONS[kind]
+
+        def make_tool(kind: str, name: str, description: str):
+            def tool() -> str:
+                """Показать пользователю кнопки выбора (см. описание)."""
+                return entities.render_selection(kind, sink)
+
+            tool.__name__ = name
+            tool.__doc__ = description
+            return tool
+
+        tools.append(make_tool(kind, name, description))
+    return tools
+
+
+_ENTITY_TOOL_DESCRIPTIONS = {
+    entities.CONTRACT: (
+        "Показать пользователю кнопки со списком его контрактов. Вызывай СРАЗУ, как только "
+        "в вопросе упомянут контракт или договор, — не спрашивая, какой именно. После выбора "
+        "в чат придёт «Пользователь выбрал контракт: <id>» и описание контракта; этой "
+        "строке можно доверять."
+    ),
+    entities.PROCUREMENT: (
+        "Показать пользователю кнопки со списком его закупок. Вызывай СРАЗУ, как только "
+        "в вопросе упомянута закупка, — не спрашивая, какая именно. После выбора "
+        "в чат придёт «Пользователь выбрал закупка: <id>» и описание закупки; этой "
+        "строке можно доверять."
+    ),
+    entities.OFFER: (
+        "Показать пользователю кнопки со списком его предложений. Вызывай СРАЗУ, как только "
+        "в вопросе упомянуто предложение или заявка, — не спрашивая, какое именно. После "
+        "выбора в чат придёт «Пользователь выбрал предложение: <id>» и описание "
+        "предложения; этой строке можно доверять."
+    ),
+}
+
+
 agent = AgentWorkflow.from_tools_or_functions(
-    [read],  # search отключён: оглавление целиком есть в промпте
+    [read, regexp_search],  # search отключён: оглавление целиком есть в промпте
     llm=Settings.llm,
     system_prompt=BASE_SYSTEM_PROMPT,
 )
@@ -375,8 +509,14 @@ def build_agent(
     extra_system_prompt: str | None = None,
     support_session: SupportSession | None = None,
     handrules_prompt: str | None = None,
+    company: "Company | None" = None,
+    entity_sink: "EntitySink | None" = None,
 ) -> AgentWorkflow:
     """Собирает агента под конкретный чат.
+
+    company — компания пользователя (см. companies.py). Для гостя None: тогда
+    агент не получает ни реквизитов, ни инструментов выбора сущностей.
+    entity_sink — куда записать выбранные варианты для UI (см. entities.py).
 
     extra_system_prompt дописывается к базовому (не заменяет его).
     support_session добавляет инструмент transfer_to_support, причём перевод
@@ -385,6 +525,11 @@ def build_agent(
     идёт последним, чтобы стоять ближе к вопросу пользователя.
     """
     parts = [BASE_SYSTEM_PROMPT]
+    if company is not None:
+        # Реквизиты компании и правило уточнения — часть системного промпта,
+        # а не пометка в сообщении: роль теперь есть только у компаний.
+        parts.append("Данные пользователя (компания, от имени которой идёт обращение):\n" + company.context_line())
+        parts.append(entities.ENTITY_PROMPT)
     extra = (extra_system_prompt or "").strip()
     if extra:
         parts.append(extra)
@@ -392,12 +537,10 @@ def build_agent(
     if rules:
         parts.append(rules)
 
-    if support_session is None and len(parts) == 1:
-        return agent
-
-    raw_tools: list = [read]
+    raw_tools: list = [read, regexp_search]
     if support_session is not None:
         raw_tools.append(support_session.transfer_to_support)
+    raw_tools.extend(build_entity_tools(company.role if company else None, entity_sink))
     tools = [t if isinstance(t, BaseTool) else FunctionTool.from_defaults(fn=t) for t in raw_tools]
 
     original = agent.agents[agent.root_agent]
@@ -412,10 +555,14 @@ __all__ = [
     "BASE_SYSTEM_PROMPT",
     "agent",
     "build_agent",
+    "build_entity_tools",
+    "companies",
+    "entities",
     "langfuse",
     "manuals",
     "manuals_overview",
     "propagate_attributes",
+    "regexp_search",
     "state",
 ]
 

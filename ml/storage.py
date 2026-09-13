@@ -62,7 +62,11 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id     TEXT NOT NULL REFERENCES chats (id) ON DELETE CASCADE,
     role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content     TEXT NOT NULL DEFAULT '',
+    display_content TEXT,
     attachments TEXT,
+    -- Сущности, о которых речь в сообщении (контракт, закупка и т.п.), JSON-массивом.
+    -- Приходят из REST API и уходят агенту в контекст (см. entities_context).
+    entities    TEXT,
     duration_ms INTEGER,
     position    INTEGER NOT NULL,
     created_at  TEXT NOT NULL
@@ -84,13 +88,30 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 
 CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls (message_id, position);
 
+-- Вызовы инструментов выбора сущности (contract/procurement/offer): под сообщением
+-- ассистента рисуются inline-кнопки. Строки живут в БД, чтобы кнопки переживали
+-- перезагрузку страницы. entity_kind — 'contract' | 'procurement' | 'offer',
+-- payload — JSON со списком вариантов (id, label, text).
+CREATE TABLE IF NOT EXISTS entity_choices (
+    id          TEXT PRIMARY KEY,
+    message_id  TEXT NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
+    entity_kind TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    used        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_choices_message ON entity_choices (message_id, created_at);
+
 -- Пользователи публичной части (страница /). Паролей нет: username из куки —
--- только для идентификации. role: NULL | 'supplier' | 'customer'.
+-- только для идентификации. Для компаний (см. companies.py) username — это ИНН,
+-- а is_authorized=1; у гостей флаг 0. role заполняется только у компаний.
 CREATE TABLE IF NOT EXISTS users (
-    username   TEXT PRIMARY KEY,
-    role       TEXT CHECK (role IN ('supplier', 'customer')),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    username      TEXT PRIMARY KEY,
+    role          TEXT CHECK (role IN ('supplier', 'customer')),
+    is_authorized INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
 );
 
 -- Вложения чата: файлы и картинки, загруженные до отправки сообщения.
@@ -123,6 +144,16 @@ CREATE TABLE IF NOT EXISTS handrules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_handrules_updated ON handrules (updated_at DESC);
+
+-- AI-сводки по темам статистики (см. summaries.py). signature — отпечаток
+-- отзывов темы: по нему фоновая задача понимает, что сводку пора пересчитать,
+-- и не дёргает LLM на каждый проход.
+CREATE TABLE IF NOT EXISTS topic_summaries (
+    topic      TEXT PRIMARY KEY,
+    summary    TEXT NOT NULL,
+    signature  TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -145,13 +176,38 @@ class ToolCallRecord:
 
 
 @dataclass
+class EntityChoiceRecord:
+    """Выбор сущности под сообщением: inline-кнопки контракта/закупки/предложения.
+
+    entity_kind: 'contract' | 'procurement' | 'offer'.
+    options: список {id, label, text} — label для кнопки, text уйдёт в чат
+    от имени пользователя, когда он нажмёт кнопку.
+    """
+
+    message_id: str
+    entity_kind: str
+    options: list[dict[str, str]] = field(default_factory=list)
+    # True — пользователь уже выбрал вариант: кнопки больше не показываем.
+    used: bool = False
+
+
+@dataclass
 class MessageRecord:
     id: str
     role: str
     content: str
+    # Текст, который видит пользователь, если он отличается от content.
+    # Для выбора сущности content — служебная строка для агента
+    # («Пользователь выбрал контракт: <id>»), а display_content — подпись
+    # с кнопки. None — показываем content как есть.
+    display_content: str | None = None
     tools: list[ToolCallRecord] = field(default_factory=list)
     # Вложения, отправленные вместе с сообщением: оригиналы лежат в attachments/<id>.
     attachments: list[dict[str, Any]] = field(default_factory=list)
+    # Сущности, о которых речь в сообщении (контракт, закупка, предложение).
+    # Приходят из REST API и целиком идут агенту в контекст (см. entities_context),
+    # в самом тексте сообщения остаётся только @alias. В UI не рендерятся.
+    entities: list[dict[str, Any]] = field(default_factory=list)
     # Сколько агент генерировал этот ответ, в миллисекундах (только у assistant).
     # Считается от старта хода до последнего токена, включая вызовы инструментов.
     duration_ms: int | None = None
@@ -161,27 +217,37 @@ class MessageRecord:
             "id": self.id,
             "role": self.role,
             "content": self.content,
+            "display_content": self.display_content,
             "tools": [tool.to_dict() for tool in self.tools],
             "attachments": list(self.attachments),
+            "entities": list(self.entities),
             "duration_ms": self.duration_ms,
         }
 
 
 @dataclass
 class UserRecord:
-    """Пользователь публичной части: имя из куки плюс выбранная роль.
+    """Пользователь публичной части: имя из куки плюс признак компании.
 
-    role: None — не указана, 'supplier' — поставщик, 'customer' — заказчик.
-    Сюда же можно писать 'legacy' — владельца чатов, созданных до появления /.
+    is_authorized=False — гость: он назвал только имя, компания неизвестна.
+    is_authorized=True — вход по компании: username равен её ИНН, role заполнен
+    ('supplier' — поставщик, 'customer' — заказчик), а реквизиты берутся из
+    companies.get_company(username).
+    Сюда же пишется 'legacy' — владелец чатов, созданных до появления /.
     """
 
     username: str
     role: str | None = None
+    is_authorized: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"username": self.username, "role": self.role}
+        return {
+            "username": self.username,
+            "role": self.role,
+            "is_authorized": self.is_authorized,
+        }
 
 
 @dataclass
@@ -204,6 +270,28 @@ class HandRuleRecord:
             "user_message": self.user_message,
             "instructions": self.instructions,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+@dataclass
+class TopicSummaryRecord:
+    """AI-сводка темы статистики: готовый текст плюс отпечаток отзывов.
+
+    signature хранится рядом, чтобы фоновая задача (summaries.py) сравнивала
+    текущее состояние отзывов с тем, по которому сводка была построена.
+    """
+
+    topic: str
+    summary: str
+    signature: str = ""
+    updated_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "topic": self.topic,
+            "summary": self.summary,
+            "signature": self.signature,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
@@ -270,9 +358,14 @@ def _now() -> str:
 
 def _load_attachments(row: sqlite3.Row) -> list[dict[str, Any]]:
     """Вложения сообщения из JSON-колонки. Терпимо к старым строкам (колонки нет)."""
-    if "attachments" not in row.keys():
+    return _load_json_list(row, "attachments")
+
+
+def _load_json_list(row: sqlite3.Row, column: str) -> list[dict[str, Any]]:
+    """JSON-массив из колонки. Нет колонки/пусто/битый JSON — пустой список."""
+    if column not in row.keys():
         return []
-    raw = row["attachments"]
+    raw = row[column]
     if not raw:
         return []
     try:
@@ -280,6 +373,11 @@ def _load_attachments(row: sqlite3.Row) -> list[dict[str, Any]]:
     except (TypeError, ValueError):
         return []
     return loaded if isinstance(loaded, list) else []
+
+
+def _load_entities(row: sqlite3.Row) -> list[dict[str, Any]]:
+    """Сущности сообщения (контракт/закупка/...), пришедшие из REST API."""
+    return _load_json_list(row, "entities")
 
 
 def _new_id() -> str:
@@ -311,6 +409,10 @@ class ChatStorage:
             self._conn.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
         if "duration_ms" not in columns:
             self._conn.execute("ALTER TABLE messages ADD COLUMN duration_ms INTEGER")
+        if "display_content" not in columns:
+            self._conn.execute("ALTER TABLE messages ADD COLUMN display_content TEXT")
+        if "entities" not in columns:
+            self._conn.execute("ALTER TABLE messages ADD COLUMN entities TEXT")
 
         chat_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(chats)")}
         if "rating" not in chat_columns:
@@ -319,6 +421,16 @@ class ChatStorage:
             self._conn.execute("ALTER TABLE chats ADD COLUMN rating_reason TEXT")
         if "rated_at" not in chat_columns:
             self._conn.execute("ALTER TABLE chats ADD COLUMN rated_at TEXT")
+
+        choice_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(entity_choices)")}
+        if "used" not in choice_columns:
+            self._conn.execute("ALTER TABLE entity_choices ADD COLUMN used INTEGER NOT NULL DEFAULT 0")
+
+        user_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(users)")}
+        if "is_authorized" not in user_columns:
+            self._conn.execute(
+                "ALTER TABLE users ADD COLUMN is_authorized INTEGER NOT NULL DEFAULT 0"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -444,21 +556,34 @@ class ChatStorage:
         row = self._conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         return None if row is None else self._row_to_user(row)
 
-    def upsert_user(self, username: str) -> UserRecord:
-        """Создаёт пользователя при первом входе; роль остаётся нетронутой."""
+    def upsert_user(self, username: str, *, is_authorized: bool = False) -> UserRecord:
+        """Создаёт пользователя при первом входе; роль остаётся нетронутой.
+
+        is_authorized=True выставляет флаг компании (вход по ИНН). Для гостя флаг
+        не трогаем на повторных входах, но при первом он остаётся нулевым.
+        """
         now = _now()
         self._conn.execute(
-            "INSERT INTO users (username, role, created_at, updated_at) VALUES (?, NULL, ?, ?) "
-            "ON CONFLICT (username) DO NOTHING",
-            (username, now, now),
+            "INSERT INTO users (username, role, is_authorized, created_at, updated_at) "
+            "VALUES (?, NULL, ?, ?, ?) ON CONFLICT (username) DO NOTHING",
+            (username, int(is_authorized), now, now),
         )
+        if is_authorized:
+            self._conn.execute(
+                "UPDATE users SET is_authorized = 1, updated_at = ? WHERE username = ?",
+                (now, username),
+            )
         self._conn.commit()
         user = self.get_user(username)
         assert user is not None
         return user
 
     def set_user_role(self, username: str, role: str | None) -> UserRecord:
-        """Устанавливает роль ('supplier' | 'customer' | None) и возвращает запись."""
+        """Устанавливает роль ('supplier' | 'customer' | None) и возвращает запись.
+
+        Роль есть только у компаний: раньше её выбирал гость вручную, но теперь
+        она приходит из companies.py вместе с реквизитами (см. app.login_company).
+        """
         self.upsert_user(username)
         self._conn.execute(
             "UPDATE users SET role = ?, updated_at = ? WHERE username = ?",
@@ -470,9 +595,12 @@ class ChatStorage:
         return user
 
     def _row_to_user(self, row: sqlite3.Row) -> UserRecord:
+        # is_authorized может отсутствовать в очень старой базе до _migrate.
+        keys = row.keys()
         return UserRecord(
             username=row["username"],
             role=row["role"],
+            is_authorized=bool(row["is_authorized"]) if "is_authorized" in keys else False,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -493,6 +621,37 @@ class ChatStorage:
     def touch_chat(self, chat_id: str) -> None:
         self._conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
         self._conn.commit()
+
+    # -------------------------------------------------------- AI-сводки тем
+
+    def get_topic_summary(self, topic: str) -> TopicSummaryRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM topic_summaries WHERE topic = ?", (topic,)
+        ).fetchone()
+        if row is None:
+            return None
+        return TopicSummaryRecord(
+            topic=row["topic"],
+            summary=row["summary"],
+            signature=row["signature"],
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def upsert_topic_summary(self, topic: str, summary: str, signature: str = "") -> TopicSummaryRecord:
+        """Записывает сводку темы (перезаписывает прежнюю)."""
+        self._conn.execute(
+            """INSERT INTO topic_summaries (topic, summary, signature, updated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (topic) DO UPDATE SET
+                   summary = excluded.summary,
+                   signature = excluded.signature,
+                   updated_at = excluded.updated_at""",
+            (topic, summary, signature, _now()),
+        )
+        self._conn.commit()
+        record = self.get_topic_summary(topic)
+        assert record is not None
+        return record
 
     def set_chat_rating(self, chat_id: str, rating: str, reason: str | None = None) -> None:
         """Оценка чата целиком: одна на чат, к сообщениям не привязана.
@@ -588,7 +747,9 @@ class ChatStorage:
                 id=row["id"],
                 role=row["role"],
                 content=row["content"],
+                display_content=row["display_content"],
                 attachments=_load_attachments(row),
+                entities=_load_entities(row),
                 duration_ms=row["duration_ms"],
             )
             for row in rows
@@ -626,11 +787,42 @@ class ChatStorage:
         ).fetchone()
         return int(row["pos"])
 
-    def add_message(self, chat_id: str, role: str, content: str = "") -> MessageRecord:
-        message = MessageRecord(id=_new_id(), role=role, content=content)
+    def add_message(
+        self,
+        chat_id: str,
+        role: str,
+        content: str = "",
+        display_content: str | None = None,
+        entities: list[dict[str, Any]] | None = None,
+    ) -> MessageRecord:
+        """Пишет сообщение.
+
+        display_content — то, что видит пользователь, если текст для модели
+        отличается (выбор сущности: id агенту, подпись кнопки в UI).
+        entities — сущности из REST API (контракт, закупка и т.п.); сохраняются,
+        чтобы и в контексте агента, и в отдаче REST они были на месте.
+        """
+        message = MessageRecord(
+            id=_new_id(),
+            role=role,
+            content=content,
+            display_content=display_content,
+            entities=list(entities or []),
+        )
         self._conn.execute(
-            "INSERT INTO messages (id, chat_id, role, content, position, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (message.id, chat_id, role, content, self._next_position(chat_id), _now()),
+            "INSERT INTO messages "
+            "(id, chat_id, role, content, display_content, entities, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                message.id,
+                chat_id,
+                role,
+                content,
+                display_content,
+                json.dumps(message.entities, ensure_ascii=False) if message.entities else None,
+                self._next_position(chat_id),
+                _now(),
+            ),
         )
         self._conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
         self._conn.commit()
@@ -676,6 +868,7 @@ class ChatStorage:
             role=row["role"],
             content=row["content"],
             attachments=_load_attachments(row),
+            entities=_load_entities(row),
             duration_ms=row["duration_ms"],
         )
 
@@ -698,7 +891,9 @@ class ChatStorage:
             id=row["id"],
             role=row["role"],
             content=row["content"],
+            display_content=row["display_content"],
             attachments=_load_attachments(row),
+            entities=_load_entities(row),
             duration_ms=row["duration_ms"],
         )
         message.tools = self._list_tools([message.id]).get(message.id, [])
@@ -706,6 +901,66 @@ class ChatStorage:
 
     def clear_messages(self, chat_id: str) -> None:
         self._conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+        self._conn.commit()
+
+    # ----------------------------------------------------------- entity choices
+
+    def add_entity_choice(
+        self, message_id: str, entity_kind: str, options: list[dict[str, str]]
+    ) -> None:
+        """Сохраняет набор вариантов выбора. Повторный вызов по тому же виду
+        перезаписывает прежний: агенту незачем показывать два списка контрактов."""
+        self._conn.execute(
+            "DELETE FROM entity_choices WHERE message_id = ? AND entity_kind = ?",
+            (message_id, entity_kind),
+        )
+        self._conn.execute(
+            "INSERT INTO entity_choices (id, message_id, entity_kind, payload, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                _new_id(),
+                message_id,
+                entity_kind,
+                json.dumps(options, ensure_ascii=False),
+                _now(),
+            ),
+        )
+        self._conn.commit()
+
+    def list_entity_choices(self, message_ids: list[str]) -> dict[str, list[EntityChoiceRecord]]:
+        """Выборы по нескольким сообщениям сразу — для рендера страницы чата."""
+        if not message_ids:
+            return {}
+        placeholders = ",".join("?" * len(message_ids))
+        rows = self._conn.execute(
+            f"SELECT * FROM entity_choices WHERE message_id IN ({placeholders}) "
+            "ORDER BY created_at, rowid",
+            message_ids,
+        ).fetchall()
+        grouped: dict[str, list[EntityChoiceRecord]] = {}
+        for row in rows:
+            try:
+                options = json.loads(row["payload"])
+            except json.JSONDecodeError:
+                options = []
+            grouped.setdefault(row["message_id"], []).append(
+                EntityChoiceRecord(
+                    message_id=row["message_id"],
+                    entity_kind=row["entity_kind"],
+                    options=options,
+                    used=bool(row["used"]),
+                )
+            )
+        return grouped
+
+    def mark_entity_choices_used(self, message_id: str) -> None:
+        """Помечает все выборы сообщения использованными: пользователь уже выбрал.
+
+        Кнопки после этого не рисуются — выбор сделан, повторять его незачем.
+        """
+        self._conn.execute(
+            "UPDATE entity_choices SET used = 1 WHERE message_id = ?", (message_id,)
+        )
         self._conn.commit()
 
     # -------------------------------------------------------------- tool calls
@@ -750,8 +1005,10 @@ _storage: ChatStorage | None = None
 def get_storage(path: Path | str | None = None) -> ChatStorage:
     global _storage
     if _storage is None:
-        import os
+        import settings
 
-        resolved = path or os.getenv("CHAT_DB_PATH") or DEFAULT_DB_PATH
+        # Путь берём из активного окружения (см. settings.APP_ENV): у облачного
+        # и локального запусков разные файлы SQLite.
+        resolved = path or settings.db_path()
         _storage = ChatStorage(resolved)
     return _storage

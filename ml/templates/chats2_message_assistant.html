@@ -1,0 +1,10 @@
+{# ВРЕМЕННО: ответ ассистента для /chats2 — копия message_assistant.html без блока
+   inline-кнопок оценки (в этом варианте оценка живёт в команде /оценить).
+   Удаляется вместе с остальными chats2_*.html. #}
+<article class="msg assistant"{% if chat.message_is_streaming(assistant_msg) %} hx-ext="sse" sse-connect="/chats2/{{ chat.id }}/messages/{{ assistant_msg.id }}/stream" sse-close="done"{% endif %}>
+  <div class="who">
+    <span>Ассистент</span>
+    <span class="who-time" sse-swap="done" hx-swap="innerHTML"{% if assistant_msg.duration_ms is not none %} title="Время генерации ответа"{% endif %}>{% if assistant_msg.duration_ms is not none %}{{ duration_label(assistant_msg.duration_ms) }}{% endif %}</span>
+  </div>
+  <div class="body markdown" sse-swap="token" hx-swap="innerHTML">{% if chat.message_is_streaming(assistant_msg) and not assistant_msg.content %}<div class="pending" aria-label="Модель отвечает"><span></span><span></span><span></span></div>{% else %}{{ assistant_msg.content | markdown }}{% endif %}</div>
+</article>

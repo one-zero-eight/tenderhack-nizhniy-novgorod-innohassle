@@ -21,7 +21,10 @@ from llama_index.core.workflow import Context
 # from llama_index.core import Settings
 # from llama_index.core.base.llms.types import MessageRole
 import attachments as attachment_service
+import companies
+import entity_input
 import handrules
+from entities import EntitySink
 from rag import build_agent, langfuse, propagate_attributes
 from storage import DEFAULT_CHAT_TITLE, ChatRecord, ChatStorage, MessageRecord, get_storage
 from support import SupportSession
@@ -29,14 +32,6 @@ from topic_classifier import start_background as start_topic_classification
 
 _CHAT_LOCKS: dict[str, asyncio.Lock] = {}
 
-# Роль пользователя из /profile → пометка в начале его сообщения.
-# None (не указано) в словаре нет: тогда вопрос уходит как есть.
-ROLE_LABELS = {
-    "supplier": "я поставщик",
-    "customer": "я заказчик",
-}
-
-# Как часто сохранять накопленный ответ (в символах), чтобы не писать в SQLite на каждый токен.
 PERSIST_EVERY = 200
 
 # Захардкоженные ответы (оценка чата) отдаются не сразу, а потоком: сначала пауза,
@@ -226,7 +221,12 @@ def _maybe_classify_topic(store: ChatStorage, chat_id: str, question: str, answe
 
 
 async def prepare_turn(
-    chat_id: str, text: str, storage: ChatStorage | None = None
+    chat_id: str,
+    text: str,
+    storage: ChatStorage | None = None,
+    *,
+    display_text: str | None = None,
+    entities: list[dict[str, Any]] | None = None,
 ) -> tuple[MessageRecord, MessageRecord, ChatRecord]:
     """Записывает пару user/assistant в БД, попутно задавая заголовок чата.
 
@@ -235,6 +235,10 @@ async def prepare_turn(
 
     В `content` сообщения остаётся только текст вопроса: вложения описываются отдельно
     в `attachments` (см. stream_answer), а их файлы лежат в папке attachments/.
+    display_text — что видит пользователь, если в модель уходит другой текст
+    (выбор сущности: агенту — «Пользователь выбрал контракт: <id>», в UI — подпись кнопки).
+    entities — сущности из REST API (контракт, закупка и т.п.); сохраняются в
+    сообщении и уходят агенту отдельным блоком (см. entity_input.describe).
     """
     store = storage or get_storage()
     chat = store.get_chat(chat_id)
@@ -243,31 +247,28 @@ async def prepare_turn(
     if chat.is_closed:
         raise ChatClosedError(chat.redirect_line)
     # Первое сообщение в чате — самое время дать ему осмысленное название.
+    # Для выбора сущности берём подпись кнопки: id в заголовке чата был бы мусором.
     if chat.title == DEFAULT_CHAT_TITLE and text:
-        store.rename_chat(chat_id, await generate_title(text))
-    user_message = store.add_message(chat_id, "user", text)
+        store.rename_chat(chat_id, await generate_title(display_text or text))
+    user_message = store.add_message(
+        chat_id, "user", text, display_content=display_text, entities=entities
+    )
     assistant_message = store.add_message(chat_id, "assistant", "")
     updated = store.get_chat(chat_id)
     assert updated is not None
     return user_message, assistant_message, updated
 
 
-def _with_role(text: str, role: str | None, *, first_turn: bool) -> str:
-    """Дописывает роль пользователя к его сообщению — только на первом ходу чата.
+def _first_turn_prefix(company: "companies.Company | None", text: str, *, first_turn: bool) -> str:
+    """Контекст компании для первого сообщения чата.
 
-    Роль идёт именно в user_msg, а не в системный промпт: системный промпт остаётся
-    неизменным и кешируется провайдером, а роль может меняться в /profile между ходами.
-    Повторять метку в каждом сообщении не нужно: она остаётся в истории первого
-    вопроса, и модель видит её в контексте на всех последующих ходах. Это заодно
-    сохраняет префикс запроса неизменным и не мешает prefix-кешу провайдера.
-    При role=None ничего не добавляется и агент уточняет сам, как раньше.
+    Компания уже описана в системном промпте (см. rag.build_agent), поэтому в
+    первое сообщение кладём ту же строку ещё раз — ближе к вопросу. Роль
+    «я поставщик»/«я заказчик» больше не подмешивается: у гостя её нет вовсе.
     """
-    if not first_turn:
+    if not first_turn or company is None:
         return text
-    label = ROLE_LABELS.get(role or "")
-    if not label:
-        return text
-    return f"[{label}] {text}"
+    return f"{company.context_line()}\n{text}"
 
 
 def bind_attachments(
@@ -308,7 +309,8 @@ async def stream_answer(
     В БД пишется сразу, поэтому повторный GET чата отдаёт уже сохранённый текст.
     Туда же ложится `duration_ms` — сколько заняла генерация ответа целиком
     (модель + вызовы инструментов), см. storage.set_message_duration.
-    user_role ('supplier'/'customer'/None) дописывается к первому вопросу чата, см. _with_role.
+    user_role ('supplier'/'customer'/None) не клеится в сообщение: реквизиты компании
+    и инструменты выбора сущностей живут в системном промпте (см. rag.build_agent).
     files — вложения, приложенные к этому ходу: картинки уходят как ImageBlock,
     документы — как markdown. Привязка к сообщению и очистка таблицы — в
     bind_attachments, вызывающем раньше (до рендера страницы).
@@ -319,23 +321,34 @@ async def stream_answer(
     lock = get_lock(chat_id)
     raw_user_text = store.latest_user_text(chat_id, assistant_message.id)
     chat = store.get_chat(chat_id)
+    # Компания пользователя: для гостя None — тогда ни реквизитов, ни сущностей.
+    company = companies.get_company(user_role)
     # Правила-подсказки под этот вопрос: топ-3 близких по fuse-поиску (см. handrules.py).
     # Могут повторяться ход за ходом — это ожидаемо и не мешает.
     rules_prompt = await handrules.prompt_for(raw_user_text)
     # Сессия поддержки ловит transfer_to_support: по ней потом закрываем чат.
     support_session = SupportSession()
+    # Копилка вызовов list_*: заполняется инструментами, потом уходит в БД (кнопки).
+    entity_sink = EntitySink(company)
     turn_agent = build_agent(
         chat.system_prompt if chat else None,
         support_session=support_session,
         handrules_prompt=rules_prompt,
+        company=company,
+        entity_sink=entity_sink,
     )
 
     async with lock:
         # chat_history — всё до текущего вопроса; сам вопрос идёт в user_msg.
         history = _history(store, chat_id)
-        # Метка роли — только на первый ход чата: дальше она уже есть в истории
-        # и в каждом сообщении не нужна (см. _with_role).
-        user_text = _with_role(raw_user_text, user_role, first_turn=not history)
+        # Реквизиты компании — только в первое сообщение чата, и только если это компания.
+        user_text = _first_turn_prefix(company, raw_user_text, first_turn=not history)
+        # Сущности из REST (контракт, закупка...): отдельным блоком только для
+        # модели. В content сообщения и в UI остаётся исходный текст с @alias.
+        latest_user = store.latest_user_message(chat_id, assistant_message.id)
+        entities_block = entity_input.describe(latest_user.entities if latest_user else [])
+        if entities_block:
+            user_text = f"{user_text}\n\n{entities_block}"
         # Служебная подсказка хода — только для модели: в истории чата её нет.
         if turn_hint:
             user_text = f"{user_text}\n\n{turn_hint}"
@@ -395,6 +408,10 @@ async def stream_answer(
             duration_ms = round((monotonic() - started_at) * 1000)
             store.set_message_duration(assistant_message.id, duration_ms)
             store.touch_chat(chat_id)
+            # Выборы сущностей: кнопки под ответом. Сохраняем даже при обрыве
+            # генерации — список уже показан пользователю.
+            for kind, options in entity_sink.choices:
+                store.add_entity_choice(assistant_message.id, kind, options)
 
         # Тема и подтема обращения — один раз на чат, после первого ответа агента.
         # Задача фоновая: на стрим и на пользователя не влияет.
@@ -463,14 +480,19 @@ async def run_turn(
     *,
     storage: ChatStorage | None = None,
     files: list[attachment_service.ChatFile] | None = None,
+    entities: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[str]:
     """Полный ход: запись сообщений в БД + стрим ответа (для REST API).
 
     files — вложения, ожидающие отправки (см. attachments.list_files). Сразу после
     записи вопроса они переносятся в историю сообщения, а таблица ожидающего контекста чистится.
+    entities — сущности от внешнего сервиса (контракт, закупка и т.п.): сохраняются
+    в сообщении и уходят агенту отдельным блоком, в тексте чата остаётся @alias.
     """
     store = storage or get_storage()
-    user_message, assistant_message, _chat = await prepare_turn(chat_id, user_text, store)
+    user_message, assistant_message, _chat = await prepare_turn(
+        chat_id, user_text, store, entities=entities
+    )
     bind_attachments(chat_id, user_message.id, files, storage=store)
     message_id = assistant_message.id
     yield sse("start", {"message_id": message_id})

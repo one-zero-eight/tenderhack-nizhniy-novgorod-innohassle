@@ -1,8 +1,10 @@
 """Статистика обращений: агрегация чатов по темам и подтемам.
 
-Считает то, что поддержке важно видеть на экране: сколько обращений в каждой теме
-и сколько в среднем занимает ответ агента. Пустые чаты (без сообщений) в статистику
-не попадают — это брошенные «Новый чат», они только портят средние.
+Считает то, что поддержке важно видеть на экране: сколько обращений в каждой теме,
+сколько в среднем занимает ответ агента и как распределились исходы — от зелёного
+(«спасибо за ответ») до красного (ответ не подошёл и перевели в поддержку),
+см. badge_kinds. Пустые чаты (без сообщений) в статистику не попадают — это брошенные
+«Новый чат», они только портят средние.
 
 Здесь только данные, без разметки: страницы `/stats1` и `/stats2` рисуют из одного
 и того же дерева, отличаются они лишь подачей — отдельные страницы тем против
@@ -11,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,10 +25,44 @@ UNCLASSIFIED_TOPIC = "Без темы"
 # Подтема-заглушка у чатов без темы: показывать там нечего, но группировать надо.
 UNCLASSIFIED_SUBTOPIC = "—"
 
+# Метки в статистике. Зелёная — благодарность пользователя, она ортогональна
+# проблемным: чат может быть одновременно зелёным и жёлтым (поблагодарил,
+# но обращение всё равно перевели). Две проблемные взаимоисключающие:
+#   redirect — просто перевод в поддержку (оценки нет);
+#   dislike — пользователю не понравился ответ (был перевод или нет — всё равно он).
+# Порядок, подписи и веса живут здесь, чтобы шаблоны и сортировка не разъезжались.
+BADGE_POSITIVE = "positive"
+BADGE_REDIRECT = "redirect"
+BADGE_DISLIKE = "dislike"
+
+BADGE_ORDER = (BADGE_POSITIVE, BADGE_REDIRECT, BADGE_DISLIKE)
+
+BADGE_TITLES = {
+    BADGE_POSITIVE: "Пользователь поблагодарил за ответ",
+    BADGE_REDIRECT: "Переведён на линию поддержки",
+    BADGE_DISLIKE: "Пользователю не понравился ответ",
+}
+
+# Короткие подписи для легенды под таблицей.
+BADGE_LABELS = {
+    BADGE_POSITIVE: "спасибо за ответ",
+    BADGE_REDIRECT: "перевод в поддержку",
+    BADGE_DISLIKE: "ответ не подошёл",
+}
+
+# Вклад метки в сортировку по проблемности: оранжевая = 2, жёлтая = 1.
+# Зелёная — не проблема, поэтому весит 0 и на сортировку не влияет.
+BADGE_WEIGHT = {
+    BADGE_POSITIVE: 0,
+    BADGE_REDIRECT: 1,
+    BADGE_DISLIKE: 2,
+}
+
 # Ключи сортировки, которые понимают страницы статистики.
 SORT_COUNT = "count"
 SORT_AVG = "avg"
-SORT_KEYS = (SORT_COUNT, SORT_AVG)
+SORT_BADGES = "badges"
+SORT_KEYS = (SORT_COUNT, SORT_AVG, SORT_BADGES)
 
 
 @dataclass
@@ -42,6 +79,60 @@ class StatsNode:
     avg_seconds: float | None
     chats: list[ChatRecord] = field(default_factory=list)
     subtopics: list[StatsNode] = field(default_factory=list)
+    # Сколько чатов строки в каждой метке (см. badge_kind). Пусто — проблем нет.
+    badges: dict[str, int] = field(default_factory=dict)
+
+
+def badge_kind(chat: ChatRecord) -> str | None:
+    """Проблемная метка чата: недовольство ответом или перевод в поддержку.
+
+    Метки взаимоисключающие. Приоритет у оценки пользователя: чат с отрицательной
+    оценкой — оранжевый, даже если его потом перевели в поддержку (просто перевод
+    без оценки — жёлтый). Зелёная благодарность сюда не входит — она ортогональна
+    и добавляется отдельно (см. badge_kinds).
+    """
+    if chat.rating == "negative":
+        return BADGE_DISLIKE
+    if chat.is_closed:
+        return BADGE_REDIRECT
+    return None
+
+
+def badge_kinds(chat: ChatRecord) -> list[str]:
+    """Все метки чата: зелёная (поблагодарил) плюс проблемная, если она есть."""
+    kinds: list[str] = []
+    if chat.rating == "positive":
+        kinds.append(BADGE_POSITIVE)
+    problem = badge_kind(chat)
+    if problem is not None:
+        kinds.append(problem)
+    return kinds
+
+
+def badge_counts(chats: list[ChatRecord]) -> dict[str, int]:
+    """Сколько раз каждая метка встретилась в наборе (чаты без метки не считаются)."""
+    counts: dict[str, int] = {}
+    for chat in chats:
+        for kind in badge_kinds(chat):
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
+def badge_score(counts: dict[str, int]) -> int:
+    """Проблемность набора: сумма метк по весам (красная 3, оранжевая 2, жёлтая 1)."""
+    return sum(BADGE_WEIGHT[kind] * number for kind, number in counts.items())
+
+
+def filter_chats(chats: list[ChatRecord], kinds: Collection[str]) -> list[ChatRecord]:
+    """Оставляет чаты, у которых есть хотя бы одна из выбранных метк.
+
+    Пустой набор — фильтр выключен, возвращаются все чаты: так выглядит дефолт
+    на страницах статистики (показываем всё, пока не нажали ни на один бейдж).
+    """
+    if not kinds:
+        return chats
+    wanted = set(kinds)
+    return [chat for chat in chats if wanted.intersection(badge_kinds(chat))]
 
 
 def _average(chats: list[ChatRecord]) -> float | None:
@@ -117,6 +208,7 @@ def build_tree(records: list[ChatRecord]) -> list[StatsNode]:
                     count=len(chats),
                     avg_seconds=_average(chats),
                     chats=chats,
+                    badges=badge_counts(chats),
                 )
             )
         if not subs:
@@ -129,6 +221,7 @@ def build_tree(records: list[ChatRecord]) -> list[StatsNode]:
                 count=len(topic_chats),
                 avg_seconds=_average(topic_chats),
                 subtopics=subs,
+                badges=badge_counts(topic_chats),
             )
         )
     return topics
@@ -142,39 +235,68 @@ def find_topic(tree: list[StatsNode], topic: str) -> StatsNode | None:
     return None
 
 
+def chats_of(node: StatsNode) -> list[ChatRecord]:
+    """Все чаты строки: у подтемы — свои, у темы — собранные из подтем."""
+    if node.chats:
+        return node.chats
+    return [chat for sub in node.subtopics for chat in sub.chats]
+
+
 def sort_nodes(nodes: list[StatsNode], key: str, *, descending: bool = True) -> list[StatsNode]:
-    """Сортирует строки по количеству обращений или по среднему времени ответа.
+    """Сортирует строки по количеству обращений, среднему времени ответа или меткам.
 
     Строки без измеренного времени всегда в конце — независимо от направления:
     «нет данных» не должно оказываться наверху при сортировке по времени.
+    Метки сортируются по сумме весов (красная 3, оранжевая 2, жёлтая 1).
     """
     if key == SORT_AVG:
         measured = [node for node in nodes if node.avg_seconds is not None]
         missing = [node for node in nodes if node.avg_seconds is None]
         measured.sort(key=lambda node: node.avg_seconds or 0.0, reverse=descending)
         return measured + missing
+    if key == SORT_BADGES:
+        return sorted(nodes, key=lambda node: badge_score(node.badges), reverse=descending)
     return sorted(nodes, key=lambda node: node.count, reverse=descending)
 
 
 def sort_chats(chats: list[ChatRecord], key: str, *, descending: bool = True) -> list[ChatRecord]:
-    """Сортировка списка чатов подтемы — те же два ключа, что и у таблиц."""
+    """Сортировка списка чатов подтемы — те же ключи, что и у таблиц."""
     if key == SORT_AVG:
         measured = [chat for chat in chats if chat.avg_turn_seconds is not None]
         missing = [chat for chat in chats if chat.avg_turn_seconds is None]
         measured.sort(key=lambda chat: chat.avg_turn_seconds or 0.0, reverse=descending)
         return measured + missing
+    if key == SORT_BADGES:
+        # Чат без метки — вес 0: при убывании проблемные сверху.
+        return sorted(
+            chats, key=lambda chat: BADGE_WEIGHT.get(badge_kind(chat) or "", 0), reverse=descending
+        )
     # У чата «количество обращений» — это число его сообщений пользователя.
     return sorted(chats, key=lambda chat: chat.message_count, reverse=descending)
 
 
 __all__ = [
+    "BADGE_DISLIKE",
+    "BADGE_LABELS",
+    "BADGE_ORDER",
+    "BADGE_POSITIVE",
+    "BADGE_REDIRECT",
+    "BADGE_TITLES",
+    "BADGE_WEIGHT",
     "SORT_AVG",
+    "SORT_BADGES",
     "SORT_COUNT",
     "SORT_KEYS",
     "UNCLASSIFIED_SUBTOPIC",
     "UNCLASSIFIED_TOPIC",
     "StatsNode",
+    "badge_counts",
+    "badge_kind",
+    "badge_kinds",
+    "badge_score",
     "build_tree",
+    "chats_of",
+    "filter_chats",
     "find_topic",
     "non_empty_chats",
     "sort_chats",

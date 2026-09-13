@@ -1,0 +1,74 @@
+{# ВРЕМЕННО: низ чата для /chats2 — тот же композер, что в chat_footer.html,
+   но справа перед «Отправить» стоит кнопка «Команды» с поповером слэш-команд.
+   Удаляется вместе с остальными chats2_*.html. Ждёт: chat, commands, max_upload_mb. #}
+{% if not chat.is_closed %}
+{% set files = chat_files(chat.id) %}
+{% if files %}
+<div class="attachments">
+  <ul class="attachments-list">
+    {% for f in files %}
+    <li class="attachment{% if f.is_image %} image{% endif %}">
+      {% if f.is_image %}
+      <img class="attachment-thumb" src="{{ f.url }}" alt="">
+      {% else %}
+      <span class="attachment-kind">MD</span>
+      {% endif %}
+      <span class="attachment-name" title="{{ f.filename }}">{{ f.filename }}</span>
+      <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+      <button
+        type="button"
+        class="attachment-del"
+        title="Убрать файл"
+        aria-label="Убрать файл"
+        hx-delete="/chats2/{{ chat.id }}/files/{{ f.id }}"
+        hx-target="body"
+        hx-swap="outerHTML"
+      >×</button>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+<form
+  class="composer"
+  hx-post="/chats2/{{ chat.id }}/messages"
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-on::after-request="this.reset()"
+>
+  <div class="composer-body">
+    <div id="upload-error" class="upload-error"></div>
+    {# Сюда chats2_index.html пишет заглушку, если отправить слэш-команду. #}
+    <div id="chats2-note" class="cmd-note"></div>
+    <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>
+    <div class="composer-tools">
+      <div class="composer-tools-left">
+        <label class="attach-btn" title="Прикрепить файл или картинку (до {{ max_upload_mb }} МБ)">
+          <input
+            type="file"
+            name="file"
+            hx-post="/chats2/{{ chat.id }}/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="body"
+            hx-swap="outerHTML"
+            hx-trigger="change"
+          >
+          Прикрепить файл
+        </label>
+        <span class="composer-hint">картинка или документ, до {{ max_upload_mb }} МБ</span>
+      </div>
+      <div class="composer-tools-right">
+        {% include "chats2_commands.html" %}
+        <button type="submit" class="btn-primary">Отправить</button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+{# Плашка перевода — на месте формы: чат закрыт, писать нельзя. #}
+{% if chat.is_closed %}
+  {% with line_title = chat.redirect_line_title, reason = chat.redirect_reason %}
+    {% include "redirect_banner.html" %}
+  {% endwith %}
+{% endif %}

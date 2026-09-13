@@ -1,0 +1,28 @@
+{# ВРЕМЕННО: панель чата для /chats2. Отличия от chat_panel.html:
+   - ответ ассистента рисует chats2_message_assistant.html — без inline-кнопок оценки;
+   - низ чата берётся из /chats2/<id>/footer (композер с кнопкой «Команды»).
+   Удаляется вместе с остальными chats2_*.html. #}
+{% if chat %}
+<section class="chat">
+  <div id="messages">
+    {% for m in chat.messages %}
+      {% if m.role == "user" %}
+        {% with user_msg=m %}{% include "message_user.html" %}{% endwith %}
+      {% else %}
+        {% with assistant_msg=m %}{% include "chats2_message_assistant.html" %}{% endwith %}
+      {% endif %}
+    {% endfor %}
+  </div>
+  {# На sse:done base.html перезапрашивает узел по его hx-get — как в chat_panel.html. #}
+  <div
+    class="chat-foot"
+    id="chat-foot"
+    hx-get="/chats2/{{ chat.id }}/footer"
+    hx-swap="innerHTML"
+  >{% include "chats2_footer.html" %}</div>
+</section>
+{% else %}
+<section class="empty">
+  <p>Выберите чат в списке слева — вариант с командами вместо inline-кнопок.</p>
+</section>
+{% endif %}

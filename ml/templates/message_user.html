@@ -20,5 +20,8 @@
     {% endfor %}
   </ul>
   {% endif %}
-  {% if user_msg.content %}<div class="body">{{ user_msg.content }}</div>{% endif %}
+  {# display_content — то, что видит пользователь, когда текст для модели другой:
+     при выборе сущности агенту уходит служебная фраза с id, а здесь — подпись кнопки. #}
+  {% set shown = user_msg.display_content or user_msg.content %}
+  {% if shown %}<div class="body">{{ shown }}</div>{% endif %}
 </article>

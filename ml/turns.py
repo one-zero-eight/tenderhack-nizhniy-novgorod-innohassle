@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import traceback
+
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Callable
@@ -129,6 +131,9 @@ class TurnManager:
                 turn.publish(event, data)
         except Exception as exc:  # noqa: BLE001 — ход не должен ронять фоновую задачу
             turn.error = str(exc)
+            # Печатаем полный трейсбек: без него ошибка хода терялась молча —
+            # turn.error никто не показывает, и в UI просто не было ответа.
+            traceback.print_exc()
         finally:
             turn.finish()
 

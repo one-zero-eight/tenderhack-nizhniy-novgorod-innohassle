@@ -2,7 +2,8 @@
 
    Ждёт: topic (StatsNode), groups (подтемы с chats), sort, desc, sort_base,
    open_names (множество раскрытых подтем), sort_link (функция ссылки сортировки),
-   toggle_query (функция query-строки для клика по подтеме).
+   toggle_query (функция query-строки для клика по подтеме),
+   summary (TopicSummaryRecord | None), summary_pending (сводка ещё не готова).
 
    Раскрытые подтемы живут в query-параметре open, а не в sessionStorage:
    параметры держатся за имя подтемы, поэтому сортировка (которая меняет порядок
@@ -10,6 +11,7 @@
    Строка подтемы — ссылка, переключающая свой open и сохраняющая sort/desc. #}
 {% extends "base.html" %}
 {% from "stats_sort_icon.html" import sort_icon %}
+{% from "stats_badges.html" import badge_filter, badge_list, chat_badge %}
 
 {% block title %}{{ topic.name }} — Статистика{% endblock %}
 
@@ -23,11 +25,20 @@
     <span>{{ topic.name }}</span>
   </nav>
 
+  {{ badge_filter(selected_badges, filter_link) }}
+
   {% if groups %}
     <table class="stats-table stats-tree">
       <thead>
         <tr>
           <th>Подтема / обращение</th>
+          <th>
+            {% set active_badges = sort == 'badges' %}
+            <a
+              class="stats-sort{% if active_badges %} active{% endif %}"
+              href="{{ sort_link('badges', not (active_badges and desc)) }}"
+            >Метки{{ sort_icon(active_badges, desc) }}</a>
+          </th>
           <th class="stats-num">
             {% set active = sort == 'avg' %}
             <a
@@ -54,6 +65,7 @@
                 <span class="stats-count">({{ group.count }})</span>
               </a>
             </td>
+            <td>{{ badge_list(group.badges) }}</td>
             <td class="stats-num">{{ avg_turn_label(group.avg_seconds) }}</td>
           </tr>
           {% for chat in group.chats %}
@@ -65,6 +77,7 @@
                   title="{{ chat.title }}"
                 >{{ chat.title }}</a>
               </td>
+              <td>{{ chat_badge(chat) }}</td>
               <td class="stats-num">{{ avg_turn_label(chat.avg_turn_seconds) }}</td>
             </tr>
           {% endfor %}
@@ -73,6 +86,23 @@
     </table>
   {% else %}
     <p class="empty">В этой теме пока нет обращений.</p>
+  {% endif %}
+
+  {# AI-сводка по теме: что пишут пользователи и что можно поправить.
+     Её готовит фоновая задача (summaries.py), страница только показывает результат,
+     поэтому под таблицей и с подписью времени обновления. #}
+  {% if summary %}
+    <section class="ai-summary">
+      <div class="ai-summary-head">AI-сводка по теме</div>
+      {# LLM отвечает в markdown (абзац + список предложений) — рендерим его. #}
+      <div class="ai-summary-text markdown">{{ summary.summary | markdown }}</div>
+      <div class="ai-summary-meta">Обновлено {{ summary.updated_at | datetime }}</div>
+    </section>
+  {% elif summary_pending %}
+    <section class="ai-summary pending">
+      <div class="ai-summary-head">AI-сводка по теме</div>
+      <p class="ai-summary-text">Появились новые отзывы — сводка обновится в ближайшее время.</p>
+    </section>
   {% endif %}
 </div>
 {% endblock %}

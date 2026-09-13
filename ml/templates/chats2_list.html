@@ -1,0 +1,20 @@
+{# ВРЕМЕННО: список чатов для /chats2 — то же, что chat_list.html, но ссылки
+   ведут на /chats2/<id>. Удаляется вместе с остальными chats2_*.html. #}
+<div id="chat-list">
+  {% for chat in chats %}
+    <a
+      class="chat-item{% if chat.id == active_id %} active{% endif %}"
+      id="chat-item-{{ chat.id }}"
+      href="/chats2/{{ chat.id }}"
+      hx-get="/chats2/{{ chat.id }}"
+      hx-target="body"
+      hx-swap="outerHTML"
+      hx-push-url="true"
+    >
+      <span class="chat-open">{{ chat.title }}</span>
+    </a>
+  {% endfor %}
+  {% if not chats %}
+    <p class="muted">Пока нет чатов</p>
+  {% endif %}
+</div>

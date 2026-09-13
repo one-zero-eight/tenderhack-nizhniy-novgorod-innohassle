@@ -1,0 +1,19 @@
+{# Кнопка «Команды» и поповер со слэш-командами — как ChatCommandsMenu во фронтенде
+   (../frontend/src/components/ui/ChatCommandsMenu.tsx): открывается по наведению и
+   фокусу, выбор подставляет команду в поле ввода. ВРЕМЕННО: часть /chats2. #}
+<div class="cmd-menu">
+  <button type="button" class="cmd-btn" aria-haspopup="menu" aria-label="Команды">
+    <svg class="cmd-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/>
+    </svg>
+    <span>Команды</span>
+  </button>
+  <div class="cmd-pop" role="menu">
+    {% for command in commands %}
+    <button type="button" class="cmd-item" role="menuitem" data-command="{{ command.value }}">
+      <span class="cmd-value">{{ command.value }}</span>
+      {% if command.description %}<span class="cmd-desc">{{ command.description }}</span>{% endif %}
+    </button>
+    {% endfor %}
+  </div>
+</div>

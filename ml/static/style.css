@@ -17,6 +17,9 @@
   --sea-dark: #167c85;
   --sea-clear: #48b8c2;
   --orange: #f67319;
+  /* Жёлтый пригодился только статистике (метка «перевод в поддержку»):
+     в базовой палитре его не было. */
+  --yellow: #eab308;
   --gray: #7f8792;
   --gray-light: #c9d1df;
 
@@ -174,11 +177,10 @@ body {
   padding: 1rem 1.15rem 0.35rem;
 }
 
-/* Крошки внутри колонки контента (stats, rules): тот же боковой отступ,
+/* Крошки внутри колонки контента (stats, rules, kb): тот же боковой отступ,
    что у таблицы и формы, иначе они стоят левее содержимого. */
-/* В базе знаний у .kb-wrap уже есть свои отступы — крошкам хватит только нижнего. */
 .kb-wrap > .crumbs {
-  padding: 0 0 0.85rem;
+  padding: 0 1.15rem 0.85rem;
 }
 
 .crumbs a {
@@ -987,8 +989,29 @@ a.attachment-name:hover {
 .kb-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 1.5rem 1.75rem 2.5rem;
+  /* width: 100% обязателен: .page — flex-column, без него обёртка сжимается
+     по содержимому и дети с margin:auto центрируются внутри неё, а не в окне. */
+  width: 100%;
+  overflow-y: auto;
+  padding: 1.5rem 0 2.5rem;
+}
+
+/* Как у /rules и /stats: контент — центральная колонка ограниченной ширины.
+   Ограничиваем детей, а не обёртку, чтобы скролл оставался у .kb-wrap. */
+.kb-wrap > * {
+  width: 100%;
+  max-width: 64rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Отступы колонки — те же 1.15rem, что у таблицы статистики и списка правил,
+   иначе крошки и строки встанут левее содержимого соседних страниц. */
+.kb-wrap > .crumbs,
+.kb-wrap > .kb-list,
+.kb-wrap > .muted {
+  padding-left: 1.15rem;
+  padding-right: 1.15rem;
 }
 
 .kb-count {
@@ -999,38 +1022,56 @@ a.attachment-name:hover {
 }
 
 /* Список мануалов — одна широкая колонка: строка на мануал, а не сетка карточек.
-   Название слева, количество разделов справа. */
+   Название слева, количество разделов справа.
+   margin 0 только сверху/снизу: боковые auto задаёт `.kb-wrap > *`, иначе список
+   прижимается влево, а крошки над ним остаются центрированными. */
 .kb-list {
   list-style: none;
-  margin: 0;
+  margin-top: 0;
+  margin-bottom: 0;
   padding: 0;
 }
 
+/* Строка списка — тот же рецепт, что у tr статистики (.stats-table tbody tr)
+   и пункта правил (.rule-item): отступ 0.7rem 1.15rem и одна линия снизу,
+   без цветной левой границы. Три списка должны читаться как один приём. */
 .kb-card {
-  border-left: 3px solid var(--main-blue);
   border-bottom: 1px solid var(--line);
   background: var(--white);
-  transition: background-color 0.12s ease, border-left-color 0.12s ease;
 }
 
 .kb-card:hover {
   background: var(--pale-blue);
-  border-left-color: var(--red);
 }
 
+/* Название занимает всю свободную ширину, поэтому счётчик разделов уходит
+   вправо, а иконка остаётся сразу за названием, а не отъезжает от него. */
 .kb-link {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 1.5rem;
-  padding: 0.95rem 1.1rem;
+  gap: 0.6rem;
+  padding: 0.7rem 1.15rem;
   text-decoration: none;
   color: inherit;
 }
 
+/* Иконка файла приглушённая: это не ссылка, цвет при hover не меняется. */
+.kb-icon {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--pale-black);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .kb-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   color: var(--black);
 }
@@ -1239,24 +1280,24 @@ a.attachment-name:hover {
 
 /* Одна колонка по центру: страницы-формы, без сайдбара. */
 .auth,
+/* Профиль — центральная колонка той же ширины, что у правил и статистики
+   (64rem). Страница скроллится сама: .page имеет overflow: hidden, поэтому
+   без overflow-y у длинного профиля компании низ обрезался бы. */
 .profile {
-  margin: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   width: 100%;
-  max-width: 30rem;
   padding: 3rem 1.15rem;
 }
 
-.auth-title {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  margin: 0 0 0.5rem;
-}
-
-.auth-note,
-.profile-hint {
-  color: var(--pale-black);
-  font-size: 0.8125rem;
-  margin: 0 0 1.25rem;
+/* Ограничиваем ширину и центрируем, как в .rules-page.
+   width не задаём: вместе с width: 100% авто-маргины не центрируют блок
+   при max-width меньше контейнера (видно было на dl.profile-facts). */
+.profile > * {
+  max-width: 64rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .auth-error {
@@ -1281,17 +1322,26 @@ a.attachment-name:hover {
   border-bottom: 1px solid var(--line);
 }
 
-.profile-label {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--pale-black);
+/* Иконка профиля: одна и та же для всех, без аватарок. */
+.profile-avatar {
+  display: inline-flex;
+  color: var(--main-blue);
 }
 
 .profile-value {
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+/* Роли — в одну строку: на равные доли, чтобы не разъезжались по ширине. */
+.radio-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.radio-row .radio {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .radio {
@@ -1304,6 +1354,10 @@ a.attachment-name:hover {
   border: 1px solid var(--input-bg);
   font-size: 0.8125rem;
   cursor: pointer;
+}
+
+.radio span {
+  white-space: nowrap;
 }
 
 .radio:hover {
@@ -1448,7 +1502,6 @@ a.attachment-name:hover {
   }
 
   #messages,
-  .kb-wrap,
   .manual-body {
     padding-left: 1.15rem;
     padding-right: 1.15rem;
@@ -1485,7 +1538,7 @@ a.attachment-name:hover {
 .rules-page > *,
 .rule-page > * {
   width: 100%;
-  max-width: 56rem;
+  max-width: 64rem;
   margin-left: auto;
   margin-right: auto;
 }
@@ -1534,13 +1587,13 @@ a.attachment-name:hover {
   list-style: none;
 }
 
+/* См. комментарий у .kb-card: строка = отступ 0.7rem 1.15rem + линия снизу. */
 .rule-item {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1.5rem;
-  padding: 0.85rem 1.15rem;
-  border-left: 3px solid var(--main-blue);
+  padding: 0.7rem 1.15rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -1887,6 +1940,201 @@ a.stats-subtopic-name:hover {
   border-bottom: 1px solid var(--line);
 }
 
+/* --- Метки проблем: перевод в поддержку / ответ не подошёл / и то и другое ------- */
+
+.stat-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Бейджик: сплошной цветной блок с числом. У чата числа нет — только маркер. */
+.stat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* Жёлтый — просто перевод; оранжевый — ответ не подошёл; красный — и то и другое.
+   На жёлтом текст чёрный: белый по нему не читается. */
+.stat-badge.redirect {
+  background: var(--yellow);
+  color: var(--black);
+}
+
+.stat-badge.dislike {
+  background: var(--orange);
+  color: var(--white);
+}
+
+/* Зелёный — пользователь поблагодарил; показывается и вместе с проблемной меткой. */
+.stat-badge.positive {
+  background: var(--green);
+  color: var(--white);
+}
+
+/* Метка чата и точка в легенде: тот же цвет, но без числа. */
+.stat-badge.marker {
+  min-width: 0;
+  width: 0.7rem;
+  height: 0.7rem;
+  padding: 0;
+}
+
+/* Фильтр по меткам под крошками: те же отступы, что у таблицы.
+   Каждый пункт — ссылка-переключатель, активный подсвечен; неактивный приглушён. */
+.stat-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+  padding: 0.9rem 1.15rem 0.25rem;
+}
+
+.stat-filter-label {
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.stat-filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--gray-blue);
+  background: var(--white);
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.stat-filter-item:hover {
+  border-color: var(--main-blue);
+}
+
+.stat-filter-item.active {
+  border-color: var(--main-blue);
+  background: var(--pale-blue);
+  color: var(--black);
+}
+
+.stat-filter-dot {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+}
+
+/* Цвет квадратика всегда один и тот же — по нему метка и узнаётся;
+   выключенный фильтр приглушает его, чтобы было видно состояние. */
+.stat-filter-item.positive .stat-filter-dot {
+  background: var(--green);
+}
+
+.stat-filter-item.redirect .stat-filter-dot {
+  background: var(--yellow);
+}
+
+.stat-filter-item.dislike .stat-filter-dot {
+  background: var(--orange);
+}
+
+.stat-filter-item:not(.active) .stat-filter-dot {
+  opacity: 0.3;
+}
+
+.stat-filter-reset {
+  color: var(--main-blue);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --- AI-сводка по теме: блок под таблицей на /stats/<topic> --------------------
+   Текст готовит фоновая задача (summaries.py), здесь только оформление.
+   margin-left/right не задаём: центрирует и ограничивает ширину .stats-page > *. */
+.ai-summary {
+  margin-top: 1.15rem;
+  margin-bottom: 1.5rem;
+  padding: 0.9rem 1.15rem;
+  background: var(--pale-blue);
+  border-left: 3px solid var(--main-blue);
+}
+
+.ai-summary-head {
+  margin-bottom: 0.4rem;
+  color: var(--main-blue);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.ai-summary-text {
+  margin: 0;
+  color: var(--black);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Markdown внутри сводки: LLM отдаёт абзац и список предложений. Отдельные стили,
+   потому что общие .markdown привязаны к .msg/.section-body и там другая раскладка. */
+.ai-summary-text.markdown > *:first-child {
+  margin-top: 0;
+}
+
+.ai-summary-text.markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.ai-summary-text.markdown p {
+  margin: 0 0 0.6em;
+}
+
+.ai-summary-text.markdown ul,
+.ai-summary-text.markdown ol {
+  margin: 0.3em 0 0;
+  padding-left: 1.35em;
+}
+
+.ai-summary-text.markdown li {
+  margin: 0.15em 0;
+}
+
+.ai-summary-text.markdown strong {
+  font-weight: 700;
+}
+
+.ai-summary-text.markdown a {
+  color: var(--main-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ai-summary-text.markdown code {
+  padding: 0.1em 0.35em;
+  background: var(--white);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.ai-summary-meta {
+  margin-top: 0.5rem;
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+}
+
+.ai-summary.pending .ai-summary-text {
+  color: var(--pale-black);
+}
+
 /* =========================================================================
    Просмотр одного чата из статистики: /stats/<topic>/<id>
    ========================================================================= */
@@ -1928,4 +2176,362 @@ a.stats-subtopic-name:hover {
   flex: 0 0 auto;
   padding: 1.15rem 1.25rem 0.6rem;
   border-bottom: 1px solid var(--line);
+}
+
+/* =========================================================================
+   /chats2 — временный вариант публичной страницы с командами вместо
+   inline-кнопок оценки. Удаляется вместе с блоком /chats2 в app.py
+   и шаблонами chats2_*.html.
+   ========================================================================= */
+
+/* Правая группа композера: «Команды» + «Отправить». */
+.composer-tools-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cmd-menu {
+  position: relative;
+}
+
+/* Кнопка «Команды» — как .btn-outline. Селектор с .composer нужен, чтобы
+   перебить общее правило `.composer button` (оно красит кнопки в красный primary). */
+.composer .cmd-btn {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--white);
+  color: var(--main-blue);
+  border: 1px solid var(--main-blue);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.composer .cmd-btn:hover {
+  background: var(--pale-blue);
+}
+
+.composer .cmd-btn:active {
+  background: var(--gray-blue);
+}
+
+.cmd-icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+/* Поповер: открывается по наведению и фокусу — как ChatCommandsMenu во фронтенде.
+   Тень не используем: по дизайн-системе её нет, поэтому отделяем только рамкой. */
+.composer .cmd-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  z-index: 20;
+  width: 20rem;
+  padding: 0;
+  background: var(--white);
+  border: 1px solid var(--gray-blue);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(0.25rem);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.composer .cmd-menu:hover .cmd-pop,
+.composer .cmd-menu:focus-within .cmd-pop {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Невидимый мостик через зазор между кнопкой и поповером: иначе курсор
+   выходит из .cmd-menu по пути вверх и меню закрывается. */
+.composer .cmd-pop::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 0.5rem;
+}
+
+/* Строка меню: команда сверху, пояснение под ней. Селектор с .composer перебивает
+   `.composer button` — иначе пункты получают красную заливку и запрет переноса. */
+.composer .cmd-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.composer .cmd-item + .cmd-item {
+  border-top: 1px solid var(--line);
+}
+
+.composer .cmd-item:hover,
+.composer .cmd-item:focus {
+  background: var(--pale-blue);
+  outline: none;
+}
+
+.cmd-value {
+  color: var(--main-blue);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.cmd-desc {
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+/* Заглушка под композером: сюда пишется выбранная слэш-команда. */
+.cmd-note {
+  color: var(--pale-black);
+  font-size: 0.8125rem;
+}
+
+.cmd-note:empty {
+  display: none;
+}
+
+/* Ссылка-переключатель на боевой вариант страницы (/chats/<id>). */
+.chats2-switch {
+  margin-left: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* =========================================================================
+   Выбор сущности (контракт / закупка / предложение)
+   Агент вызывает list_contracts/list_procurements/list_offers — под ответом
+   появляются кнопки. Одна широкая колонка: 2/3 ширины сообщения.
+   ========================================================================= */
+
+.entity-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 66.66%;
+  max-width: 100%;
+  margin-top: 0.85rem;
+}
+
+/* Контейнер есть всегда у последнего ответа: содержимое приезжает на sse:done.
+   Пока выбора нет — он не должен занимать место. */
+.entity-choices:empty {
+  display: none;
+}
+
+.entity-group-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pale-black);
+  margin-bottom: 0.3rem;
+}
+
+.entity-option {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--white);
+  color: var(--main-blue);
+  border: 1px solid var(--main-blue);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entity-option:hover {
+  background: var(--pale-blue);
+}
+
+.entity-option:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bg);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+/* Первая кнопка в группе идёт сразу под подписью, без лишнего зазора. */
+.entity-group .entity-option + .entity-option {
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 900px) {
+  .entity-choices {
+    width: 100%;
+  }
+}
+
+/* =========================================================================
+   Профиль компании / гостя
+   ========================================================================= */
+
+.profile-role {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--main-blue);
+}
+
+/* Кнопка выхода прижата к правому краю строки профиля. */
+.profile-logout {
+  margin-left: auto;
+}
+
+.profile-logout .btn-outline {
+  min-height: 2.5rem;
+  width: auto;
+}
+
+.profile-note {
+  font-size: 0.8125rem;
+  color: var(--pale-black);
+}
+
+/* Реквизиты: две колонки пар «подпись — значение». Заполнение по столбцам,
+   чтобы левая колонка была первой половиной списка, а правая — второй:
+   при построчном заполнении пары разной высоты разъезжаются.
+   margin-left/right: auto дублируем из .profile > *: собственное margin
+   этого правила перебивало центрирование (правило идёт позже). */
+.profile-facts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(5, auto);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2.5rem;
+  margin: 0 auto 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Каждая пара — своя мини-сетка «подпись / значение». */
+.profile-fact {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.3rem 0;
+}
+
+.profile-facts dt {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pale-black);
+  /* Подпись по первой строке значения, а не по центру многострочного блока. */
+  padding-top: 0.1rem;
+}
+
+.profile-facts dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--black);
+  overflow-wrap: anywhere;
+}
+
+/* Списки сделок — две равные колонки: контракты слева, предложения справа.
+   auto-fit с minmax давал неравные ширины, если в одной колонке текст длиннее. */
+.profile-deals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 2.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .profile-facts {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-deals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.profile-deal {
+  min-width: 0;
+}
+
+.profile-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 3px solid var(--main-blue);
+}
+
+.profile-list li {
+  padding: 0.45rem 0.75rem;
+  background: var(--pale-blue);
+  margin-bottom: 0.35rem;
+}
+
+.profile-list-main {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--black);
+}
+
+.profile-list-meta {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--pale-black);
+}
+
+/* Страница входа: выбор компании, затем разделитель, затем вход гостем. */
+.auth-split {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pale-black);
+}
+
+.auth-split::before,
+.auth-split::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-form select {
+  width: 100%;
+}
+
+/* Вторая форма на странице: кнопка-обводка, отступ сверху тот же. */
+.auth-form + .auth-form button {
+  margin-top: 1rem;
 }

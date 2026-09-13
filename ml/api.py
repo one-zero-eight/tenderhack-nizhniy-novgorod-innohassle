@@ -22,6 +22,9 @@
     GET /ml-api/knowledge-base/<slug>        — структура мануала (все разделы дерева)
     GET /ml-api/knowledge-base/<slug>/<id>   — markdown одного раздела
 
+Эндпоинты статистики:
+    GET /ml-api/stats/topics/<topic>/summary — AI-сводка темы обращений и её статус
+
 Вложения живут в двух местах: оригиналы — в папке `attachments/` (отдаются по
 `GET /attachments/<id>` и видны в истории чата), а таблица `chat_files` хранит только
 ожидающий контекст. При отправке сообщения файлы уходят в модель (картинки — как
@@ -36,7 +39,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, File, HTTPException, Path, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
@@ -44,7 +47,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import attachments as attachment_service
 import chat as chat_service
+import entity_input
 import handrules
+import summaries
 from manuals import Manual, Section, section_body
 from rag import state
 from storage import ChatRecord, clean_username, get_storage
@@ -129,6 +134,13 @@ class MessageOut(BaseModel):
         description=(
             "Файлы, отправленные вместе с сообщением. Оригиналы остаются доступными по "
             "`url` и после отправки в модель"
+        ),
+    )
+    entities: list[EntityOut] = Field(
+        default_factory=list,
+        description=(
+            "Сущности, о которых речь в сообщении (заполняется из поля `entities` при "
+            "отправке). Пусто — если их не передавали"
         ),
     )
     duration_ms: int | None = Field(
@@ -244,14 +256,79 @@ class ChatIn(BaseModel):
     )
 
 
+class EntityIn(BaseModel):
+    """Сущность, приложенная к сообщению внешним сервисом.
+
+    Зеркалит `EntityOut`. `alias` — то, чем сущность обозначена в тексте сообщения
+    (`@contract-1`); `text` — компактная человекочитаемая строка о ней, её видит
+    агент. Поля `link` и `extra` необязательны. Данные считаются достоверными:
+    сервер их не проверяет и целиком передаёт агенту.
+    """
+
+    alias: str = Field(
+        default="",
+        max_length=64,
+        description=(
+            "Псевдоним сущности в тексте сообщения (без `@`). Сущности без alias или "
+            "без text молча отбрасываются — из-за одной мусорной записи весь запрос "
+            "не отклоняется"
+        ),
+        examples=["contract-1"],
+    )
+    kind: str = Field(
+        default="",
+        max_length=64,
+        description="Вид сущности: `contract`, `procurement`, `offer` или любой свой",
+        examples=["contract"],
+    )
+    text: str = Field(
+        default="",
+        max_length=2000,
+        description="Компактное человекочитаемое описание: что это за сущность и её ключевые поля",
+        examples=["Контракт №44-ФЗ, статус: подписан, цена: 1 200 000 ₽"],
+    )
+    link: str = Field(
+        default="",
+        max_length=500,
+        description="Ссылка на сущность в исходной системе (необязательно)",
+        examples=["https://example.com/contracts/1"],
+    )
+    extra: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Произвольные дополнительные поля. Вложенные объекты и массивы приводятся "
+            "к строке, плоские значения идут как есть"
+        ),
+        examples=[{"status": "Подписан", "price": 1200000}],
+    )
+
+
+class EntityOut(EntityIn):
+    """Сущность сообщения в ответе: то же, что прислали, после нормализации."""
+
+
 class MessageIn(BaseModel):
     """Тело запроса для отправки сообщения агенту."""
 
     message: str = Field(
         min_length=1,
         max_length=8000,
-        description="Текст вопроса пользователя на русском",
-        examples=["Как создать котировочную сессию?"],
+        description=(
+            "Текст вопроса пользователя на русском. Сущности обозначаются здесь как "
+            "`@alias` — сам текст агенту уходит как есть, расшифровка идёт отдельно "
+            "в `entities`"
+        ),
+        examples=["Не открывается @contract-1, показывает ошибку 500"],
+    )
+    entities: list[EntityIn] = Field(
+        default_factory=list,
+        max_length=50,
+        description=(
+            "Сущности, о которых речь в сообщении (контракт, закупка, предложение). "
+            "Передаются агенту как достоверные данные: он обязан им доверять и "
+            "использовать как факты. В тексте чата они не рендерятся — там остаются "
+            "только `@alias`"
+        ),
     )
 
 
@@ -765,6 +842,14 @@ async def delete_file(
         "и ещё не удалённые, прикрепляются к этому сообщению: картинки уходят модели "
         "как изображения, документы — как markdown-текст. После отправки вложения "
         "удаляются из БД, поэтому список файлов чата снова пуст.\n\n"
+        "**Сущности:** в `entities` можно передать список сущностей, о которых речь "
+        "в сообщении (контракт, закупка, предложение и любые свои виды). В тексте "
+        "сообщения они обозначаются как `@alias`, а в `entities` идёт их расшифровка. "
+        "Агент получает эти данные отдельным блоком контекста и обязан им доверять: "
+        "сервер их не проверяет и передаёт как есть. В самой переписке (UI и `content` "
+        "сообщения) они не рендерятся — остаются только `@alias`. Сохранённые сущности "
+        "возвращаются в `MessageOut.entities`. Сущности без `alias` или `text` "
+        "молча отбрасываются.\n\n"
         "**События стрима:**\n\n"
         + "\n".join(f"- `{event.event}` — {event.description}. payload: `{event.data}`" for event in STREAM_EVENTS)
         + "\n\nОтвет агента сохраняется в БД по мере генерации, поэтому `GET /ml-api/chat/{chat_id}` "
@@ -773,7 +858,9 @@ async def delete_file(
         "```bash\n"
         "curl -N -X POST http://localhost:8010/ml-api/chat/$ID/message \\\n"
         "  -H 'Content-Type: application/json' \\\n"
-        '  -d \'{"message": "Как создать котировочную сессию?"}\'\n'
+        '  -d \'{"message": "Не открывается @contract-1, ошибка 500", '
+        '"entities": [{"alias": "contract-1", "kind": "contract", '
+        '"text": "Контракт №44-ФЗ, статус: подписан"}]}\'\n'
         "```"
     ),
     responses={
@@ -815,11 +902,16 @@ async def send_message(
     text = payload.message.strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Пустое сообщение")
+    # Сущности нормализуем и дальше доверяем как есть: проверять их по своей базе
+    # не нужно, это задача отправителя (см. entity_input).
+    entities = entity_input.normalize([item.model_dump() for item in payload.entities])
 
     async def events() -> AsyncIterator[str]:
         try:
             files = attachment_service.list_files(chat_id, with_blobs=True)
-            async for chunk in chat_service.run_turn(chat_id, text, files=files):
+            async for chunk in chat_service.run_turn(
+                chat_id, text, files=files, entities=entities
+            ):
                 yield chunk
         except KeyError:
             yield chat_service.sse("error", {"message": "Чат не найден"})
@@ -1075,12 +1167,81 @@ async def delete_handrule(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# ------------------------------------------ статистика и AI-сводки тем
+
+
+class TopicSummaryStatus(BaseModel):
+    """AI-сводка темы статистики и её актуальность."""
+
+    topic: str = Field(description="Имя темы, как в URL `/stats/<topic>`", examples=["Работа с контрактами"])
+    status: Literal["ready", "outdated", "pending", "none"] = Field(
+        description=(
+            "`ready` — сводка актуальна; `outdated` — есть новая обратная связь, идёт пересчёт; "
+            "`pending` — обратная связь есть, сводки ещё нет; `none` — обратной связи по теме нет."
+        ),
+        examples=["ready"],
+    )
+    summary: str | None = Field(
+        default=None,
+        description="Markdown-текст сводки. `null`, если сводки ещё нет (`pending` или `none`)",
+        examples=["По теме… — не подошёл ответ.\n\n- Уточнить в базе знаний…"],
+    )
+    feedback_chats: int = Field(
+        description="Сколько чатов темы имеют обратную связь (оценка пользователя или перевод)",
+        examples=[2],
+    )
+    updated_at: str | None = Field(
+        default=None, description="Когда сводка была сгенерирована, ISO 8601. `null`, если сводки нет"
+    )
+
+
+@router.get(
+    "/stats/topics/{topic}/summary",
+    response_model=TopicSummaryStatus,
+    summary="AI-сводка темы статистики",
+    description=(
+        "Возвращает сохранённую AI-сводку по теме обращений и её статус.\n\n"
+        "Сводки готовит фоновая задача — она следит за новыми отзывами. Если по теме появилась "
+        "новая обратная связь, а сводка устарела или её ещё нет, этот запрос сам ставит генерацию "
+        "в фон и сразу отвечает текущим состоянием: повторный запрос через несколько секунд "
+        "вернёт уже обновлённый текст.\n\n"
+        "Сводка отдаётся в markdown.\n\n"
+        "**Статусы:** `ready` — актуальна; `outdated` — есть новая обратная связь, идёт пересчёт; "
+        "`pending` — обратная связь есть, сводки ещё нет; `none` — обратной связи по теме нет.\n\n"
+        "**Пример:**\n\n"
+        "```bash\n"
+        "curl 'http://localhost:8011/ml-api/stats/topics/%D0%A0%D0%B0%D0%B1%D0%BE%D1%82%D0%B0%20%D1%81%20%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82%D0%B0%D0%BC%D0%B8/summary'\n"
+        "```"
+    ),
+    responses={404: {"model": ErrorOut, "description": "Тема не найдена"}},
+)
+async def topic_summary(
+    topic: Annotated[str, Path(description="Имя темы, как в URL `/stats/<topic>`")],
+) -> TopicSummaryStatus:
+    info = summaries.topic_state(topic)
+    if info is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тема не найдена")
+    # Генерацию не ждём: LLM отвечает секунды, а ручка должна отвечать быстро.
+    if info["status"] in ("outdated", "pending"):
+        summaries.schedule(topic)
+    updated_at = info["updated_at"]
+    return TopicSummaryStatus(
+        topic=info["topic"],
+        status=info["status"],
+        summary=info["summary"],
+        feedback_chats=info["feedback_chats"],
+        updated_at=updated_at.isoformat() if updated_at is not None else None,
+    )
+
+
 __all__ = [
     "STREAM_EVENTS",
     "ChatFileOut",
     "ChatIn",
     "ChatOut",
     "ChatSummary",
+    "EntityIn",
+    "EntityOut",
     "ErrorOut",
     "HandRule",
     "HandRuleIn",
@@ -1092,5 +1253,6 @@ __all__ = [
     "MessageIn",
     "MessageOut",
     "ToolCallOut",
+    "TopicSummaryStatus",
     "router",
 ]

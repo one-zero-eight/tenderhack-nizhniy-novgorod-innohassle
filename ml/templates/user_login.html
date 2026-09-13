@@ -1,4 +1,7 @@
-{# Идентификация: без пароля, только имя. Создаёт куку username. #}
+{# Идентификация. Два пути:
+   1) вход по компании — выбор из списка (username = ИНН, is_authorized = true);
+   2) вход гостем — по имени, без роли и без доступа к контрактам/закупкам.
+   Дропдаун компаний стоит первым: это основной сценарий демонстрации. #}
 {% extends "base.html" %}
 
 {% block title %}Вход — Портал поставщиков{% endblock %}
@@ -7,25 +10,32 @@
 
 {% block content %}
 <section class="auth">
-  <h1 class="auth-title">Как вас зовут?</h1>
-  <p class="auth-note">
-    Имя нужно, чтобы ваши обращения не смешивались с чужими. Пароль не спрашиваем —
-    это демонстрационный стенд.
-  </p>
   {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+  <form class="auth-form" method="post" action="/login/company">
+    <label class="field-label" for="inn">Компания</label>
+    <select id="inn" name="inn" required>
+      <option value="" disabled selected>Выберите компанию</option>
+      {% for c in companies %}
+      <option value="{{ c.inn }}">{{ c.name }} — {{ c.role_label }}, ИНН {{ c.inn }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-primary">Войти как компания</button>
+  </form>
+
+  <div class="auth-split"><span>или</span></div>
+
   <form class="auth-form" method="post" action="/login">
-    <label class="field-label" for="username">Имя</label>
+    <label class="field-label" for="username">Имя гостя</label>
     <input
       type="text"
       id="username"
       name="username"
       placeholder="Например, Иван Петров"
       maxlength="64"
-      required
-      autofocus
       value="{{ username or '' }}"
     >
-    <button type="submit" class="btn-primary">Войти</button>
+    <button type="submit" class="btn-outline">Войти как гость</button>
   </form>
 </section>
 {% endblock %}

@@ -116,9 +116,9 @@ def _now() -> str:
 
 def storage_dir() -> Path:
     """Каталог с оригиналами. Переопределяется переменной ATTACHMENTS_DIR."""
-    import os
+    import settings
 
-    path = Path(os.getenv("ATTACHMENTS_DIR") or DEFAULT_STORAGE_DIR)
+    path = Path(settings.get("ATTACHMENTS_DIR") or DEFAULT_STORAGE_DIR)
     path.mkdir(parents=True, exist_ok=True)
     return path
 

@@ -18,14 +18,11 @@ import os
 from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
+
+import settings
 
 HERE = Path(__file__).resolve().parent
 TOPICS_FILE = HERE / "topics.json"
-
-# Читаем .env здесь же, а не полагаемся на то, что кто-то импортировал rag раньше:
-# без ключа _ask_llm молча возвращал пустую строку, и все чаты становились «Прочее».
-load_dotenv(HERE / ".env")
 
 # Фолбэк, когда подходящей темы нет. Должен совпадать с topics.json.
 FALLBACK = "Прочее"
@@ -133,13 +130,13 @@ def parse(raw: str) -> dict:
 
 async def _ask_llm(question: str, answer: str) -> str:
     """Один запрос к DeepSeek. Пустая строка, если не удалось."""
-    base = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
-    key = os.getenv("DEEPSEEK_API_KEY", "")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+    base = settings.llm_base()
+    key = settings.llm_key()
+    model = settings.llm_model()
     if not key:
         # Раньше здесь был молчаливый return "", из-за чего недостижимый API
         # выглядел как «все обращения попадают в Прочее».
-        print("Классификация: не задан DEEPSEEK_API_KEY — тема не определена")
+        print("Классификация: не задан LLM_API_KEY — тема не определена")
         return ""
 
     user = (
