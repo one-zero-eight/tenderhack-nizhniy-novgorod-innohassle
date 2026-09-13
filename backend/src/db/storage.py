@@ -48,6 +48,23 @@ class SQLAlchemyStorage(AbstractSQLAlchemyStorage):
             await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS subtopic VARCHAR(255)"))
             await conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS avg_turn_seconds DOUBLE PRECISION"))
             await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration_ms INTEGER"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments JSON DEFAULT '[]'"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS entities JSON DEFAULT '[]'"))
+            await conn.execute(
+                text(
+                    """
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'messages_pkey'
+    ) THEN
+        ALTER TABLE messages DROP CONSTRAINT messages_pkey;
+        ALTER TABLE messages ADD CONSTRAINT pk_messages PRIMARY KEY (chat_id, id);
+    END IF;
+END $$;
+"""
+                )
+            )
             # Required reference data, created atomically with the schema at startup.
             # Preserve any names and descriptions configured in an existing database.
             await conn.execute(

@@ -22,6 +22,7 @@ class MLAnswer(BaseModel):
     content: str
     tool_calls: list[dict] = Field(default_factory=list)
     citations: list[dict] = Field(default_factory=list)
+    entities: list[dict] = Field(default_factory=list)
     redirect_line: int | None = None
     redirect_reason: str | None = None
     duration_ms: int | None = None
@@ -32,12 +33,18 @@ class AIClient:
         self.http = http
         self.settings = settings
 
-    async def create_chat(self, system_prompt: str | None = None) -> tuple[str, str]:
+    async def create_chat(
+        self, system_prompt: str | None = None, username: str | None = None
+    ) -> tuple[str, str]:
         """Create a chat session in the ML service (POST /ml-api/chat) and return (chat_id, title)."""
         try:
             async with asyncio.timeout(10.0):
-                payload = {"system_prompt": system_prompt} if system_prompt else None
-                response = await self.http.post("ml-api/chat", json=payload, timeout=10.0)
+                payload: dict[str, str] = {}
+                if system_prompt:
+                    payload["system_prompt"] = system_prompt
+                if username:
+                    payload["username"] = username
+                response = await self.http.post("ml-api/chat", json=payload if payload else None, timeout=10.0)
                 response.raise_for_status()
                 data = response.json()
                 if not isinstance(data, dict) or "id" not in data or not isinstance(data["id"], str):
@@ -66,7 +73,7 @@ class AIClient:
             logger.warning("AI service unavailable during get_chat (%s): %s", endpoint, exc)
             raise AIUnavailable(endpoint) from exc
 
-    async def stream_message(self, ml_chat_id: str, message: str):
+    async def stream_message(self, ml_chat_id: str, message: str, entities: list[dict] | None = None):
         """Stream SSE events from ML service (POST /ml-api/chat/{chat_id}/message)."""
         endpoint = f"ml-api/chat/{ml_chat_id}/message"
         # Generation and tool calls may be silent for longer than HTTPX's read
@@ -74,10 +81,13 @@ class AIClient:
         timeout = httpx.Timeout(self.http.timeout)
         timeout.read = None
         started = monotonic()
+        body: dict = {"message": message}
+        if entities:
+            body["entities"] = entities
         try:
             async with asyncio.timeout(self.settings.ai_answer_timeout):
                 async with aconnect_sse(
-                    self.http, "POST", endpoint, json={"message": message}, timeout=timeout
+                    self.http, "POST", endpoint, json=body, timeout=timeout
                 ) as event_source:
                     async for sse in event_source.aiter_sse():
                         event_name = sse.event or "message"
@@ -97,7 +107,9 @@ class AIClient:
             )
             raise AIUnavailable(endpoint) from exc
 
-    async def send_message(self, ml_chat_id: str, message: str) -> MLAnswer:
+    async def send_message(
+        self, ml_chat_id: str, message: str, entities: list[dict] | None = None
+    ) -> MLAnswer:
         """Send a message to ML service agent via SSE and consume response (JSON fallback)."""
         final_content = None
         final_message_id = None
@@ -108,7 +120,7 @@ class AIClient:
         duration_ms = None
 
         try:
-            async for event, data in self.stream_message(ml_chat_id, message):
+            async for event, data in self.stream_message(ml_chat_id, message, entities=entities):
                 if event == "error":
                     msg = data.get("message", "SSE stream error")
                     raise ValueError(f"ML service error: {msg}")

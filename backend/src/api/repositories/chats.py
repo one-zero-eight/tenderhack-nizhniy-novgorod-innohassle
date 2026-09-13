@@ -80,6 +80,19 @@ async def get_messages(
 
 @router.post("/chats/{chat_id}/messages", response_model=SendResult)
 async def send_message(chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats, request: Request):
+    """
+    Отправить сообщение в чат.
+
+    **Сущности и вложения через @mention:**
+    В тексте сообщения можно ссылаться на сущности из профиля пользователя (документы/файлы,
+    контракты, закупки, оферты, компанию) в формате `@alias`.
+    Поддерживается поиск как по идентификаторам (например, `@doc-cntr-1`, `@cntr-26-004-gk`,
+    `@proc-001`, `@off-001`), так и по названиям/именам файлов (например, `@Техническое_задание.pdf`).
+
+    Бэкенд автоматически извлекает упомянутые псевдонимы, находит соответствующие сущности в профиле
+    пользователя и передаёт их структурированное описание в ML-сервис в поле `entities`.
+    Также поддерживаются явные сущности, переданные клиентом в `payload.entities`.
+    """
     accept = request.headers.get("accept", "")
     if "text/event-stream" in accept:
         return StreamingResponse(
@@ -92,6 +105,18 @@ async def send_message(chat_id: str, payload: MessageIn, user: CurrentUser, serv
 
 @router.post("/chats/{chat_id}/stream")
 async def stream_message(chat_id: str, payload: MessageIn, user: CurrentUser, service: Chats) -> StreamingResponse:
+    """
+    Стриминг ответа агента через Server-Sent Events (SSE).
+
+    **Сущности и вложения через @mention:**
+    В тексте сообщения можно ссылаться на сущности из профиля пользователя (документы/файлы,
+    контракты, закупки, оферты, компанию) в формате `@alias`.
+    Поддерживается поиск как по идентификаторам (например, `@doc-cntr-1`, `@cntr-26-004-gk`,
+    `@proc-001`), так и по названиям/именам файлов.
+
+    Бэкенд автоматически извлекает упомянутые псевдонимы, находит соответствующие сущности в профиле
+    пользователя и передаёт их структурированное описание в ML-сервис в поле `entities`.
+    """
     return StreamingResponse(
         service.send_stream(chat_id, user, payload),
         media_type=SSE_MEDIA_TYPE,

@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from src.db.models import ChatStatus, CloseReason, Role, SenderType
+from src.schemas.entity import EntityIn, EntityOut
 
 
 class Schema(BaseModel):
@@ -112,6 +113,7 @@ class ChatPage(Schema):
 class MessageIn(Schema):
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
     client_message_id: UUID
+    entities: list[EntityIn] = Field(default_factory=list)
 
 
 class ChatFileOut(Schema):
@@ -138,6 +140,7 @@ class MessageOut(Schema):
     citations: list[dict] = Field(default_factory=list)
     tool_calls: list[dict] = Field(default_factory=list)
     attachments: list[ChatFileOut] = Field(default_factory=list)
+    entities: list[EntityOut] = Field(default_factory=list)
     reply_to_message_id: str | None = None
     is_redacted: bool = False
     duration_ms: int | None = None

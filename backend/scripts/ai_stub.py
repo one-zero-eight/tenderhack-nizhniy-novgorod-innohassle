@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import uuid4
 
@@ -24,10 +24,12 @@ app = FastAPI(title="Development AI stub", dependencies=[Depends(authenticate)])
 
 class ChatIn(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=8000)
+    username: str | None = Field(default=None, max_length=64)
 
 
 class MessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+    entities: list[dict] = Field(default_factory=list)
 
 
 @app.get("/health")
@@ -183,6 +185,9 @@ async def send_message(chat_id: str, payload: MessageIn):
     user_attachments = [{k: v for k, v in f.items() if k != "_data"} for f in pending]
 
     if chat_id in _CHATS:
+        now = datetime.now(UTC)
+        user_time = (now - timedelta(milliseconds=100)).isoformat()
+        ai_time = now.isoformat()
         _CHATS[chat_id]["messages"].append(
             {
                 "id": f"msg-user-{len(_CHATS[chat_id]['messages']) + 1}",
@@ -190,6 +195,8 @@ async def send_message(chat_id: str, payload: MessageIn):
                 "content": payload.message,
                 "tools": [],
                 "attachments": user_attachments,
+                "entities": payload.entities,
+                "created_at": user_time,
             }
         )
         _CHATS[chat_id]["messages"].append(
@@ -200,6 +207,7 @@ async def send_message(chat_id: str, payload: MessageIn):
                 "tools": [],
                 "attachments": [],
                 "duration_ms": 100,
+                "created_at": ai_time,
             }
         )
         assistant_durations = [

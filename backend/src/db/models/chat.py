@@ -2,7 +2,20 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -130,11 +143,12 @@ class Chat(Base):
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
+        PrimaryKeyConstraint("chat_id", "id", name="pk_messages"),
         UniqueConstraint("chat_id", "sequence", name="uq_messages_chat_sequence"),
         UniqueConstraint("chat_id", "client_message_id", name="uq_messages_chat_client_id"),
     )
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid4().hex)
+    id: Mapped[str] = mapped_column(String(64), default=lambda: uuid4().hex)
     chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id"))
     sequence: Mapped[int]
     sender_type: Mapped[SenderType] = mapped_column(enum_type(SenderType))
@@ -144,6 +158,8 @@ class Message(Base):
     text: Mapped[str] = mapped_column(Text)
     citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
     tool_calls: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    attachments: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    entities: Mapped[list[dict]] = mapped_column(JSON, default=list)
     reply_to_message_id: Mapped[str | None] = mapped_column(String(64), index=True)
     client_message_id: Mapped[UUID | None]
     input_hash: Mapped[str | None] = mapped_column(String(64))

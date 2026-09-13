@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select
@@ -53,14 +54,18 @@ def append_message(
     is_redacted: bool = False,
     citations: list[dict] | None = None,
     tool_calls: list[dict] | None = None,
+    attachments: list[dict] | None = None,
+    entities: list[dict] | None = None,
     duration_ms: int | None = None,
+    message_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> Message:
     """The caller holds the chat row lock, which also orders committed message sequences."""
     chat.next_sequence += 1
     chat.updated_at = utcnow()
     name = sender.display_name if sender else ("ИИ-помощник" if sender_type == SenderType.AI else "Система")
     message = Message(
-        id=uuid4().hex,
+        id=message_id or uuid4().hex,
         chat_id=chat.id,
         sequence=chat.next_sequence,
         text=text,
@@ -75,7 +80,9 @@ def append_message(
         duration_ms=duration_ms,
         citations=citations or [],
         tool_calls=tool_calls or [],
-        created_at=utcnow(),
+        attachments=attachments or [],
+        entities=entities or [],
+        created_at=created_at or utcnow(),
     )
     session.add(message)
     return message

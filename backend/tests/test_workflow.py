@@ -1,13 +1,14 @@
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import jwt
 from sqlalchemy import select
 
 from src.api.app import create_app
-from src.db.models import SupportLine, User, utcnow
+from src.db.models import Message, SupportLine, User, utcnow
+from src.services.chats import ChatService
 
 
 async def test_auth_and_permissions(case):
@@ -670,3 +671,125 @@ async def test_chat_rating_and_topic_filtering(case):
     ).json()
     assert admin_res["total"] == 1
     assert admin_res["items"][0]["id"] == chat2
+
+
+async def test_message_created_at_and_sequences(case):
+    chat = await case.chat()
+
+    # Turn 1: user sends message, AI replies
+    send_resp1 = await case.request(
+        "POST",
+        f"/chats/{chat}/messages",
+        json={"text": "First question", "client_message_id": str(uuid4())},
+    )
+    assert send_resp1.status_code == 200
+    res1 = send_resp1.json()
+    messages1 = res1["messages"]
+    assert len(messages1) == 2
+    u_msg1, a_msg1 = messages1[0], messages1[1]
+
+    assert u_msg1["sender_type"] == "user"
+    assert a_msg1["sender_type"] == "ai"
+    assert u_msg1["sequence"] == 1
+    assert a_msg1["sequence"] == 2
+
+    u_time1 = datetime.fromisoformat(u_msg1["created_at"])
+    a_time1 = datetime.fromisoformat(a_msg1["created_at"])
+    # User message must be created before AI message finishes
+    assert u_time1 < a_time1
+    # Duration between messages should match duration_ms (1200 ms in FakeAI)
+    diff_ms = (a_time1 - u_time1).total_seconds() * 1000
+    assert abs(diff_ms - 1200) < 50
+
+    # Turn 2: user sends second message in the same chat
+    send_resp2 = await case.request(
+        "POST",
+        f"/chats/{chat}/messages",
+        json={"text": "Second question", "client_message_id": str(uuid4())},
+    )
+    assert send_resp2.status_code == 200
+    res2 = send_resp2.json()
+    messages2 = res2["messages"]
+    assert len(messages2) == 2
+    u_msg2, a_msg2 = messages2[0], messages2[1]
+
+    assert u_msg2["sender_type"] == "user"
+    assert a_msg2["sender_type"] == "ai"
+    assert u_msg2["sequence"] == 3
+    assert a_msg2["sequence"] == 4
+
+    u_time2 = datetime.fromisoformat(u_msg2["created_at"])
+    a_time2 = datetime.fromisoformat(a_msg2["created_at"])
+    assert u_time2 < a_time2
+    assert u_time2 >= a_time1
+
+    # GET /chats/{chat}/messages returns all messages in order with correct sequences and timestamps
+    history = (await case.request("GET", f"/chats/{chat}/messages")).json()
+    assert len(history["items"]) == 4
+    for idx, item in enumerate(history["items"]):
+        assert item["sequence"] == idx + 1
+    times = [datetime.fromisoformat(item["created_at"]) for item in history["items"]]
+    assert times[0] < times[1] <= times[2] < times[3]
+
+
+async def test_message_persistence_in_postgres_survives_restart_and_streaming(case):
+    chat = await case.chat()
+    client_id = str(uuid4())
+
+    # 1. Send message via regular POST
+    resp = await case.send(chat, "Hello, can you help me?", client_id=client_id)
+    assert resp.status_code == 200
+    res_messages = resp.json()["messages"]
+    assert len(res_messages) == 2
+
+    # 2. Check directly in PostgreSQL that both messages are stored
+    async with case.storage.create_session() as session:
+        db_rows = list(await session.scalars(select(Message).where(Message.chat_id == chat).order_by(Message.sequence)))
+        assert len(db_rows) == 2
+        assert db_rows[0].text == "Hello, can you help me?"
+        assert db_rows[0].sender_type.value == "user"
+        assert db_rows[1].sender_type.value == "ai"
+        assert db_rows[0].sequence == 1
+        assert db_rows[1].sequence == 2
+        assert db_rows[0].created_at < db_rows[1].created_at
+
+    # 3. Simulate backend restart: clear in-memory caches
+    ChatService._submissions.clear()
+    ChatService._client_digests.clear()
+
+    # 4. Repeated submission with same client_message_id returns original result without calling AI again
+    ai_calls_before = len(case.ai.calls)
+    repeated = await case.send(chat, "Hello, can you help me?", client_id=client_id)
+    assert repeated.status_code == 200
+    assert repeated.json()["messages"] == res_messages
+    assert len(case.ai.calls) == ai_calls_before
+
+    # 5. GET /chats/{chat}/messages returns messages and exact timestamps from PostgreSQL
+    history = (await case.request("GET", f"/chats/{chat}/messages")).json()
+    assert len(history["items"]) == 2
+    assert history["items"][0]["text"] == "Hello, can you help me?"
+    assert history["items"][0]["created_at"] == res_messages[0]["created_at"]
+    assert history["items"][1]["created_at"] == res_messages[1]["created_at"]
+
+    # 6. Stream a second turn
+    stream_client_id = str(uuid4())
+    stream_resp = await case.client.post(
+        f"/chats/{chat}/messages",
+        headers={**case.headers("user"), "Accept": "text/event-stream"},
+        json={"text": "Streaming question", "client_message_id": stream_client_id},
+    )
+    assert stream_resp.status_code == 200
+    assert "text/event-stream" in stream_resp.headers["content-type"]
+
+    # Clear in-memory caches again
+    ChatService._submissions.clear()
+    ChatService._client_digests.clear()
+
+    # 7. Check that streamed messages are also in PostgreSQL
+    history2 = (await case.request("GET", f"/chats/{chat}/messages")).json()
+    assert len(history2["items"]) == 4
+    for idx, item in enumerate(history2["items"]):
+        assert item["sequence"] == idx + 1
+    stream_user_time = datetime.fromisoformat(history2["items"][2]["created_at"])
+    stream_ai_time = datetime.fromisoformat(history2["items"][3]["created_at"])
+    assert stream_user_time < stream_ai_time

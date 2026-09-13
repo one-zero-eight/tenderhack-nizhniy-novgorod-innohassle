@@ -198,6 +198,7 @@ class FakeAI:
                         "content": body.get("message", ""),
                         "tools": [],
                         "attachments": user_att,
+                        "entities": body.get("entities", []),
                     }
                 )
                 self.chats[chat_id]["messages"].append(
@@ -420,6 +421,9 @@ async def case(monkeypatch):
     fake = FakeAI()
     app = None
     try:
+        ChatService._submissions.clear()
+        ChatService._client_digests.clear()
+        ChatService._submission_locks.clear()
         monkeypatch.setattr("src.api.lifespan.RubertModerator", FakeModerator)
         monkeypatch.setattr(SQLAlchemyStorage, "from_url", lambda url: storage)
         app = create_app(settings)
