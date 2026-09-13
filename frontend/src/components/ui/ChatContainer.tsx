@@ -9,7 +9,8 @@ import RatingInput from '@/components/ui/RatingInput'
 import type { ChatCommand } from '@/components/ui/ChatCommandsMenu'
 import { useFileAttachments } from '@/hooks/useFileAttachments'
 import { useContracts } from '@/hooks/useContracts'
-import { extractContracts, withContractHeader } from '@/lib/contracts'
+import { useChats } from '@/hooks/useChats'
+import { extractReferences, withContractHeader } from '@/lib/contracts'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
@@ -127,6 +128,8 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
   const { attachments, addFiles, removeFile, clearFiles } = useFileAttachments()
   // Contracts offered by the `@` mention popup in the composer.
   const { contracts } = useContracts()
+  // Chats offered by the `@` mention popup (second tab).
+  const { data: userChats } = useChats()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // Whether the view is pinned to the newest message. Cleared when the user
@@ -175,7 +178,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
 
     // Referenced contracts travel as plain text (a header line + an inline
     // marker) while the UI renders them as attachments.
-    const { contractIds } = extractContracts(outgoing)
+    const { contractIds } = extractReferences(outgoing)
     const withContracts = withContractHeader(outgoing, contractIds)
 
     // Clear the composer immediately so the UI feels responsive while the
@@ -222,6 +225,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
                     message={message}
                     isParticipant={!readOnly}
                     contracts={contracts}
+                    chats={userChats ?? []}
                     onCreateRule={
                       // Only assistant replies can seed a rule, and only when
                       // there is a preceding user question to prefill.
@@ -258,6 +262,7 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
           onRemoveAttachment={removeFile}
           commands={COMMANDS}
           contracts={contracts}
+          chats={userChats ?? []}
         />
       </form>
       )}

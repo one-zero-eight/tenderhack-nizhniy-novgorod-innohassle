@@ -1,11 +1,12 @@
 import { Markdown, type MarkdownComponentProps, type MarkdownComponents } from '@tanstack/markdown/react'
 import { Link } from '@tanstack/react-router'
-import { FaFileContract, FaPaperclip, FaPencil } from 'react-icons/fa6'
+import { FaCommentDots, FaFileContract, FaPaperclip, FaPencil } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
 import { resolveAssetSrc } from '@/lib/assets'
 import { chatFileUrl } from '@/api/chat'
-import { extractContracts, contractLabel } from '@/lib/contracts'
+import { extractReferences, contractLabel } from '@/lib/contracts'
 import type { SchemaContractOut } from '@/api/types'
+import type { ChatView } from '@/lib/chat-view'
 import TypingDots from '@/components/ui/TypingDots'
 import { formatTime } from '@/lib/format'
 import { SENDER_LABELS, type MessageView } from '@/lib/chat-view'
@@ -21,6 +22,8 @@ interface ChatMessageProps {
   isParticipant?: boolean
   /** Contracts available to the user, used to resolve referenced contract names. */
   contracts?: SchemaContractOut[]
+  /** Chats referenced with `@[name]`; reserved for future name resolution. */
+  chats?: ChatView[]
   /**
    * When provided, hovering the row highlights it across the full chat width
    * and offers a pencil action that creates a hand-rule from this exchange.
@@ -88,9 +91,9 @@ export default function ChatMessage({ message, isParticipant = true, contracts =
   const mine = message.senderType === SenderType.user
   const actionable = !!onCreateRule
 
-  // Referenced contracts are sent as text but shown as attachments, so the
-  // header lines and markers are stripped from the rendered body.
-  const { contractIds, text: bodyText } = extractContracts(message.text)
+  // Contract and chat references are sent as plain text but shown as chips, so
+  // the header lines, markers and `@[name]` syntax are stripped from the body.
+  const { contractIds, chatNames, text: bodyText } = extractReferences(message.text)
 
   // Resolve display names for the referenced contracts.
   const contractById = new Map(contracts.map((contract) => [contract.id, contract]))
@@ -152,6 +155,23 @@ export default function ChatMessage({ message, isParticipant = true, contracts =
                 </Link>
               )
             })}
+          </div>
+        )}
+        {/* Chats referenced with `@[name]`, rendered as chips. */}
+        {chatNames.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {chatNames.map((name) => (
+              <span
+                key={name}
+                className={cn(
+                  'flex max-w-full items-center gap-2 px-2 py-1.5 text-xs',
+                  mine ? 'bg-white/15 text-white' : 'bg-pale-blue/60 text-main-blue',
+                )}
+              >
+                <FaCommentDots className="size-3 shrink-0" />
+                <span className="truncate">{name}</span>
+              </span>
+            ))}
           </div>
         )}
         {/* Files attached to the message: images as thumbnails, the rest as links. */}

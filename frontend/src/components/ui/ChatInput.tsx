@@ -12,11 +12,12 @@ import { FaPaperclip, FaPaperPlane } from 'react-icons/fa6'
 import Button from '@/components/ui/Button'
 import ChatAttachments from '@/components/ui/ChatAttachments'
 import ChatCommandsMenu, { type ChatCommand } from '@/components/ui/ChatCommandsMenu'
-import ContractMentionMenu from '@/components/ui/ContractMentionMenu'
+import MentionMenu from '@/components/ui/MentionMenu'
 import { cn } from '@/lib/cn'
-import { contractLabel, contractToken } from '@/lib/contracts'
+import { contractToken, chatToken } from '@/lib/contracts'
 import type { Attachment } from '@/hooks/useFileAttachments'
 import type { SchemaContractOut } from '@/api/types'
+import type { ChatView } from '@/lib/chat-view'
 
 type NativeTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value' | 'rows'>
 
@@ -41,6 +42,8 @@ interface ChatInputProps extends NativeTextareaProps {
   commands?: ChatCommand[]
   /** Contracts offered by the `@` mention popup. */
   contracts?: SchemaContractOut[]
+  /** Chats offered by the `@` mention popup (second tab). */
+  chats?: ChatView[]
 }
 const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
   (
@@ -56,6 +59,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       accept,
       commands = [],
       contracts = [],
+      chats = [],
       className,
       onKeyDown,
       ...props
@@ -72,12 +76,9 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
     const [mentionIndex, setMentionIndex] = useState(0)
 
-    const matches = mention
-      ? contracts.filter((contract) => {
-          const q = mention.query.toLowerCase()
-          return contract.id.toLowerCase().includes(q) || contractLabel(contract).toLowerCase().includes(q)
-        })
-      : []
+    const mentionQuery = mention?.query ?? ''
+    // Options currently shown by the popup, published for keyboard navigation.
+    const [mentionOptions, setMentionOptions] = useState<{ token: string }[]>([])
 
     /** Recomputes the mention state from the text and the caret position. */
     const syncMention = (text: string, caret: number) => {
@@ -93,17 +94,22 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       setMentionIndex(0)
     }
 
-    /** Replaces the `@query` fragment with the contract token. */
-    const acceptContract = (contract: SchemaContractOut) => {
+    /**
+     * Replaces the `@query` fragment with the chosen reference.
+     *
+     * Contracts insert their marker token; chats insert `@[name]` verbatim, so
+     * nothing else is added to the message.
+     */
+    const acceptMention = (token: string) => {
       const el = innerRef.current
       if (!el || !mention) return
       const caret = el.selectionStart ?? value.length
-      const next = `${value.slice(0, mention.start)}${contractToken(contract.id)} ${value.slice(caret)}`
+      const next = `${value.slice(0, mention.start)}${token} ${value.slice(caret)}`
       onChange(next)
       setMention(null)
       // Restore focus and place the caret after the inserted token.
       requestAnimationFrame(() => {
-        const position = mention.start + contractToken(contract.id).length + 1
+        const position = mention.start + token.length + 1
         el.focus()
         el.setSelectionRange(position, position)
       })
@@ -134,21 +140,23 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
       if (event.defaultPrevented) return
 
       // While the mention popup is open, keys navigate it instead of submitting.
-      if (mention && matches.length > 0) {
+      // The visible options are tracked by the popup itself (`mentionOptions`).
+      if (mention && mentionOptions.length > 0) {
         if (event.key === 'ArrowDown') {
           event.preventDefault()
-          setMentionIndex((index) => (index + 1) % matches.length)
+          setMentionIndex((index) => (index + 1) % mentionOptions.length)
           return
         }
         if (event.key === 'ArrowUp') {
           event.preventDefault()
-          setMentionIndex((index) => (index - 1 + matches.length) % matches.length)
+          setMentionIndex((index) => (index - 1 + mentionOptions.length) % mentionOptions.length)
           return
         }
-        // Tab and Enter accept the highlighted contract.
+        // Tab and Enter accept the highlighted option.
         if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
           event.preventDefault()
-          acceptContract(matches[mentionIndex])
+          const option = mentionOptions[mentionIndex]
+          if (option) acceptMention(option.token)
           return
         }
         if (event.key === 'Escape') {
@@ -234,12 +242,16 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             {...props}
           />
 
-          {mention && matches.length > 0 && (
-            <ContractMentionMenu
-              contracts={matches}
+          {mention && (
+            <MentionMenu
+              contracts={contracts}
+              chats={chats}
+              query={mentionQuery}
               activeIndex={mentionIndex}
-              onSelect={acceptContract}
+              onSelectContract={(contract) => acceptMention(contractToken(contract.id))}
+              onSelectChat={(chat) => acceptMention(chatToken(chat.title))}
               onHover={setMentionIndex}
+              onOptionsChange={setMentionOptions}
             />
           )}
         </div>
