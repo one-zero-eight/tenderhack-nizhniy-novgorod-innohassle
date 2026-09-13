@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 
@@ -10,10 +11,15 @@ from src.schemas.profile import (
     ProcurementOut,
     ProfileViewOut,
 )
+from src.services.ai_client import AIClient
 from src.services.profile import get_profile_data
 
-# Pattern to detect mentions starting with @ followed by word chars, hyphens, dots
-MENTION_RE = re.compile(r"(?<![\w@])@([\w\-\.]+)")
+logger = logging.getLogger(__name__)
+
+# Pattern to detect quoted mentions like @"Title with spaces" or @'Title' or @[Title]
+QUOTED_MENTION_RE = re.compile(r'(?<![\w@])@(?:\[([^\]]+)\]|"([^"]+)"|\'([^\']+)\')')
+# Pattern to detect mentions starting with @ followed by word chars, hyphens, dots, colons
+MENTION_RE = re.compile(r"(?<![\w@])@([\w\-\.:]+)")
 
 # Frontend legacy contract token patterns
 FRONTEND_CONTRACT_TOKEN_RE = re.compile(r"\[\[contract:([^\]]+)\]\]")
@@ -43,11 +49,21 @@ def extract_mentions(text: str) -> tuple[str, list[str]]:
     cleaned = FRONTEND_CONTRACT_HEADER_RE.sub(_extract_header, text)
     cleaned = FRONTEND_CONTRACT_TOKEN_RE.sub(_extract_marker, cleaned)
 
+    # 2. Extract quoted mentions like @"Title with spaces"
+    def _extract_quoted(match: re.Match) -> str:
+        alias = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+        if alias and alias not in aliases:
+            aliases.append(alias)
+        norm_token = alias.replace(" ", "_")
+        return f"@{norm_token}"
+
+    cleaned = QUOTED_MENTION_RE.sub(_extract_quoted, cleaned)
+
     # Clean multiple consecutive blank lines or spaces
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
-    # 2. Extract all @alias mentions
+    # 3. Extract all @alias mentions
     for match in MENTION_RE.finditer(cleaned):
         alias = match.group(1).strip()
         if alias and alias not in aliases:
@@ -328,3 +344,176 @@ def build_user_system_prompt(user: User) -> str:
         f"Пользователь: {user.display_name}, роль на портале: {profile.type_label}. "
         f"Организация: {comp.name} (ИНН: {comp.inn}, КПП: {comp.kpp}), адрес: {comp.address}."
     )
+
+
+async def resolve_chat_entities(
+    aliases: list[str],
+    user: User,
+    ai: AIClient,
+    current_chat_id: str | None = None,
+) -> list[EntityIn]:
+    """
+    Looks up mentioned aliases in past chats from the ML service,
+    supporting both IDs and titles. Excludes current_chat_id from matching.
+    Returns list of EntityIn with kind="chat".
+    """
+    if not aliases:
+        return []
+
+    uname = user.display_name[:64] if user.display_name else user.login[:64]
+
+    # 1. Fetch candidate chats from ML service
+    chats: list[dict] = []
+    try:
+        chats = await ai.list_chats(username=uname, limit=100)
+    except Exception as exc:
+        logger.warning("Failed to list chats for username '%s' from ML service: %s", uname, exc)
+
+    # Fallback to user.login if different and no chats found
+    if not chats and user.login != uname:
+        try:
+            chats = await ai.list_chats(username=user.login, limit=100)
+        except Exception:
+            pass
+
+    # For support/admin or if still empty, list all
+    if not chats and (user.is_support or user.is_admin):
+        try:
+            chats = await ai.list_chats(limit=100)
+        except Exception:
+            pass
+
+    candidate_chats = [c for c in chats if c.get("id") != current_chat_id]
+
+    resolved: list[EntityIn] = []
+    matched_chat_ids: set[str] = set()
+
+    for alias in aliases:
+        alias_clean = alias.strip()
+        if not alias_clean:
+            continue
+        alias_lower = alias_clean.lower()
+        stripped = alias_lower
+        for pfx in ("chat:", "chat-", "chat_"):
+            if stripped.startswith(pfx):
+                stripped = stripped[len(pfx) :]
+                break
+        stripped_norm = stripped.replace("_", " ").replace("-", " ").strip()
+        alias_norm = alias_lower.replace("_", " ").replace("-", " ").strip()
+
+        matched_chat: dict | None = None
+
+        # a) Match by ID among candidate chats
+        for c in candidate_chats:
+            cid = str(c.get("id", "")).lower()
+            if cid in (alias_lower, stripped):
+                matched_chat = c
+                break
+
+        # b) Direct get_chat fallback if alias looks like a specific chat ID
+        if not matched_chat and (len(stripped) >= 8 or "-" in stripped):
+            for candidate_id in (alias_clean, stripped):
+                if candidate_id == current_chat_id:
+                    continue
+                try:
+                    direct = await ai.get_chat(candidate_id)
+                    if direct and direct.get("id") != current_chat_id:
+                        owner = direct.get("owner")
+                        if user.is_customer and owner and owner not in (uname, user.login):
+                            continue
+                        matched_chat = direct
+                        break
+                except Exception:
+                    pass
+
+        # c) Match by Title among candidate chats
+        if not matched_chat:
+            # First pass: exact or normalized matches
+            for c in candidate_chats:
+                title = str(c.get("title", "")).strip()
+                title_lower = title.lower()
+                title_norm = title_lower.replace("_", " ").replace("-", " ").strip()
+                if title_lower in (alias_lower, stripped) or title_norm in (alias_norm, stripped_norm):
+                    matched_chat = c
+                    break
+                if title_lower.replace(" ", "_") in (alias_lower, stripped) or title_lower.replace(" ", "-") in (
+                    alias_lower,
+                    stripped,
+                ):
+                    matched_chat = c
+                    break
+
+            # Second pass: substring match if length >= 4
+            if not matched_chat and len(alias_norm) >= 4:
+                for c in candidate_chats:
+                    title = str(c.get("title", "")).strip()
+                    title_lower = title.lower()
+                    title_norm = title_lower.replace("_", " ").replace("-", " ").strip()
+                    if alias_norm in title_lower or alias_norm in title_norm or title_norm in alias_norm:
+                        matched_chat = c
+                        break
+
+        if not matched_chat:
+            continue
+
+        cid = matched_chat.get("id")
+        if not cid or cid == current_chat_id or cid in matched_chat_ids:
+            continue
+
+        matched_chat_ids.add(cid)
+
+        # Ensure we have full chat messages
+        chat_details = matched_chat
+        if "messages" not in chat_details:
+            try:
+                chat_details = await ai.get_chat(cid)
+            except Exception as exc:
+                logger.warning("Failed to fetch full chat %s from ML service: %s", cid, exc)
+
+        title = chat_details.get("title") or "Чат"
+        topic = chat_details.get("topic")
+        subtopic = chat_details.get("subtopic")
+        redirect_line = chat_details.get("redirect_line")
+        messages = chat_details.get("messages", [])
+
+        lines = [f"Прошлый чат: {title} (ID: {cid})"]
+        if topic:
+            sub = f" / {subtopic}" if subtopic else ""
+            lines.append(f"Тема: {topic}{sub}")
+        if redirect_line:
+            lines.append(f"Переведён на линию поддержки: L{redirect_line}")
+
+        if messages:
+            lines.append("История сообщений:")
+            for msg in messages:
+                role = msg.get("role", "user")
+                role_label = "Пользователь" if role == "user" else "Ассистент"
+                content = (msg.get("content") or "").strip()
+                if not content:
+                    continue
+                snippet = " ".join(content.split())
+                if len(snippet) > 250:
+                    snippet = snippet[:247] + "..."
+                lines.append(f"- {role_label}: {snippet}")
+
+        full_text = "\n".join(lines)
+        if len(full_text) > 1950:
+            full_text = full_text[:1947] + "..."
+
+        resolved.append(
+            EntityIn(
+                alias=alias_clean[:64],
+                kind="chat",
+                text=full_text,
+                link=f"/chats/{cid}",
+                extra={
+                    "chat_id": cid,
+                    "title": title,
+                    "topic": topic,
+                    "subtopic": subtopic,
+                },
+            )
+        )
+
+    return resolved
+

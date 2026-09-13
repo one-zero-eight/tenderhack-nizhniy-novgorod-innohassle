@@ -8,6 +8,7 @@ from src.db.models import Role, User
 from src.services.profile_entities import (
     build_user_system_prompt,
     extract_mentions,
+    resolve_chat_entities,
     resolve_profile_entities,
 )
 
@@ -46,6 +47,15 @@ def test_extract_mentions_frontend_contract_tokens():
     assert "@cntr-26-004-gk" in cleaned
     assert "Пользователь выбрал контракт" not in cleaned
     assert "[[contract" not in cleaned
+
+
+def test_extract_mentions_quoted():
+    text = 'Посмотри @"Проблема с оплатой" и еще @[Консультация по 44-ФЗ]!'
+    cleaned, aliases = extract_mentions(text)
+    assert "Проблема с оплатой" in aliases
+    assert "Консультация по 44-ФЗ" in aliases
+    assert "@Проблема_с_оплатой" in cleaned
+    assert "@Консультация_по_44-ФЗ" in cleaned
 
 
 def test_resolve_entities_by_id():
@@ -218,3 +228,112 @@ async def test_messages_history_returns_entities(case):
     assert len(user_msgs) >= 1
     assert len(user_msgs[0]["entities"]) == 1
     assert user_msgs[0]["entities"][0]["alias"] == "doc-cntr-1"
+
+
+async def test_resolve_past_chat_by_id_and_title(case):
+    # Set up past chat in fake AI
+    past_id = "test-past-chat-99"
+    case.ai.chats[past_id] = {
+        "id": past_id,
+        "title": "Ошибка при оплате пошлины",
+        "owner": "user",
+        "topic": "Платежи",
+        "subtopic": "Госпошлина",
+        "redirect_line": None,
+        "redirect_reason": None,
+        "closed_at": None,
+        "created_at": "2026-09-12T00:00:00Z",
+        "updated_at": "2026-09-12T00:00:00Z",
+        "avg_turn_seconds": None,
+        "messages": [
+            {"id": "m1", "role": "user", "content": "Не проходит оплата пошлины"},
+            {"id": "m2", "role": "assistant", "content": "Проверьте статус платежного поручения"},
+        ],
+    }
+
+    user = User(id=uuid4(), login="user", display_name="Пользователь", role=Role.BUYER)
+
+    # 1. Match by ID
+    res_id = await resolve_chat_entities([past_id], user, case.ai_client)
+    assert len(res_id) == 1
+    assert res_id[0].kind == "chat"
+    assert res_id[0].alias == past_id
+    assert "Ошибка при оплате пошлины" in res_id[0].text
+    assert "Платежи" in res_id[0].text
+    assert "Не проходит оплата пошлины" in res_id[0].text
+    assert res_id[0].link == f"/chats/{past_id}"
+
+    # 2. Match by title with underscores
+    res_title = await resolve_chat_entities(["Ошибка_при_оплате_пошлины"], user, case.ai_client)
+    assert len(res_title) == 1
+    assert res_title[0].kind == "chat"
+    assert res_title[0].alias == "Ошибка_при_оплате_пошлины"
+    assert "Ошибка при оплате пошлины" in res_title[0].text
+
+    # 3. Match by prefix e.g. chat:test-past-chat-99
+    res_pfx = await resolve_chat_entities(["chat:test-past-chat-99"], user, case.ai_client)
+    assert len(res_pfx) == 1
+    assert res_pfx[0].kind == "chat"
+
+    # 4. Current chat ID is excluded from matching
+    res_cur = await resolve_chat_entities([past_id], user, case.ai_client, current_chat_id=past_id)
+    assert len(res_cur) == 0
+
+
+async def test_send_message_with_past_chat_mention(case):
+    # Create chat 1 and post message
+    chat1 = await case.chat()
+    await case.send(
+        chat1,
+        "Как изменить реквизиты компании?",
+        client_id=str(uuid4()),
+        login="user",
+    )
+    # Update title in fake AI
+    case.ai.chats[chat1]["title"] = "Смена реквизитов компании"
+    case.ai.chats[chat1]["topic"] = "Профиль компании"
+
+    # Create chat 2 and mention chat 1 by title
+    chat2 = await case.chat()
+    res = await case.send(
+        chat2,
+        "Я уже спрашивал об этом в @Смена_реквизитов_компании, но забыл ответ",
+        client_id=str(uuid4()),
+        login="user",
+    )
+    assert res.status_code == 200
+    msg_calls = [c for c in case.ai.calls if f"/ml-api/chat/{chat2}/message" in c[0]]
+    assert len(msg_calls) >= 1
+    _, body = msg_calls[-1]
+    assert "@Смена_реквизитов_компании" in body["message"]
+    assert len(body["entities"]) == 1
+    assert body["entities"][0]["alias"] == "Смена_реквизитов_компании"
+    assert body["entities"][0]["kind"] == "chat"
+    assert "Смена реквизитов компании" in body["entities"][0]["text"]
+    assert "Как изменить реквизиты компании?" in body["entities"][0]["text"]
+    assert body["entities"][0]["link"] == f"/chats/{chat1}"
+
+
+async def test_send_message_with_past_chat_by_id(case):
+    chat1 = await case.chat()
+    await case.send(
+        chat1,
+        "Вопрос по контракту 44-ФЗ",
+        client_id=str(uuid4()),
+        login="user",
+    )
+    chat2 = await case.chat()
+    res = await case.send(
+        chat2,
+        f"Посмотри старый чат @{chat1}",
+        client_id=str(uuid4()),
+        login="user",
+    )
+    assert res.status_code == 200
+    msg_calls = [c for c in case.ai.calls if f"/ml-api/chat/{chat2}/message" in c[0]]
+    assert len(msg_calls) >= 1
+    _, body = msg_calls[-1]
+    assert len(body["entities"]) == 1
+    assert body["entities"][0]["alias"] == chat1
+    assert body["entities"][0]["kind"] == "chat"
+    assert body["entities"][0]["link"] == f"/chats/{chat1}"

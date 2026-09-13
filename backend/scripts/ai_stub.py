@@ -55,6 +55,7 @@ async def create_chat(payload: ChatIn | None = None):
     record = {
         "id": chat_id,
         "title": "Новый чат",
+        "owner": payload.username if payload else None,
         "system_prompt": payload.system_prompt if payload else None,
         "redirect_line": None,
         "redirect_reason": None,
@@ -68,6 +69,19 @@ async def create_chat(payload: ChatIn | None = None):
     }
     _CHATS[chat_id] = record
     return record
+
+
+@app.get("/ml-api/chat")
+async def list_chats(username: str | None = None, limit: int = 50):
+    res = []
+    for c in reversed(list(_CHATS.values())):
+        if username and c.get("owner") and c.get("owner") != username:
+            continue
+        summary = {k: v for k, v in c.items() if k != "messages"}
+        res.append(summary)
+        if len(res) >= limit:
+            break
+    return res
 
 
 @app.get("/ml-api/chat/{chat_id}")

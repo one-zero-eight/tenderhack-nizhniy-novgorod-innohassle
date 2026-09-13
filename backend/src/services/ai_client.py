@@ -54,6 +54,24 @@ class AIClient:
             logger.warning("AI service unavailable during create_chat: %s (%s)", exc, type(exc).__name__)
             raise AIUnavailable("ml-api/chat") from exc
 
+    async def list_chats(self, username: str | None = None, limit: int = 50) -> list[dict]:
+        """Fetch chat summaries from ML service (GET /ml-api/chat)."""
+        endpoint = "ml-api/chat"
+        params: dict[str, str | int] = {"limit": limit}
+        if username:
+            params["username"] = username
+        try:
+            async with asyncio.timeout(10.0):
+                response = await self.http.get(endpoint, params=params, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, list):
+                    raise ValueError("Invalid list_chats response format")
+                return data
+        except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+            logger.warning("AI service unavailable during list_chats (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
     async def get_chat(self, ml_chat_id: str) -> dict:
         """Fetch chat metadata and messages from ML service (GET /ml-api/chat/{chat_id})."""
         endpoint = f"ml-api/chat/{ml_chat_id}"

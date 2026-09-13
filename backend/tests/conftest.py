@@ -57,6 +57,7 @@ class FakeAI:
             self.chats[chat_id] = {
                 "id": chat_id,
                 "title": "Новый чат",
+                "owner": body.get("username") if body else None,
                 "system_prompt": body.get("system_prompt") if body else None,
                 "redirect_line": None,
                 "redirect_reason": None,
@@ -72,6 +73,19 @@ class FakeAI:
                 201,
                 json={"id": chat_id, "title": "Новый чат", "topic": None, "subtopic": None, "avg_turn_seconds": None},
             )
+
+        if request.method == "GET" and endpoint == "/ml-api/chat":
+            limit = int(request.url.params.get("limit", 50))
+            uname = request.url.params.get("username")
+            res = []
+            for c in reversed(list(self.chats.values())):
+                if uname and c.get("owner") and c.get("owner") != uname:
+                    continue
+                summary = {k: v for k, v in c.items() if k != "messages"}
+                res.append(summary)
+                if len(res) >= limit:
+                    break
+            return httpx.Response(200, json=res)
 
         # File upload
         if request.method == "POST" and "/ml-api/chat/" in endpoint and endpoint.endswith("/upload"):
@@ -361,6 +375,13 @@ class Case:
     moderator: FakeModerator
     settings: ApiSettings
     users: dict[str, User]
+
+    @property
+    def ai_client(self) -> AIClient:
+        return AIClient(
+            http=httpx.AsyncClient(transport=httpx.MockTransport(self.ai), base_url=str(self.settings.ai_base_url)),
+            settings=self.settings,
+        )
 
     def headers(self, login: str = "user") -> dict[str, str]:
         return {"Authorization": f"Bearer {issue_token(self.users[login].id, self.settings)}"}

@@ -34,7 +34,12 @@ from src.schemas.chat import (
 from src.services.ai_client import AIClient, AIUnavailable
 from src.services.errors import fail
 from src.services.moderation import ModerationUnavailable, Moderator
-from src.services.profile_entities import build_user_system_prompt, extract_mentions, resolve_profile_entities
+from src.services.profile_entities import (
+    build_user_system_prompt,
+    extract_mentions,
+    resolve_chat_entities,
+    resolve_profile_entities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +344,11 @@ class ChatService:
         # AI mode: stream from ML service
         cleaned_text, mentions = extract_mentions(payload.text)
         resolved_entities = resolve_profile_entities(mentions, user)
+        resolved_aliases = {e.alias for e in resolved_entities}
+        unresolved_mentions = [m for m in mentions if m not in resolved_aliases]
+        if unresolved_mentions:
+            chat_entities = await resolve_chat_entities(unresolved_mentions, user, self.ai, current_chat_id=chat_id)
+            resolved_entities.extend(chat_entities)
         explicit_aliases = {e.alias for e in payload.entities}
         all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
         entities_dicts = [e.model_dump() for e in all_entities]
@@ -614,6 +624,11 @@ class ChatService:
             # AI Mode
             cleaned_text, mentions = extract_mentions(payload.text)
             resolved_entities = resolve_profile_entities(mentions, user)
+            resolved_aliases = {e.alias for e in resolved_entities}
+            unresolved_mentions = [m for m in mentions if m not in resolved_aliases]
+            if unresolved_mentions:
+                chat_entities = await resolve_chat_entities(unresolved_mentions, user, self.ai, current_chat_id=chat_id)
+                resolved_entities.extend(chat_entities)
             explicit_aliases = {e.alias for e in payload.entities}
             all_entities = list(payload.entities) + [e for e in resolved_entities if e.alias not in explicit_aliases]
             entities_dicts = [e.model_dump() for e in all_entities]
