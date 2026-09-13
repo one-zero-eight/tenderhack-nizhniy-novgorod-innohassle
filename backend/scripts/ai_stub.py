@@ -254,6 +254,22 @@ async def delete_chat(chat_id: str):
     return None
 
 
+class FeedbackIn(BaseModel):
+    value: int = Field(ge=1, le=5)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/ml-api/chat/{chat_id}/feedback")
+async def set_feedback_stub(chat_id: str, payload: FeedbackIn):
+    if chat_id not in _CHATS:
+        raise HTTPException(404, "Чат не найден")
+    chat = _CHATS[chat_id]
+    chat["rating"] = "positive" if payload.value >= 4 else "negative"
+    chat["rating_reason"] = payload.reason
+    chat["updated_at"] = datetime.now(UTC).isoformat()
+    return chat
+
+
 @app.get("/ml-api/knowledge-base")
 async def list_manuals():
     return [

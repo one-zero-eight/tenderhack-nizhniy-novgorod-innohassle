@@ -121,6 +121,14 @@ async def test_answer_idempotency_ratings_and_stats(case):
     assert first.json()["id"] == updated.json()["id"]
     assert updated.json()["stars"] == 2
 
+    # Check that feedback was forwarded to ML service
+    assert case.ai.chats[chat]["rating"] == "negative"
+    assert case.ai.chats[chat]["rating_reason"] == "Needs detail"
+    feedback_calls = [c for c in case.ai.calls if c[0] == f"/ml-api/chat/{chat}/feedback"]
+    assert len(feedback_calls) == 2
+    assert feedback_calls[0][1] == {"value": 5, "reason": "Good"}
+    assert feedback_calls[1][1] == {"value": 2, "reason": "Needs detail"}
+
     # Check chat detail and list include rating
     chat_detail = (await case.request("GET", f"/chats/{chat}")).json()
     assert chat_detail["rating"]["stars"] == 2

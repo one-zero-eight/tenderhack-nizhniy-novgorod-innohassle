@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 import httpx
@@ -329,3 +330,95 @@ async def test_development_stub_file_operations(monkeypatch):
         user_msg = chat_history["messages"][0]
         assert len(user_msg["attachments"]) == 1
         assert user_msg["attachments"][0]["id"] == file_id
+
+
+async def test_set_feedback_success():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-1/feedback"
+        assert request.method == "POST"
+        body = json.loads(request.content)
+        assert body == {"value": 4, "reason": "Good answer"}
+        return httpx.Response(200, json={"id": "chat-1", "rating": "positive", "rating_reason": "Good answer"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        result = await client.set_feedback("chat-1", 4, "Good answer")
+        assert result["rating"] == "positive"
+        assert result["rating_reason"] == "Good answer"
+
+        # Alias send_feedback should also work
+        res2 = await client.send_feedback("chat-1", 4, "Good answer")
+        assert res2["rating"] == "positive"
+
+
+async def test_set_feedback_not_found():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-unknown/feedback"
+        return httpx.Response(404, json={"detail": "Чат не найден"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        with pytest.raises(KeyError):
+            await client.set_feedback("chat-unknown", 5)
+
+
+async def test_set_feedback_validation_error():
+    async def respond(request: httpx.Request):
+        assert request.url.path == "/ml-api/chat/chat-1/feedback"
+        return httpx.Response(422, json={"detail": "Оценка вне диапазона 1–5"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        with pytest.raises(ValueError):
+            await client.set_feedback("chat-1", 10)
+
+
+async def test_set_feedback_service_unavailable(caplog):
+    caplog.set_level(logging.WARNING)
+    logging.getLogger("src").addHandler(caplog.handler)
+
+    async def respond(request: httpx.Request):
+        return httpx.Response(500, text="Internal Server Error")
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        with pytest.raises(AIUnavailable):
+            await client.set_feedback("chat-1", 3)
+        assert "AI service unavailable during set_feedback" in caplog.text
+
+
+async def test_set_feedback_truncates_long_reason():
+    captured = {}
+
+    async def respond(request: httpx.Request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": "chat-1", "rating": "negative"})
+
+    async with httpx.AsyncClient(base_url="http://ai/", transport=httpx.MockTransport(respond)) as http:
+        client = AIClient(http, settings())
+        long_reason = "x" * 600
+        await client.set_feedback("chat-1", 1, long_reason)
+        assert len(captured["body"]["reason"]) == 500
+        assert captured["body"]["reason"] == "x" * 500
+
+
+async def test_development_stub_feedback(monkeypatch):
+    monkeypatch.delenv("API_SETTINGS__AI_SERVICE_TOKEN", raising=False)
+    async with httpx.AsyncClient(base_url="http://stub/", transport=httpx.ASGITransport(stub_app)) as http:
+        client = AIClient(http, settings())
+        chat_id, _ = await client.create_chat()
+
+        # Set feedback 5 stars
+        res = await client.set_feedback(chat_id, 5, "Great help")
+        assert res["rating"] == "positive"
+        assert res["rating_reason"] == "Great help"
+
+        # Update feedback 2 stars
+        res2 = await client.set_feedback(chat_id, 2, "Not satisfied")
+        assert res2["rating"] == "negative"
+        assert res2["rating_reason"] == "Not satisfied"
+
+        # Verify chat retrieval contains updated rating
+        chat = await client.get_chat(chat_id)
+        assert chat["rating"] == "negative"
+        assert chat["rating_reason"] == "Not satisfied"

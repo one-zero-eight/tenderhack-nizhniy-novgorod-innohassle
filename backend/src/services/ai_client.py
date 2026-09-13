@@ -311,6 +311,30 @@ class AIClient:
             logger.warning("AI service unavailable during get_attachment (%s): %s", endpoint, exc)
             raise AIUnavailable(endpoint) from exc
 
+    async def set_feedback(self, ml_chat_id: str, value: int, reason: str | None = None) -> dict:
+        """Send chat feedback to ML service (POST /ml-api/chat/{chat_id}/feedback)."""
+        endpoint = f"ml-api/chat/{ml_chat_id}/feedback"
+        payload = {"value": value, "reason": reason[:500] if reason else None}
+        try:
+            async with asyncio.timeout(10.0):
+                response = await self.http.post(endpoint, json=payload, timeout=10.0)
+                if response.status_code == 404:
+                    raise KeyError(ml_chat_id)
+                if response.status_code == 422:
+                    raise ValueError(response.text)
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid feedback response format")
+                return data
+        except (KeyError, ValueError):
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            logger.warning("AI service unavailable during set_feedback (%s): %s", endpoint, exc)
+            raise AIUnavailable(endpoint) from exc
+
+    send_feedback = set_feedback
+
     async def route(self, *args, **kwargs) -> int | None:
         """Stub method for backward compatibility. Returns None until routing is implemented."""
         return None

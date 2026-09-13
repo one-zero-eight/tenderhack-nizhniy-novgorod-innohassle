@@ -892,7 +892,14 @@ class ChatService:
                 rating.chat_title = chat.title
                 rating.updated_at = utcnow()
             await session.flush()
-            return RatingOut.model_validate(rating)
+            result = RatingOut.model_validate(rating)
+
+        try:
+            await self.ai.set_feedback(chat_id, payload.stars, payload.comment)
+        except Exception as exc:
+            logger.warning("Failed to forward feedback to ML service for chat %s: %s", chat_id, exc)
+
+        return result
 
     async def upload_file(
         self, chat_id: str, user: User, filename: str, content: bytes, content_type: str | None = None

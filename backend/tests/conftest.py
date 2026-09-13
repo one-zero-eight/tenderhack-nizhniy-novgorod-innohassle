@@ -255,6 +255,18 @@ class FakeAI:
             self.chats.pop(chat_id, None)
             return httpx.Response(204)
 
+        if request.method == "POST" and "/ml-api/chat/" in endpoint and endpoint.endswith("/feedback"):
+            parts = endpoint.split("/")
+            chat_id = parts[3]
+            if chat_id not in self.chats:
+                return httpx.Response(404, json={"detail": "Чат не найден"})
+            val = body.get("value")
+            if not isinstance(val, int) or val < 1 or val > 5:
+                return httpx.Response(422, json={"detail": "Оценка вне диапазона 1–5"})
+            self.chats[chat_id]["rating"] = "positive" if val >= 4 else "negative"
+            self.chats[chat_id]["rating_reason"] = body.get("reason")
+            return httpx.Response(200, json=self.chats[chat_id])
+
         if endpoint == "/ml-api/knowledge-base":
             return httpx.Response(
                 200,
