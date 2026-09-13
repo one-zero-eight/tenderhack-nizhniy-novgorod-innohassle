@@ -14,6 +14,7 @@ from src.api.repositories.manul import router as manul_router
 from src.api.repositories.ml_assets import router as ml_assets_router
 from src.api.repositories.ping import router as ping_router
 from src.api.repositories.profile import router as profile_router
+from src.api.repositories.stats import router as stats_router
 from src.api.repositories.support import router as support_router
 from src.config import api_settings
 from src.config_schema import ApiSettings
@@ -42,6 +43,7 @@ def create_app(settings: ApiSettings) -> FastAPI:
         kb_router,
         manul_router,
         handrules_router,
+        stats_router,
     ):
         app.include_router(router)
     app.add_middleware(
