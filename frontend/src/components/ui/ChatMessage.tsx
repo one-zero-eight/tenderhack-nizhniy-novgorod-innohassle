@@ -87,13 +87,13 @@ const components = {
   },
 } satisfies MarkdownComponents
 
-export default function ChatMessage({ message, isParticipant = true, contracts = [], onCreateRule, className }: ChatMessageProps) {
+export default function ChatMessage({ message, isParticipant = true, contracts = [], chats = [], onCreateRule, className }: ChatMessageProps) {
   const mine = message.senderType === SenderType.user
   const actionable = !!onCreateRule
 
   // Contract and chat references are sent as plain text but shown as chips, so
   // the header lines, markers and `@[name]` syntax are stripped from the body.
-  const { contractIds, chatNames, text: bodyText } = extractReferences(message.text)
+  const { contractIds, chatNames, text: bodyText } = extractReferences(message.text, { contracts, chats })
 
   // Resolve display names for the referenced contracts.
   const contractById = new Map(contracts.map((contract) => [contract.id, contract]))

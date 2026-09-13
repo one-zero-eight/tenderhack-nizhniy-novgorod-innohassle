@@ -10,7 +10,6 @@ import type { ChatCommand } from '@/components/ui/ChatCommandsMenu'
 import { useFileAttachments } from '@/hooks/useFileAttachments'
 import { useContracts } from '@/hooks/useContracts'
 import { useChats } from '@/hooks/useChats'
-import { extractReferences, withContractHeader } from '@/lib/contracts'
 import { cn } from '@/lib/cn'
 import { dayKey, formatDateSeparator } from '@/lib/format'
 import { SenderType } from '@/api/types'
@@ -176,16 +175,14 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
     const outgoing = trimmed === HELP_COMMAND ? HELP_MESSAGE : trimmed
     const files = attachments.map((item) => item.file)
 
-    // Referenced contracts travel as plain text (a header line + an inline
-    // marker) while the UI renders them as attachments.
-    const { contractIds } = extractReferences(outgoing)
-    const withContracts = withContractHeader(outgoing, contractIds)
+    // Contract and chat aliases are already plain `@…` references in the text —
+    // the form the backend persists — so the message is sent exactly as typed.
 
     // Clear the composer immediately so the UI feels responsive while the
     // upload and the (potentially long) answer happen.
     setText('')
     clearFiles()
-    await onSend?.(withContracts, files)
+    await onSend?.(outgoing, files)
   }
 
   const submitRating = (stars: number, comment: string) => {
