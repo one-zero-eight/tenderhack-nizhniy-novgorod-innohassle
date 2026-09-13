@@ -1,5 +1,5 @@
 import { eventsFetch } from '@/api'
-import type { SchemaChatOut, SchemaChatPage, SchemaCloseIn, SchemaMessagePage, SchemaProfileViewOut, SchemaRatingIn, SchemaRatingOut, SchemaSendResult, Role } from '@/api/types'
+import type { SchemaChatOut, SchemaChatPage, SchemaMessagePage, SchemaProfileViewOut, SchemaRatingIn, SchemaRatingOut, SchemaSendResult, Role } from '@/api/types'
 import { getToken } from '@/lib/auth-storage'
 import { postSse } from '@/lib/sse'
 
@@ -73,6 +73,8 @@ export interface AdminChatFilters {
   status?: SchemaChatOut['status'] | null
   line_id?: number | null
   operator_id?: string | null
+  topic?: string | null
+  subtopic?: string | null
   offset?: number
   limit?: number
 }
@@ -90,12 +92,34 @@ export async function fetchAdminChats(filters: AdminChatFilters = {}): Promise<S
         status: filters.status ?? undefined,
         line_id: filters.line_id ?? undefined,
         operator_id: filters.operator_id ?? undefined,
+        topic: filters.topic ?? undefined,
+        subtopic: filters.subtopic ?? undefined,
         offset: filters.offset,
         limit: filters.limit,
       },
     },
   })
   return unwrap(data, error)
+}
+
+/** Page size used when pulling every chat for aggregation. */
+const ALL_CHATS_PAGE_SIZE = 100
+
+/**
+ * Fetches every chat, following pagination until all pages are read. Used by
+ * the issues view, which groups the full dataset by topic.
+ */
+export async function fetchAllAdminChats(): Promise<SchemaChatOut[]> {
+  const all: SchemaChatOut[] = []
+  let offset = 0
+  // Guard against an unbounded loop if the backend misbehaves.
+  for (let page = 0; page < 100; page += 1) {
+    const result = await fetchAdminChats({ offset, limit: ALL_CHATS_PAGE_SIZE })
+    all.push(...result.items)
+    offset += result.items.length
+    if (result.items.length === 0 || offset >= result.total) break
+  }
+  return all
 }
 
 export async function createChat(): Promise<SchemaChatOut> {
@@ -114,22 +138,6 @@ export async function sendChatMessage(chatId: string, text: string, clientMessag
   const { data, error } = await eventsFetch.POST('/chats/{chat_id}/messages', {
     params: { path: { chat_id: chatId } },
     body: { text, client_message_id: clientMessageId },
-  })
-  return unwrap(data, error)
-}
-
-export async function closeChat(chatId: string, body: SchemaCloseIn): Promise<SchemaChatOut> {
-  const { data, error } = await eventsFetch.POST('/chats/{chat_id}/close', {
-    params: { path: { chat_id: chatId } },
-    body,
-  })
-  return unwrap(data, error)
-}
-
-export async function requestOperator(chatId: string, supportLineId: number): Promise<SchemaChatOut> {
-  const { data, error } = await eventsFetch.POST('/chats/{chat_id}/request-operator', {
-    params: { path: { chat_id: chatId } },
-    body: { support_line_id: supportLineId },
   })
   return unwrap(data, error)
 }

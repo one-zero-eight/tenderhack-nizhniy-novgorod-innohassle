@@ -19,6 +19,11 @@ interface ChatContainerProps {
   disabled?: boolean
   /** Hides the composer entirely (e.g. the read-only admin history view). */
   readOnly?: boolean
+  /**
+   * When provided, assistant replies expose a «Добавить правило» action that
+   * receives the assistant reply and the user question it answers.
+   */
+  onCreateRule?: (assistantText: string, userText: string) => void
   /** Short status shown while the assistant runs a tool (searching, reading…). */
   toolStatus?: string | null
   className?: string
@@ -26,6 +31,27 @@ interface ChatContainerProps {
 
 const RATE_COMMAND = "/оценить"
 const HELP_COMMAND = "/запросить_помощь"
+
+/** Whether a message is a reply from the assistant/operator side. */
+function isAssistantReply(message: MessageView): boolean {
+  return (
+    !message.isRedacted &&
+    (message.senderType === SenderType.ai ||
+      message.senderType === SenderType.operator ||
+      message.senderType === SenderType.support)
+  )
+}
+
+/**
+ * The user message that prompted the reply at `index`: the nearest preceding
+ * message authored by the user.
+ */
+function precedingUserMessage(messages: MessageView[], index: number): string | null {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages[i].senderType === SenderType.user && !messages[i].isRedacted) return messages[i].text
+  }
+  return null
+}
 
 /** Slash-commands offered near the composer's send button. */
 const COMMANDS: ChatCommand[] = [
@@ -39,7 +65,7 @@ const COMMANDS: ChatCommand[] = [
   },
 ]
 
-export default function ChatContainer({ messages, onSend, onRate, disabled = false, readOnly = false, toolStatus, className }: ChatContainerProps) {
+export default function ChatContainer({ messages, onSend, onRate, disabled = false, readOnly = false, onCreateRule, toolStatus, className }: ChatContainerProps) {
   const [text, setText] = useState('')
   const [showRating, setShowRating] = useState(false)
   const trimmed = text.trim()
@@ -96,7 +122,16 @@ export default function ChatContainer({ messages, onSend, onRate, disabled = fal
                 {message.senderType === SenderType.system || message.redirectLine ? (
                   <ChatRedirectDivider text={message.text} />
                 ) : (
-                  <ChatMessage message={message} />
+                  <ChatMessage
+                    message={message}
+                    onCreateRule={
+                      // Only assistant replies can seed a rule, and only when
+                      // there is a preceding user question to prefill.
+                      onCreateRule && isAssistantReply(message)
+                        ? () => onCreateRule(message.text, precedingUserMessage(messages, index) ?? '')
+                        : undefined
+                    }
+                  />
                 )}
               </Fragment>
             )

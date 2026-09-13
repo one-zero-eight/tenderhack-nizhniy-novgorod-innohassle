@@ -350,7 +350,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/chats/{chat_id}/message": {
+    "/chats/{chat_id}/upload": {
         parameters: {
             query?: never;
             header?: never;
@@ -359,42 +359,60 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stream Message */
-        post: operations["stream_message_chats__chat_id__message_post"];
+        /** Upload File */
+        post: operations["upload_file_chats__chat_id__upload_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/chats/{chat_id}/request-operator": {
+    "/chats/{chat_id}/files": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Files */
+        get: operations["list_files_chats__chat_id__files_get"];
         put?: never;
-        /** Request Operator */
-        post: operations["request_operator_chats__chat_id__request_operator_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/chats/{chat_id}/close": {
+    "/chats/{chat_id}/files/{file_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get File */
+        get: operations["get_file_chats__chat_id__files__file_id__get"];
         put?: never;
-        /** Close */
-        post: operations["close_chats__chat_id__close_post"];
+        post?: never;
+        /** Delete File */
+        delete: operations["delete_file_chats__chat_id__files__file_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{chat_id}/files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get File Content */
+        get: operations["get_file_content_chats__chat_id__files__file_id__content_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -503,15 +521,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/ai-health": {
+    "/ml-assets/image/{slug}/{filename}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Ai Health */
-        get: operations["ai_health_admin_ai_health_get"];
+        /** Картинка мануала */
+        get: operations["proxy_image_ml_assets_image__slug___filename__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -520,15 +538,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/ml-assets/image/{slug}/{filename}": {
+    "/attachments/{file_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Proxy Image */
-        get: operations["proxy_image_ml_assets_image__slug___filename__get"];
+        /** Скачать загруженный файл */
+        get: operations["get_attachment_attachments__file_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -663,6 +681,38 @@ export interface components {
              */
             chat_title: string;
         };
+        /** Body_upload_file_chats__chat_id__upload_post */
+        Body_upload_file_chats__chat_id__upload_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** ChatFileOut */
+        ChatFileOut: {
+            /** Id */
+            id: string;
+            /** Chat Id */
+            chat_id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Kind
+             * @default image
+             */
+            kind: string;
+            /** Size */
+            size: number;
+            /** Is Image */
+            is_image: boolean;
+            /** Created At */
+            created_at: string;
+            /** Url */
+            url: string;
+        };
         /** ChatOut */
         ChatOut: {
             /** Id */
@@ -677,6 +727,11 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+            user?: components["schemas"]["ActorOut"] | null;
+            /** User Display Name */
+            user_display_name?: string | null;
+            /** Display Name */
+            display_name?: string | null;
             status: components["schemas"]["ChatStatus"];
             recipient: components["schemas"]["RecipientOut"];
             support_line: components["schemas"]["SupportLineOut"] | null;
@@ -722,15 +777,6 @@ export interface components {
          * @enum {string}
          */
         ChatStatus: ChatStatus;
-        /** CloseIn */
-        CloseIn: {
-            /**
-             * Reason
-             * @default resolved
-             * @enum {string}
-             */
-            reason: CloseInReason;
-        };
         /**
          * CloseReason
          * @enum {string}
@@ -906,6 +952,8 @@ export interface components {
             tool_calls?: {
                 [key: string]: unknown;
             }[];
+            /** Attachments */
+            attachments?: components["schemas"]["ChatFileOut"][];
             /** Reply To Message Id */
             reply_to_message_id?: string | null;
             /**
@@ -1143,11 +1191,6 @@ export interface components {
             /** Support Line Id */
             support_line_id?: number | null;
         };
-        /** RequestOperatorIn */
-        RequestOperatorIn: {
-            /** Support Line Id */
-            support_line_id: number;
-        };
         /**
          * Role
          * @enum {string}
@@ -1224,9 +1267,10 @@ export interface components {
 }
 export type SchemaActorOut = components['schemas']['ActorOut'];
 export type SchemaAdminRatingOut = components['schemas']['AdminRatingOut'];
+export type SchemaBodyUploadFileChatsChatIdUploadPost = components['schemas']['Body_upload_file_chats__chat_id__upload_post'];
+export type SchemaChatFileOut = components['schemas']['ChatFileOut'];
 export type SchemaChatOut = components['schemas']['ChatOut'];
 export type SchemaChatPage = components['schemas']['ChatPage'];
-export type SchemaCloseIn = components['schemas']['CloseIn'];
 export type SchemaCompanyProfileOut = components['schemas']['CompanyProfileOut'];
 export type SchemaContractCreateIn = components['schemas']['ContractCreateIn'];
 export type SchemaContractOut = components['schemas']['ContractOut'];
@@ -1249,7 +1293,6 @@ export type SchemaRatingOut = components['schemas']['RatingOut'];
 export type SchemaRatingPage = components['schemas']['RatingPage'];
 export type SchemaRecipientOut = components['schemas']['RecipientOut'];
 export type SchemaRegisterIn = components['schemas']['RegisterIn'];
-export type SchemaRequestOperatorIn = components['schemas']['RequestOperatorIn'];
 export type SchemaSendResult = components['schemas']['SendResult'];
 export type SchemaSupportLineOut = components['schemas']['SupportLineOut'];
 export type SchemaTokenOut = components['schemas']['TokenOut'];
@@ -1871,7 +1914,7 @@ export interface operations {
             };
         };
     };
-    stream_message_chats__chat_id__message_post: {
+    upload_file_chats__chat_id__upload_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1882,9 +1925,134 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MessageIn"];
+                "multipart/form-data": components["schemas"]["Body_upload_file_chats__chat_id__upload_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatFileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_files_chats__chat_id__files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatFileOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_file_chats__chat_id__files__file_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatFileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_file_chats__chat_id__files__file_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_file_content_chats__chat_id__files__file_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1893,76 +2061,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    request_operator_chats__chat_id__request_operator_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequestOperatorIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    close_chats__chat_id__close_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CloseIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatOut"];
                 };
             };
             /** @description Validation Error */
@@ -2190,11 +2288,14 @@ export interface operations {
             };
         };
     };
-    ai_health_admin_ai_health_get: {
+    proxy_image_ml_assets_image__slug___filename__get: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                slug: string;
+                filename: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -2205,20 +2306,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    proxy_image_ml_assets_image__slug___filename__get: {
+    get_attachment_attachments__file_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                slug: string;
-                filename: string;
+                file_id: string;
             };
             cookie?: never;
         };
@@ -2351,10 +2458,6 @@ export enum ChatStatus {
     waiting_operator = "waiting_operator",
     operator = "operator",
     closed = "closed"
-}
-export enum CloseInReason {
-    resolved = "resolved",
-    user_cancelled = "user_cancelled"
 }
 export enum CloseReason {
     resolved = "resolved",
