@@ -717,6 +717,10 @@ export interface components {
             id: string;
             /** Display Name */
             display_name: string;
+            /** Username */
+            username?: string | null;
+            /** Login */
+            login?: string | null;
         };
         /** AdminRatingOut */
         AdminRatingOut: {
@@ -810,6 +814,10 @@ export interface components {
             user_display_name?: string | null;
             /** Display Name */
             display_name?: string | null;
+            /** User Username */
+            user_username?: string | null;
+            /** Username */
+            username?: string | null;
             status: components["schemas"]["ChatStatus"];
             recipient: components["schemas"]["RecipientOut"];
             support_line: components["schemas"]["SupportLineOut"] | null;
@@ -1385,6 +1393,8 @@ export interface components {
             login: string;
             /** Display Name */
             display_name: string;
+            /** Username */
+            username?: string | null;
             role: components["schemas"]["Role"];
             /** Support Line Id */
             support_line_id?: number | null;
@@ -1873,6 +1883,8 @@ export interface operations {
                 status?: components["schemas"]["ChatStatus"] | null;
                 topic?: string | null;
                 subtopic?: string | null;
+                rating_lte?: number | null;
+                rating_gte?: number | null;
                 offset?: number;
                 limit?: number;
             };
@@ -2258,6 +2270,8 @@ export interface operations {
                 status?: components["schemas"]["ChatStatus"] | null;
                 topic?: string | null;
                 subtopic?: string | null;
+                rating_lte?: number | null;
+                rating_gte?: number | null;
                 offset?: number;
                 limit?: number;
             };
@@ -2329,6 +2343,8 @@ export interface operations {
                 user_id?: string | null;
                 topic?: string | null;
                 subtopic?: string | null;
+                rating_lte?: number | null;
+                rating_gte?: number | null;
                 offset?: number;
                 limit?: number;
             };

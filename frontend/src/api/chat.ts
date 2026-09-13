@@ -75,6 +75,10 @@ export interface AdminChatFilters {
   operator_id?: string | null
   topic?: string | null
   subtopic?: string | null
+  /** Only chats rated this many stars or fewer (unrated chats are excluded). */
+  rating_lte?: number | null
+  /** Only chats rated this many stars or more. */
+  rating_gte?: number | null
   offset?: number
   limit?: number
 }
@@ -94,6 +98,8 @@ export async function fetchAdminChats(filters: AdminChatFilters = {}): Promise<S
         operator_id: filters.operator_id ?? undefined,
         topic: filters.topic ?? undefined,
         subtopic: filters.subtopic ?? undefined,
+        rating_lte: filters.rating_lte ?? undefined,
+        rating_gte: filters.rating_gte ?? undefined,
         offset: filters.offset,
         limit: filters.limit,
       },
@@ -106,15 +112,24 @@ export async function fetchAdminChats(filters: AdminChatFilters = {}): Promise<S
 const ALL_CHATS_PAGE_SIZE = 100
 
 /**
- * Fetches every chat, following pagination until all pages are read. Used by
- * the issues view, which groups the full dataset by topic.
+ * Maximum star rating that still counts as a problem worth analysing on the
+ * issues page. Higher-rated chats are considered resolved well enough.
+ */
+export const ISSUES_MAX_RATING = 3
+
+/**
+ * Fetches every poorly-rated chat (≤ {@link ISSUES_MAX_RATING} stars), following
+ * pagination until all pages are read.
+ *
+ * Used by the issues view: only dissatisfied users reveal recurring problems,
+ * and chats without a rating are excluded by the backend filter.
  */
 export async function fetchAllAdminChats(): Promise<SchemaChatOut[]> {
   const all: SchemaChatOut[] = []
   let offset = 0
   // Guard against an unbounded loop if the backend misbehaves.
   for (let page = 0; page < 100; page += 1) {
-    const result = await fetchAdminChats({ offset, limit: ALL_CHATS_PAGE_SIZE })
+    const result = await fetchAdminChats({ offset, limit: ALL_CHATS_PAGE_SIZE, rating_lte: ISSUES_MAX_RATING })
     all.push(...result.items)
     offset += result.items.length
     if (result.items.length === 0 || offset >= result.total) break
