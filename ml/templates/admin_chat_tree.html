@@ -1,10 +1,12 @@
 {# Дерево чатов админки: темы и подтемы свёрнуты, внутри — чаты.
-   Ждёт: topic_tree, active_id. Открытые ветки запоминает браузер (см. script внизу). #}
+   Ждёт: topic_tree, active_id. Открытые ветки запоминает браузер (см. script внизу).
+   Справа от названия — среднее время одного хода агента: у чата, у подтемы и у темы. #}
 <div id="chat-list" class="topic-tree">
   {% for group in topic_tree %}
     <details class="topic" {% if active_topic == group.topic %}open{% endif %}>
       <summary class="topic-head">
         <span class="topic-name">{{ group.topic }}</span>
+        <span class="topic-avg" title="Среднее время ответа">{{ avg_turn_label(group.avg_turn_seconds) }}</span>
         <span class="topic-count">{{ group.count }}</span>
       </summary>
 
@@ -12,6 +14,7 @@
         <details class="subtopic" {% if active_subtopic == sub.subtopic %}open{% endif %}>
           <summary class="subtopic-head">
             <span class="subtopic-name">{{ sub.subtopic }}</span>
+            <span class="subtopic-avg" title="Среднее время ответа">{{ avg_turn_label(sub.avg_turn_seconds) }}</span>
             <span class="subtopic-count">{{ sub.count }}</span>
           </summary>
 
@@ -27,6 +30,7 @@
                 hx-push-url="true"
               >
                 <span class="chat-open">{{ chat.title }}</span>
+                <span class="chat-avg" title="Время ответа">{{ avg_turn_label(chat.avg_turn_seconds) }}</span>
               </a>
             {% endfor %}
           </div>

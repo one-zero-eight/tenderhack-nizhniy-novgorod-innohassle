@@ -1,0 +1,22 @@
+{# Статистика: список тем.
+
+   Ждёт: rows (темы с href на /stats/<topic>), sort, desc, sort_base. #}
+{% extends "base.html" %}
+
+{% block title %}Статистика — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+  <nav class="crumbs">
+    <span>Статистика</span>
+  </nav>
+
+  {% if rows %}
+    {% with name_header = "Тема" %}
+      {% include "stats_table.html" %}
+    {% endwith %}
+  {% else %}
+    <p class="empty">Обращений пока нет.</p>
+  {% endif %}
+</div>
+{% endblock %}

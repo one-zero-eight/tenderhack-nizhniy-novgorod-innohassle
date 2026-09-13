@@ -44,6 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import attachments as attachment_service
 import chat as chat_service
+import handrules
 from manuals import Manual, Section, section_body
 from rag import state
 from storage import ChatRecord, clean_username, get_storage
@@ -130,6 +131,15 @@ class MessageOut(BaseModel):
             "`url` и после отправки в модель"
         ),
     )
+    duration_ms: int | None = Field(
+        default=None,
+        description=(
+            "Сколько агент генерировал ответ, в миллисекундах: от старта хода до последнего "
+            "токена, включая вызовы инструментов. Непусто только у сообщений ассистента "
+            "после завершения хода"
+        ),
+        examples=[4200],
+    )
 
 
 class ChatSummary(BaseModel):
@@ -167,9 +177,37 @@ class ChatSummary(BaseModel):
         default=None,
         description="Подтема обращения внутри темы. `Прочее`, если точного соответствия нет",
     )
+    rating: str | None = Field(
+        default=None,
+        description=(
+            "Оценка чата пользователем: `positive` («Спасибо за помощь») или `negative` "
+            "(«Ответ мне не подходит»). `null` — оценки ещё нет. Оценка одна на чат "
+            "и к сообщениям не привязана"
+        ),
+        examples=["positive"],
+    )
+    rating_reason: str | None = Field(
+        default=None,
+        description=(
+            "Что именно не подошло при `negative`: причина из списка или «Позови оператора». "
+            "`null`, пока причина не выбрана"
+        ),
+        examples=["Слишком кратко"],
+    )
     closed_at: str | None = Field(
         default=None,
         description="Время перевода на линию поддержки. Если не `null`, чат закрыт и писать в него нельзя",
+    )
+    avg_turn_seconds: float | None = Field(
+        default=None,
+        description=(
+            "Время ответа агента в секундах — по **первому** ответу в чате "
+            "(`duration_ms` самого раннего ответа ассистента / 1000). Первый ответ "
+            "показывает, как быстро отреагировали на обращение; последующие ходы — "
+            "уточнения и в метрику не входят. `null` — измеренных ответов нет. "
+            "В статистике по теме это значение усредняется по её чатам"
+        ),
+        examples=[7.01],
     )
     created_at: str = Field(description="Время создания, ISO 8601")
     updated_at: str = Field(description="Время последнего изменения, ISO 8601")
@@ -221,6 +259,61 @@ class ErrorOut(BaseModel):
     """Стандартная ошибка FastAPI."""
 
     detail: str = Field(description="Человекочитаемое описание ошибки")
+
+
+# ------------------------------------------------------------ handrules (DTO)
+
+
+class HandRule(BaseModel):
+    """Правило-подсказка: на какой вопрос как отвечать.
+
+    Формат соответствует постановке: `{"user_message": ..., "instructions": ...}`
+    плюс служебные `id` и время изменения.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Идентификатор правила, нужен для правки и удаления")
+    user_message: str = Field(
+        description=(
+            "Пример вопроса пользователя, по которому правило ищется. Пишите его так, "
+            "как пишут пользователи — поиск сравнивает формулировки"
+        ),
+        examples=["Не могу открыть страницу портала закупок, мне возвращают ошибку 500"],
+    )
+    instructions: str = Field(
+        description="Что агенту делать в таком случае. Правило перебивает общие указания промпта",
+        examples=[
+            "Не перенаправляй в поддержку: скажи, что мы уже работаем над проблемой, "
+            "и попроси зайти позже"
+        ],
+    )
+    created_at: str | None = Field(default=None, description="Время создания, ISO 8601")
+    updated_at: str | None = Field(default=None, description="Время последнего изменения, ISO 8601")
+
+
+class HandRuleIn(BaseModel):
+    """Тело запроса на создание правила."""
+
+    user_message: str = Field(
+        min_length=1,
+        max_length=4000,
+        description="Пример вопроса пользователя",
+        examples=["Не могу открыть страницу портала закупок, мне возвращают ошибку 500"],
+    )
+    instructions: str = Field(
+        min_length=1,
+        max_length=4000,
+        description="Инструкция агенту на такой вопрос",
+        examples=["Не перенаправляй в поддержку, скажи что мы уже работаем над проблемой"],
+    )
+
+
+class HandRulePatch(BaseModel):
+    """Частичное обновление правила: не переданные поля остаются как были."""
+
+    user_message: str | None = Field(default=None, min_length=1, max_length=4000)
+    instructions: str | None = Field(default=None, min_length=1, max_length=4000)
 
 
 # --------------------------------------------------- база знаний (DTO)
@@ -370,8 +463,11 @@ STREAM_EVENTS: list[StreamEventInfo] = [
     ),
     StreamEventInfo(
         event="done",
-        data='{"message_id": "...", "content": "..."}',
-        description="Последнее событие: финальный текст ответа, уже сохранённый в БД",
+        data='{"message_id": "...", "content": "...", "duration_ms": 4200}',
+        description=(
+            "Последнее событие: финальный текст ответа, уже сохранённый в БД, и время "
+            "генерации `duration_ms` — сколько занял весь ход, включая вызовы инструментов"
+        ),
     ),
 ]
 
@@ -843,9 +939,140 @@ async def get_manual_section(
         ancestors=list(section.ancestors),
         breadcrumbs=breadcrumbs,
         children=[c for c in section.children if c in manual.sections],
-        content=section_body(section),
+        content=section_body(section, manual),
         url=_manual_url(manual.slug, section.id),
     )
+
+
+# ------------------------------------------------------------ handrules (endpoints)
+
+
+def _require_handrule(rule_id: str) -> object:
+    rule = handrules.get(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Правило не найдено")
+    return rule
+
+
+@router.get(
+    "/handrules",
+    response_model=list[HandRule],
+    summary="Список правил",
+    description=(
+        "Возвращает все правила-подсказки, свежие сверху.\n\n"
+        "Перед каждым ходом агента по вопросу пользователя ищутся до трёх ближайших правил "
+        "(гибридный поиск: эмбеддинги + BM25), и их `instructions` уходят в системный промпт "
+        "этого хода."
+    ),
+    response_description="Список правил",
+)
+async def list_handrules(
+    limit: Annotated[
+        int,
+        Query(ge=1, le=500, description="Сколько правил вернуть максимум", examples=[100]),
+    ] = 100,
+) -> list[HandRule]:
+    return [HandRule.model_validate(rule.to_dict()) for rule in handrules.list_all(limit=limit)]
+
+
+@router.post(
+    "/handrules",
+    response_model=HandRule,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать правило",
+    description=(
+        "Создаёт правило вида `{'user_message': ..., 'instructions': ...}`.\n\n"
+        "`user_message` — пример вопроса пользователя (по нему идёт поиск), "
+        "`instructions` — что агенту делать в этом случае. После создания правило сразу "
+        "участвует в поиске: индекс пересобирается лениво."
+    ),
+    response_description="Созданное правило",
+    responses={422: {"model": ErrorOut, "description": "Пустой user_message или instructions"}},
+)
+async def create_handrule(payload: Annotated[HandRuleIn, Body()]) -> HandRule:
+    try:
+        rule = handrules.create(payload.user_message, payload.instructions)
+    except handrules.HandRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return HandRule.model_validate(rule.to_dict())
+
+
+@router.get(
+    "/handrules/search",
+    response_model=list[HandRule],
+    summary="Проверить, какие правила подходят к вопросу",
+    description=(
+        "Сухой прогон поиска: возвращает правила, которые агент получил бы на такой вопрос, "
+        "в порядке убывания релевантности. Нужен, чтобы проверить правило до того, "
+        "как на него ответит живой агент.\n\n"
+        "Объявлено перед `/handrules/{rule_id}` намеренно: иначе FastAPI принял бы "
+        "`search` за идентификатор правила."
+    ),
+    response_description="Найденные правила",
+)
+async def search_handrules(
+    q: Annotated[str, Query(min_length=1, description="Вопрос пользователя", examples=["ошибка 500 на портале"])],
+    k: Annotated[int, Query(ge=1, le=20, description="Сколько правил вернуть")] = handrules.TOP_K,
+) -> list[HandRule]:
+    found = await handrules.retrieve(q, k=k)
+    return [HandRule.model_validate(rule.to_dict()) for rule in found]
+
+
+@router.get(
+    "/handrules/{rule_id}",
+    response_model=HandRule,
+    summary="Одно правило",
+    description="Возвращает правило по id.",
+    response_description="Правило",
+    responses={404: {"model": ErrorOut, "description": "Правило не найдено"}},
+)
+async def get_handrule(
+    rule_id: Annotated[str, Path(description="Идентификатор правила")],
+) -> HandRule:
+    return HandRule.model_validate(_require_handrule(rule_id).to_dict())
+
+
+@router.patch(
+    "/handrules/{rule_id}",
+    response_model=HandRule,
+    summary="Изменить правило",
+    description=(
+        "Частично обновляет правило: переданные поля заменяются, остальные остаются как были. "
+        "Пустая строка в любом из полей — ошибка."
+    ),
+    response_description="Обновлённое правило",
+    responses={
+        404: {"model": ErrorOut, "description": "Правило не найдено"},
+        422: {"model": ErrorOut, "description": "Пустое поле"},
+    },
+)
+async def update_handrule(
+    rule_id: Annotated[str, Path(description="Идентификатор правила")],
+    payload: Annotated[HandRulePatch, Body()],
+) -> HandRule:
+    _require_handrule(rule_id)
+    try:
+        rule = handrules.update(rule_id, payload.user_message, payload.instructions)
+    except handrules.HandRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Правило не найдено")
+    return HandRule.model_validate(rule.to_dict())
+
+
+@router.delete(
+    "/handrules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить правило",
+    description="Удаляет правило. После удаления оно больше не попадает в контекст агента.",
+    responses={404: {"model": ErrorOut, "description": "Правило не найдено"}},
+)
+async def delete_handrule(
+    rule_id: Annotated[str, Path(description="Идентификатор правила")],
+) -> Response:
+    if not handrules.delete(rule_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Правило не найдено")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 __all__ = [
@@ -855,6 +1082,9 @@ __all__ = [
     "ChatOut",
     "ChatSummary",
     "ErrorOut",
+    "HandRule",
+    "HandRuleIn",
+    "HandRulePatch",
     "ManualSection",
     "ManualSectionNode",
     "ManualStructure",

@@ -4,22 +4,17 @@
 {% block title %}База знаний — Портал поставщиков{% endblock %}
 
 {% block content %}
-<div class="page-band">
+<div class="kb-wrap">
   <nav class="crumbs">
     <span>База знаний</span>
-    <span class="crumb-sep">/</span>
-    <span>Мануалы: {{ manuals | length }}</span>
   </nav>
-</div>
 
-<div class="kb-wrap">
-  <ul class="kb-grid">
+  <ul class="kb-list">
     {% for m in manuals %}
       <li class="kb-card">
         <a class="kb-link" href="{{ base }}/knowledge-base/{{ m.slug }}">
           <span class="kb-title">{{ m.title }}</span>
           <span class="kb-meta">{{ m.sections }} разделов</span>
-          <span class="kb-slug">{{ m.slug }}</span>
         </a>
       </li>
     {% endfor %}

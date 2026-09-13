@@ -135,10 +135,24 @@ def resolve_manual(manuals: dict[str, Manual], value: str) -> Manual | None:
 #     return "\n".join(lines)
 
 
-def section_body(section: Section) -> str:
-    body = section.text or "(текст раздела пустой — он только группирует подразделы)"
+def section_body(section: Section, manual: Manual | None = None) -> str:
+    """Текст раздела. Если текста нет — перечисляем подразделы.
+
+    Пустой раздел — это только группировка (например, «2 Общие сведения о портале
+    поставщиков»): без такого списка страница выглядит сломанной, хотя все
+    подразделы есть в оглавлении слева.
+    """
+    if not section.text:
+        children = [
+            manual.sections[c] for c in section.children if manual is not None and c in manual.sections
+        ]
+        if not children:
+            return "_В разделе нет текста._"
+        lines = ["В разделе нет текста — смотрите его подразделы:", ""]
+        lines += [f"- {child.title_line}" for child in children]
+        return "\n".join(lines)
     # Агенту и фронтенду нужны рабочие ссылки на картинки, а не плейсхолдер.
-    return body.replace(IMG_PLACEHOLDER, IMG_PREFIX)
+    return section.text.replace(IMG_PLACEHOLDER, IMG_PREFIX)
 
 
 def render_section(manual: Manual, section: Section) -> str:
@@ -154,5 +168,5 @@ def render_section(manual: Manual, section: Section) -> str:
         lines += [f"- {manual.sections[c].title_line}" for c in section.children if c in manual.sections]
     else:
         lines.append("подразделы: нет")
-    lines += ["", section_body(section)]
+    lines += ["", section_body(section, manual)]
     return "\n".join(lines)

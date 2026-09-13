@@ -1,0 +1,50 @@
+{# Создание правила: /handrules/new?query=<вопрос пользователя>.
+
+   Форма на всю страницу: два textarea (вопрос + подсказка) и «Сохранить».
+   Приходит из админки по кнопке «Ассистент не должен так отвечать» — тогда
+   первое поле уже заполнено вопросом, на который ответил агент.
+
+   Ждёт: query (текст вопроса), instructions, error, tab. #}
+{% extends "base.html" %}
+
+{% block title %}Новое правило — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="rule-page">
+  <nav class="crumbs">
+    <a href="/handrules">Правила</a>
+    <span class="crumb-sep">/</span>
+    <span>Новое правило</span>
+  </nav>
+
+<div class="rule-page">
+  <form class="rule-form-page" method="post" action="/handrules">
+    <p class="rule-intro">
+      Добавьте динамическое правило, как ассистенту себя вести.
+      Ассистент будет учитывать правило во всех похожих вопросах.
+    </p>
+
+    {% if error %}<p class="rules-error">{{ error }}</p>{% endif %}
+
+    <label class="field-label" for="user_message">На какие сообщения реагировать?</label>
+    <textarea
+      id="user_message"
+      name="user_message"
+      rows="4"
+      required
+    >{{ query }}</textarea>
+
+    <label class="field-label" for="instructions">Подсказка агенту, как отвечать</label>
+    <textarea
+      id="instructions"
+      name="instructions"
+      rows="4"
+      required
+    >{{ instructions }}</textarea>
+
+    <div class="rule-form-actions">
+      <button type="submit" class="btn-primary">Сохранить</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

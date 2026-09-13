@@ -1,0 +1,52 @@
+{# Кнопки оценки под последним ответом ассистента — «inline-клавиатура».
+
+   `feedback` — словарь из ChatView.feedback_context (см. app.py):
+   * `rate`    — две кнопки: «Спасибо за помощь» и «Ответ мне не подходит»;
+   * `reasons` — дополнительно список причин и «Позови оператора» (только когда
+     оценка negative, а причина ещё не выбрана).
+
+   Кнопки оценки показываются всегда, пока чат не закрыт: повторный выбор просто
+   перетирает прежнюю оценку. Каждая кнопка отправляет свой POST и заменяет всю
+   страницу (hx-target=body): ход пишет сообщения в чат и запускает ответ так же,
+   как отправка из композера. #}
+{% if feedback.rate %}
+<button
+  type="button"
+  class="fb-btn"
+  hx-post="{{ base }}/chats/{{ chat.id }}/feedback"
+  hx-vals='{"value": "positive"}'
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-disabled-elt="this"
+>{{ feedback_positive_label }}</button>
+<button
+  type="button"
+  class="fb-btn"
+  hx-post="{{ base }}/chats/{{ chat.id }}/feedback"
+  hx-vals='{"value": "negative"}'
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-disabled-elt="this"
+>{{ feedback_negative_label }}</button>
+{% if feedback.reasons %}
+{% for reason in feedback_reasons %}
+<button
+  type="button"
+  class="fb-btn"
+  hx-post="{{ base }}/chats/{{ chat.id }}/feedback/reason"
+  hx-vals='{{ {"reason": reason} | tojson }}'
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-disabled-elt="this"
+>{{ reason }}</button>
+{% endfor %}
+<button
+  type="button"
+  class="fb-btn operator"
+  hx-post="{{ base }}/chats/{{ chat.id }}/feedback/operator"
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-disabled-elt="this"
+>{{ feedback_operator_label }}</button>
+{% endif %}
+{% endif %}

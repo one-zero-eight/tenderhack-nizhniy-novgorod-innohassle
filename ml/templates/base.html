@@ -46,10 +46,15 @@
     </div>
     <nav class="tabs tabs-end" aria-label="Администрирование">
       <a
-        class="tab{% if tab == 'admin' %} active{% endif %}"
-        href="/admin/"
-        {% if tab == 'admin' %}aria-current="page"{% endif %}
-      >Админка</a>
+        class="tab{% if tab == 'handrules' %} active{% endif %}"
+        href="/handrules"
+        {% if tab == 'handrules' %}aria-current="page"{% endif %}
+      >Правила</a>
+      <a
+        class="tab{% if tab == 'stats' %} active{% endif %}"
+        href="/stats"
+        {% if tab == 'stats' %}aria-current="page"{% endif %}
+      >Статистика</a>
     </nav>
   </header>
   <main class="page">
@@ -65,14 +70,26 @@
     document.body.addEventListener("htmx:sseMessage", scrollMessages);
     document.body.addEventListener("htmx:afterSwap", scrollMessages);
 
+    // Генерация ответа закончилась: обновляем низ чата (композер или плашка перевода).
+    // Именно здесь, а не через hx-trigger="sse:done" на панели: htmx-ext-sse вешает
+    // обработчики hx-trigger только на потомков элемента с sse-connect, а панель —
+    // сосед списка сообщений. Событие htmx:sseMessage всплывает до body, поэтому
+    // ловим его тут и сами дёргаем htmx.ajax по hx-get панели.
+    // Там же обновляются кнопки оценки (data-refresh-on-done): после хода они
+    // зависят от сохранившейся оценки, а стрим о ней не сообщает.
     document.body.addEventListener("htmx:sseMessage", (e) => {
-      // Чат переведён на линию поддержки — перерисуем страницу, чтобы появилась плашка.
-      if (e.detail.type === "redirect") {
-        htmx.ajax("GET", window.location.pathname, {
-          target: "body",
-          swap: "outerHTML",
+      if (e.detail.type !== "done") return;
+      const foot = document.getElementById("chat-foot");
+      if (foot && foot.getAttribute("hx-get")) {
+        htmx.ajax("GET", foot.getAttribute("hx-get"), {
+          target: foot,
+          swap: "innerHTML",
         });
       }
+      document.querySelectorAll("[data-refresh-on-done]").forEach((el) => {
+        const url = el.getAttribute("hx-get");
+        if (url) htmx.ajax("GET", url, { target: el, swap: "innerHTML" });
+      });
     });
 
     document.body.addEventListener("keydown", (e) => {

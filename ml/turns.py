@@ -84,32 +84,42 @@ class TurnManager:
         on_event: Callable[[str, str], str | None] | None = None,
         user_role: str | None = None,
         files: list[attachment_service.ChatFile] | None = None,
+        turn_hint: str | None = None,
+        producer: Callable[[], AsyncIterator[str]] | None = None,
     ) -> Turn:
         """Запускает генерацию в фоне. Возвращает Turn, к которому можно подключаться.
 
         on_event превращает пару (event, payload) из chat.stream_answer в SSE-строку,
         которую увидят клиенты. Так HTML-рендеринг остаётся в app.py, а не в слое чатов.
         files — вложения, ожидающие отправки вместе с этим ходом.
+        turn_hint — служебная подсказка модели для этого хода (см. chat.stream_answer).
+        producer — свой источник SSE-фреймов вместо ответа агента: так отдаётся
+        захардкоженный ответ на оценку чата (см. chat.stream_scripted).
         """
         turn = Turn(chat_id=chat_id, message_id=assistant_message.id)
         self._turns[assistant_message.id] = turn
         self._by_chat[chat_id] = assistant_message.id
-        turn.task = asyncio.create_task(self._run(turn, assistant_message, on_event, user_role, files))
+        if producer is None:
+            producer = lambda: chat_service.stream_answer(  # noqa: E731 — короткая обёртка
+                chat_id,
+                assistant_message,
+                user_role=user_role,
+                files=files,
+                turn_hint=turn_hint,
+            )
+        turn.task = asyncio.create_task(self._run(turn, producer, on_event))
         return turn
 
     async def _run(
         self,
         turn: Turn,
-        assistant_message: MessageRecord,
+        producer: Callable[[], AsyncIterator[str]],
         on_event: Callable[[str, str], str | None] | None,
-        user_role: str | None = None,
-        files: list[attachment_service.ChatFile] | None = None,
     ) -> None:
         try:
-            async for chunk in chat_service.stream_answer(
-                turn.chat_id, assistant_message, user_role=user_role, files=files
-            ):
-                # chat.stream_answer отдаёт готовые SSE-фреймы; разбираем в (event, data).
+            async for chunk in producer():
+                # chat.stream_answer/stream_scripted отдают готовые SSE-фреймы;
+                # разбираем в (event, data).
                 event, data = _split_sse(chunk)
                 if on_event is not None:
                     data = on_event(event, data)

@@ -1,0 +1,37 @@
+{# Иконки сортировки для таблиц статистики.
+
+   Рисуем SVG, а не символами ↓↑↕: текстовые стрелки в Open Sans мелкие и разной
+   толщины, а иконка задаёт один размер и одинаковый вес штриха.
+
+   Направление: активная колонка показывает стрелку направления сортировки —
+   вниз, когда значения убывают (`desc`), и вверх, когда растут. Неактивная колонка
+   показывает обе стрелки приглушённо. #}
+{% macro sort_icon(active, desc) %}
+  {% if active %}
+    <svg
+      class="stats-arrow{% if desc %} desc{% endif %}"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {% if desc %}
+        <path d="M8 13V3m0 0 4 4m-4-4-4 4" />
+      {% else %}
+        <path d="M8 3v10m0 0 4-4m-4 4-4-4" />
+      {% endif %}
+    </svg>
+  {% else %}
+    <svg
+      class="stats-arrow idle"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M5 6.5 8 3.5l3 3M11 9.5 8 12.5l-3-3" />
+    </svg>
+  {% endif %}
+{% endmacro %}

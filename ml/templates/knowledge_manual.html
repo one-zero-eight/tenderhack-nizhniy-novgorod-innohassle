@@ -22,7 +22,9 @@
 {% endmacro %}
 
 {% block content %}
-<div class="page-band">
+{# Страница мануала — колонка: крошки сверху во всю ширину, под ними двухколоночная
+   раскладка (оглавление + текст). Крошки выше обеих колонок, а не внутри правой. #}
+<div class="manual-page">
   <nav class="crumbs">
     <a href="{{ base }}/knowledge-base">База знаний</a>
     <span class="crumb-sep">/</span>
@@ -34,16 +36,15 @@
       <span>{{ manual.title }}</span>
     {% endif %}
   </nav>
-</div>
 
-<div class="manual-layout">
-  <aside class="manual-toc">
-    <div class="manual-toc-head">Содержание</div>
-    {{ tree(toc) }}
-  </aside>
+  <div class="manual-layout">
+    <aside class="manual-toc">
+      <div class="manual-toc-head">Содержание</div>
+      {{ tree(toc) }}
+    </aside>
 
-  <section class="manual-body">
-    {% if active_section %}
+    <section class="manual-body">
+      {% if active_section %}
       <article class="section-card">
         <header class="section-head">
           <h1 class="section-title">{{ active_section.title_line }}</h1>
@@ -55,6 +56,7 @@
         <p>Выберите раздел слева.</p>
       </div>
     {% endif %}
-  </section>
+    </section>
+  </div>
 </div>
 {% endblock %}

@@ -1,0 +1,55 @@
+{# Одно правило: /handrules/<id>.
+
+   Здесь можно отредактировать (вопрос + подсказка) и удалить правило.
+   Дата создания — отдельной строкой под крошками.
+
+   Ждёт: rule (HandRuleRecord), error, tab. #}
+{% extends "base.html" %}
+
+{% block title %}Правило — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="rule-page">
+  {# Крошки и дата создания — в одной шапке колонки контента. #}
+  <div class="rule-head">
+    <nav class="crumbs">
+      <a href="/handrules">Правила</a>
+      <span class="crumb-sep">/</span>
+      <span>{{ rule.user_message | truncate(48, true) }}</span>
+    </nav>
+    <span class="rule-created">Создано: {{ rule.created_at | datetime }}</span>
+  </div>
+
+  <form class="rule-form-page" method="post" action="/handrules/{{ rule.id }}">
+    {% if error %}<p class="rules-error">{{ error }}</p>{% endif %}
+
+    <label class="field-label" for="user_message">На какие сообщения реагировать?</label>
+    <textarea
+      id="user_message"
+      name="user_message"
+      rows="4"
+      required
+    >{{ rule.user_message }}</textarea>
+
+    <label class="field-label" for="instructions">Подсказка агенту, как отвечать</label>
+    <textarea
+      id="instructions"
+      name="instructions"
+      rows="4"
+      required
+    >{{ rule.instructions }}</textarea>
+
+    <div class="rule-form-actions">
+      <button type="submit" class="btn-primary">Сохранить</button>
+      <button
+        type="button"
+        class="link-btn rule-del"
+        hx-delete="/handrules/{{ rule.id }}"
+        hx-target="body"
+        hx-swap="outerHTML"
+        hx-confirm="Удалить правило?"
+      >Удалить</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

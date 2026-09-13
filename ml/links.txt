@@ -1,0 +1,23 @@
+ССЫЛКИ НА РАЗДЕЛЫ ПОРТАЛА ПОСТАВЩИКОВ
+
+Это проверенные адреса разделов сайта.
+
+Единый реестр закупок:
+- Все закупки — https://zakupki.mos.ru/purchase/list
+- Котировочные сессии — https://zakupki.mos.ru/purchase/list?state={"currentTab"%3A8}
+- Закупки по потребностям — https://zakupki.mos.ru/purchase/list?state={"currentTab"%3A9}
+- Конкурентные процедуры — https://zakupki.mos.ru/purchase/list?state={"currentTab"%3A10}
+- В2В закупки — https://zakupki.mos.ru/purchase/list?state={"currentTab"%3A11}
+
+Каталог и контракты:
+- Товары — https://zakupki.mos.ru/catalog/goods
+- Услуги — https://zakupki.mos.ru/catalog/services
+- Работы — https://zakupki.mos.ru/catalog/works
+- Контракты — https://zakupki.mos.ru/contract/list
+- Регионы — https://zakupki.mos.ru/region
+
+О портале:
+- О портале — https://zakupki.mos.ru/about
+- Сервисы партнеров — https://zakupki.mos.ru/services
+- Конструктор типовой документации — https://zakupki.mos.ru/doc-gen/eaist
+

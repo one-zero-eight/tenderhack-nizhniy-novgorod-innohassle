@@ -1,0 +1,33 @@
+{# Переписка одного чата из статистики: /stats/<topic>/<id>.
+
+   Отличия от /admin/chats/<id>:
+   - нет сайдбара со списком чатов — страница только про этот чат;
+   - переписка отцентрована и ограничена по ширине, а не растянута на весь экран;
+   - нет подписи «Режим просмотра»: по кнопке «Ассистент не должен так отвечать»
+     и отсутствию формы и так видно, что это просмотр.
+
+   Ждёт: chat (ChatView), topic_name. `base` для панели чата — /admin: оттуда
+   приходят SSE-события уже идущего ответа (см. admin_stream_message). #}
+{% extends "base.html" %}
+
+{% block title %}{{ chat.title }} — Статистика{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+  <nav class="crumbs">
+    <a href="/stats">Статистика</a>
+    <span class="crumb-sep">/</span>
+    <a href="/stats/{{ topic_name | urlencode }}">{{ topic_name }}</a>
+    <span class="crumb-sep">/</span>
+    <span>{{ chat.title }}</span>
+  </nav>
+
+  <div class="stats-chat">
+    <div class="stats-chat-panel" id="chat-panel">
+      {% with readonly = true, base = "/admin", hide_readonly_note = true %}
+        {% include "chat_panel.html" %}
+      {% endwith %}
+    </div>
+  </div>
+</div>
+{% endblock %}

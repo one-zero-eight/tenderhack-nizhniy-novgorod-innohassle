@@ -1,0 +1,100 @@
+{# Низ панели чата: форма отправки или плашка перевода на линию.
+
+   Отдельный шаблон, потому что этот кусок живёт двумя путями:
+   - вставляется при первичном рендере (chat_panel.html);
+   - отдаётся по GET <base>/chats/<id>/footer и подменяет себя же после
+     завершения генерации (hx-trigger="sse:done"), см. chat._chat_footer.
+
+   Ждёт: chat, base, readonly (как у chat_panel.html), hide_readonly_note. #}
+{% if not chat.is_closed and not readonly %}
+{# Прикреплённые файлы над вводом. На отправке они уходят в контекст и остаются
+   в истории сообщения — здесь список становится пустым после полного перерендера. #}
+{% set files = chat_files(chat.id) %}
+{% if files %}
+<div class="attachments">
+  <ul class="attachments-list">
+    {% for f in files %}
+    <li class="attachment{% if f.is_image %} image{% endif %}">
+      {% if f.is_image %}
+      <img class="attachment-thumb" src="{{ f.url }}" alt="">
+      {% else %}
+      <span class="attachment-kind">MD</span>
+      {% endif %}
+      <span class="attachment-name" title="{{ f.filename }}">{{ f.filename }}</span>
+      <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+      <button
+        type="button"
+        class="attachment-del"
+        title="Убрать файл"
+        aria-label="Убрать файл"
+        hx-delete="{{ base }}/chats/{{ chat.id }}/files/{{ f.id }}"
+        hx-target="body"
+        hx-swap="outerHTML"
+      >×</button>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+<form
+  class="composer"
+  hx-post="{{ base }}/chats/{{ chat.id }}/messages"
+  hx-target="body"
+  hx-swap="outerHTML"
+  hx-on::after-request="this.reset()"
+>
+  <div class="composer-body">
+    <div id="upload-error" class="upload-error"></div>
+    <textarea name="message" rows="2" placeholder="Введите вопрос по Порталу поставщиков" required autofocus></textarea>
+    <div class="composer-tools">
+      <div class="composer-tools-left">
+        {# Один файл за раз, лимит — 10 МБ (см. attachments.MAX_FILE_SIZE). #}
+        <label class="attach-btn" title="Прикрепить файл или картинку (до {{ max_upload_mb }} МБ)">
+          <input
+            type="file"
+            name="file"
+            hx-post="{{ base }}/chats/{{ chat.id }}/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="body"
+            hx-swap="outerHTML"
+            hx-trigger="change"
+          >
+          Прикрепить файл
+        </label>
+        <span class="composer-hint">картинка или документ, до {{ max_upload_mb }} МБ</span>
+      </div>
+      <button type="submit" class="btn-primary">Отправить</button>
+    </div>
+  </div>
+</form>
+{% elif readonly %}
+{# Админка только смотрит, но приложенные файлы видеть должна. #}
+{% set files = chat_files(chat.id) %}
+{% if files %}
+<div class="attachments readonly">
+  <ul class="attachments-list">
+    {% for f in files %}
+    <li class="attachment{% if f.is_image %} image{% endif %}">
+      {% if f.is_image %}
+      <img class="attachment-thumb" src="{{ f.url }}" alt="">
+      {% else %}
+      <span class="attachment-kind">MD</span>
+      {% endif %}
+      <span class="attachment-name" title="{{ f.filename }}">{{ f.filename }}</span>
+      <span class="attachment-size">{{ (f.size / 1024) | round | int }} КБ</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if not hide_readonly_note and not chat.is_closed %}
+<div class="readonly-note">Режим просмотра: из админки сообщения не отправляются.</div>
+{% endif %}
+{% endif %}
+
+{# Плашка перевода — на месте формы отправки: чат закрыт, писать нельзя. #}
+{% if chat.is_closed %}
+  {% with line_title = chat.redirect_line_title, reason = chat.redirect_reason %}
+    {% include "redirect_banner.html" %}
+  {% endwith %}
+{% endif %}

@@ -1,0 +1,79 @@
+{# Статистика: подтемы темы, каждая разворачивается в список чатов.
+
+   Ждёт: topic (StatsNode), groups (подтемы с chats), sort, desc, sort_base,
+   open_names (множество раскрытых подтем), sort_link (функция ссылки сортировки),
+   toggle_query (функция query-строки для клика по подтеме).
+
+   Раскрытые подтемы живут в query-параметре open, а не в sessionStorage:
+   параметры держатся за имя подтемы, поэтому сортировка (которая меняет порядок
+   и перезагружает страницу) состояние не сбивает, а ссылку можно переслать.
+   Строка подтемы — ссылка, переключающая свой open и сохраняющая sort/desc. #}
+{% extends "base.html" %}
+{% from "stats_sort_icon.html" import sort_icon %}
+
+{% block title %}{{ topic.name }} — Статистика{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+  {# Крошки — внутри колонки контента, а не в отдельной полосе: тот же max-width
+     и те же боковые отступы, что у таблицы, поэтому они стоят с ней в одну линию. #}
+  <nav class="crumbs">
+    <a href="/stats">Статистика</a>
+    <span class="crumb-sep">/</span>
+    <span>{{ topic.name }}</span>
+  </nav>
+
+  {% if groups %}
+    <table class="stats-table stats-tree">
+      <thead>
+        <tr>
+          <th>Подтема / обращение</th>
+          <th class="stats-num">
+            {% set active = sort == 'avg' %}
+            <a
+              class="stats-sort{% if active %} active{% endif %}"
+              href="{{ sort_link('avg', not (active and desc)) }}"
+            >Время ответа{{ sort_icon(active, desc) }}</a>
+          </th>
+        </tr>
+      </thead>
+      {% for group in groups %}
+        {% set is_open = group.name in open_names %}
+        <tbody class="stats-group">
+          <tr class="stats-topic-row{% if not is_open %} collapsed{% endif %}">
+            <td>
+              {# Строка подтемы — ссылка-переключатель: тот же URL, но open меняется.
+                 Сортировку (sort/desc) сохраняем, иначе клик по подтеме сбрасывал бы её.
+                 Число чатов — в скобках рядом с названием, отдельной колонки нет. #}
+              <a
+                class="stats-toggle"
+                href="{{ toggle_query(group.name) }}"
+                aria-expanded="{{ 'true' if is_open else 'false' }}"
+              >
+                <span class="stats-caret"></span>{{ group.name }}
+                <span class="stats-count">({{ group.count }})</span>
+              </a>
+            </td>
+            <td class="stats-num">{{ avg_turn_label(group.avg_seconds) }}</td>
+          </tr>
+          {% for chat in group.chats %}
+            <tr class="stats-subtopic-row"{% if not is_open %} hidden{% endif %}>
+              <td>
+                <a
+                  class="stats-name stats-subtopic-name"
+                  href="/stats/{{ topic.name | urlencode }}/{{ chat.id }}"
+                  title="{{ chat.title }}"
+                >{{ chat.title }}</a>
+              </td>
+              <td class="stats-num">{{ avg_turn_label(chat.avg_turn_seconds) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">В этой теме пока нет обращений.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

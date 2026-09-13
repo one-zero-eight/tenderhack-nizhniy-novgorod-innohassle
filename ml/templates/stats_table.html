@@ -1,0 +1,47 @@
+{# Таблица статистики: строки тем или подтем со сортировкой.
+
+   Ждёт: rows (список StatsNode), sort (текущий ключ), desc (направление),
+   sort_base (URL, к которому добавляются параметры), name_header (заголовок первой колонки).
+
+   Сортировка — обычные ссылки: страница отдаётся SSR, поэтому переключение
+   ключа/направления это просто переход на тот же URL с другими query-параметрами. #}
+{% from "stats_sort_icon.html" import sort_icon %}
+
+{% macro sort_link(key, label, sort, desc, sort_base) %}
+  {% set active = sort == key %}
+  {% set next_desc = (not desc) if active else true %}
+  <a
+    class="stats-sort{% if active %} active{% endif %}"
+    href="{{ sort_base }}?sort={{ key }}&desc={{ 'true' if next_desc else 'false' }}"
+    title="Сортировать по «{{ label }}»"
+  >{{ label }}{{ sort_icon(active, desc) }}</a>
+{% endmacro %}
+
+<table class="stats-table">
+  <thead>
+    <tr>
+      <th>{{ name_header }}</th>
+      <th class="stats-num">
+        {{ sort_link('count', 'Обращений', sort, desc, sort_base) }}
+      </th>
+      <th class="stats-num">
+        {{ sort_link('avg', 'Среднее время ответа', sort, desc, sort_base) }}
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>
+          {% if row.href %}
+            <a class="stats-name" href="{{ row.href }}">{{ row.name }}</a>
+          {% else %}
+            <span class="stats-name">{{ row.name }}</span>
+          {% endif %}
+        </td>
+        <td class="stats-num">{{ row.count }}</td>
+        <td class="stats-num">{{ avg_turn_label(row.avg_seconds) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

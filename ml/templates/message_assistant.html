@@ -1,8 +1,17 @@
 {# Сообщение ассистента. Если ответ ещё генерируется, элемент подключается к SSE-стриму;
    stream отдаёт весь накопленный текст, поэтому переподключение при смене чата безопасно.
-   Вызовы инструментов показываются только в админке — на публичной странице они лишние. #}
+   Вызовы инструментов показываются только в админке — на публичной странице они лишние.
+   Время генерации приходит двумя путями: из assistant_msg.duration_ms при полном рендере
+   страницы и SSE-событием done — в span.who-time, чтобы подпись появилась без перезагрузки.
+
+   На событии done также обновляется низ чата (композер или плашка перевода): сам стрим
+   про перевод не сообщает, поэтому после ответа спрашиваем у сервера актуальное состояние
+   через hx-trigger="sse:done" — см. chat_panel.html. #}
 <article class="msg assistant"{% if chat.message_is_streaming(assistant_msg) %} hx-ext="sse" sse-connect="{{ base }}/chats/{{ chat.id }}/messages/{{ assistant_msg.id }}/stream" sse-close="done"{% endif %}>
-  <div class="who">Ассистент</div>
+  <div class="who">
+    <span>Ассистент</span>
+    <span class="who-time" sse-swap="done" hx-swap="innerHTML"{% if assistant_msg.duration_ms is not none %} title="Время генерации ответа"{% endif %}>{% if assistant_msg.duration_ms is not none %}{{ duration_label(assistant_msg.duration_ms) }}{% endif %}</span>
+  </div>
   {% if readonly %}
   <div class="tools" sse-swap="tool" hx-swap="beforeend">
     {# Показываем только завершённые вызовы: сам вызов и статус не нужны. #}
@@ -12,4 +21,28 @@
   </div>
   {% endif %}
   <div class="body markdown" sse-swap="token" hx-swap="innerHTML">{% if chat.message_is_streaming(assistant_msg) and not assistant_msg.content %}<div class="pending" aria-label="Модель отвечает"><span></span><span></span><span></span></div>{% else %}{{ assistant_msg.content | markdown }}{% endif %}</div>
+  {# Оценка ответа: кнопки оценки и (при negative без причины) список причин.
+     Только в публичной части (админка только смотрит) и только под последним
+     ответом. Кнопки оценки остаются всегда — новая оценка перетирает прежнюю.
+     Пока ответ стримится, контейнер пуст: на sse:done base.html перезапрашивает
+     его у сервера и под захардкоженным ответом появляются причины
+     (см. _chat_feedback). #}
+  {% if not readonly and chat.is_feedback_target(assistant_msg) %}
+  <div
+    class="msg-feedback"
+    data-refresh-on-done
+    hx-get="{{ base }}/chats/{{ chat.id }}/feedback"
+    hx-swap="innerHTML"
+  >{% set feedback = chat.feedback_context(assistant_msg) %}{% if feedback.rate %}{% include "chat_feedback.html" %}{% endif %}</div>
+  {% endif %}
+  {# Только в админке: ответ не устроил — заводим правило по этому вопросу.
+     Вопрос берём из chat.questions (ближайшее user-сообщение выше ответа). #}
+  {% if readonly and chat.questions.get(assistant_msg.id) %}
+  <div class="msg-actions">
+    <a
+      class="btn-primary"
+      href="/handrules/new?query={{ chat.questions[assistant_msg.id] | urlencode }}"
+    >Ассистент не должен так отвечать</a>
+  </div>
+  {% endif %}
 </article>

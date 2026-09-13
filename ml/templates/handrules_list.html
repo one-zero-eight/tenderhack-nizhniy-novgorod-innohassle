@@ -1,0 +1,42 @@
+{# Список правил-подсказок агента (handrules).
+
+   Публичная страница: /handrules. Из админки сюда попадают кнопкой
+   «Ассистент не должен так отвечать» на ответе агента — она открывает
+   /handrules/new с уже подставленным вопросом.
+
+   Ждёт: rules (список HandRuleRecord), base, tab. #}
+{% extends "base.html" %}
+
+{% block title %}Правила — Портал поставщиков{% endblock %}
+
+{% block content %}
+<div class="rules-page">
+  <nav class="crumbs">
+    <span>Правила</span>
+  </nav>
+
+  <div class="rules-head">
+    <p class="rules-hint">
+      Это динамическая база знаний: если ассистент неправильно отвечает на конкретный
+      вопрос, можно подсказать ему, что делать в таких ситуациях.
+    </p>
+    <a class="btn-primary rules-new" href="/handrules/new">Новое правило</a>
+  </div>
+
+  {% if not rules %}
+    <p class="empty">Правил пока нет. Нажмите «Новое правило» или заведите его из админки на ответе агента.</p>
+  {% endif %}
+
+  <ul class="rules-list">
+    {% for rule in rules %}
+      <li class="rule-item">
+        <a class="rule-link" href="/handrules/{{ rule.id }}">
+          <span class="rule-q">{{ rule.user_message }}</span>
+          <span class="rule-a">{{ rule.instructions }}</span>
+        </a>
+        <span class="rule-date">{{ rule.created_at | datetime }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

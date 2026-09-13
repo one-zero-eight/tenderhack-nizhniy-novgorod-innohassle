@@ -7,12 +7,13 @@ import html
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlencode
 
 import mistune
-from fastapi import APIRouter, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, FastAPI, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -20,6 +21,9 @@ from markupsafe import Markup
 
 import attachments as attachment_service
 import chat as chat_service
+import feedback
+import handrules
+import stats
 from api import router as api_router
 from assets import router as assets_router
 from manuals import Manual, Section, section_body
@@ -51,6 +55,21 @@ templates.env.filters["tojson"] = lambda value: json.dumps(value, ensure_ascii=F
 templates.env.filters["markdown"] = lambda text: Markup(render_markdown(text or ""))
 
 
+def _format_datetime(value: object) -> str:
+    """Дата для интерфейса: «12.09.2026 22:33». Пустое значение — пустая строка."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            value = datetime.fromisoformat(value)
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y %H:%M")
+    return str(value)
+
+
+templates.env.filters["datetime"] = _format_datetime
+
+
 def _tool_label(tool: object) -> Markup:
     """Подпись выполненного инструмента для админки.
 
@@ -76,6 +95,45 @@ def _tool_label(tool: object) -> Markup:
 templates.env.globals["tool_label"] = _tool_label
 
 
+def _format_seconds(seconds: float) -> str:
+    """Секунды по-человечески: «1,2 с» / «12 с» / «1 мин 05 с»."""
+    if seconds < 10:
+        return f"{seconds:.1f}".replace(".", ",") + " с"
+    if seconds < 60:
+        return f"{round(seconds)} с"
+    minutes, rest = divmod(round(seconds), 60)
+    return f"{minutes} мин {rest:02d} с"
+
+
+def _duration_label(ms: int | None) -> str:
+    """Время генерации по-человечески: «1,2 с» / «12 с» / «1 мин 05 с».
+
+    Пустая строка, пока ход не завершён: у незакрытого сообщения duration_ms = None.
+    """
+    if ms is None:
+        return ""
+    return _format_seconds(max(0, ms) / 1000)
+
+
+def _avg_turn_label(seconds: float | None) -> str:
+    """Время ответа для сайдбара админки. Нет данных — прочерк, а не пусто:
+    иначе строка «название — счётчик» съезжала бы влево."""
+    if seconds is None:
+        return "—"
+    return _format_seconds(seconds)
+
+
+templates.env.globals["duration_label"] = _duration_label
+templates.env.globals["avg_turn_label"] = _avg_turn_label
+
+# Кнопки оценки ответа: тексты берём из feedback.py, чтобы шаблон и подсказки
+# для LLM не разъезжались. ChatView.feedback_context решает, какие именно кнопки рисовать.
+templates.env.globals["feedback_positive_label"] = feedback.POSITIVE_LABEL
+templates.env.globals["feedback_negative_label"] = feedback.NEGATIVE_LABEL
+templates.env.globals["feedback_operator_label"] = feedback.OPERATOR_LABEL
+templates.env.globals["feedback_reasons"] = feedback.REASONS
+
+
 # UI-состояние: какой чат открыт. Ключ — либо 'admin', либо username с /.
 _ACTIVE_KEY = "admin"
 _active_chats: dict[str, str] = {}
@@ -97,6 +155,9 @@ class ChatView(ChatRecord):
             redirect_reason=record.redirect_reason,
             topic=record.topic,
             subtopic=record.subtopic,
+            rating=record.rating,
+            rating_reason=record.rating_reason,
+            rated_at=record.rated_at,
             owner=record.owner,
             closed_at=record.closed_at,
             created_at=record.created_at,
@@ -109,10 +170,71 @@ class ChatView(ChatRecord):
     def redirect_line_title(self) -> str:
         if not self.redirect_line:
             return ""
-        return f"{self.redirect_line} — {LINE_NAMES.get(self.redirect_line, '')}"
+        # Без человеческого названия (например, старая запись с L3) показываем
+        # только код линии: «L3 — » с висячим тире выглядит как обрыв текста.
+        name = LINE_NAMES.get(self.redirect_line)
+        return f"{self.redirect_line} — {name}" if name else self.redirect_line
 
     def message_is_streaming(self, message: MessageRecord) -> bool:
         return message.id == self.streaming_id
+
+    def is_feedback_target(self, message: MessageRecord) -> bool:
+        """Можно ли вообще ставить кнопки оценки под этим сообщением.
+
+        Кнопки живут только под последним сообщением, и только если это ответ
+        ассистента: у чата одна оценка, и оценивать промежуточные ответы незачем.
+        """
+        return (
+            message.role == "assistant"
+            and bool(self.messages)
+            and self.messages[-1].id == message.id
+            and not self.is_closed
+        )
+
+    def feedback_visible(self, message: MessageRecord) -> bool:
+        """Показывать ли кнопки оценки под этим ответом.
+
+        Кнопки живут под последним ответом ассистента всегда, пока чат не закрыт
+        и ответ не стримится: оценку можно поменять, новая перетирает прежнюю
+        (оценка всё равно одна на чат). Исключение — служебная благодарность
+        на кнопку «Спасибо за помощь»: это не ответ на вопрос, оценивать нечего.
+        """
+        if not self.is_feedback_target(message) or self.message_is_streaming(message):
+            return False
+        return not feedback.is_service_reply(message.content)
+
+    def feedback_reasons_visible(self, message: MessageRecord) -> bool:
+        """Нужен ли под ответом список причин и «Позови оператора».
+
+        Причины появляются только в состоянии «ответ не подходит, но почему ещё
+        не выбрано». Как только причина выбрана (или оценка стала positive),
+        остаются только две кнопки оценки.
+        """
+        return self.feedback_visible(message) and self.rating == "negative" and not self.rating_reason
+
+    def feedback_context(self, message: MessageRecord) -> dict[str, bool]:
+        """Состояние блока оценки для шаблона: show rate-кнопок и show причин."""
+        return {
+            "rate": self.feedback_visible(message),
+            "reasons": self.feedback_reasons_visible(message),
+        }
+
+    @property
+    def questions(self) -> dict[str, str]:
+        """id сообщения ассистента -> текст вопроса, на который оно отвечает.
+
+        Нужно кнопке «Ассистент не должен так отвечать» в админке: она открывает
+        /handrules/new с этим вопросом. Соответствие берём по порядку: вопрос —
+        ближайшее user-сообщение выше ответа (ровно то же, что и в диалоге).
+        """
+        mapping: dict[str, str] = {}
+        last_question = ""
+        for message in self.messages:
+            if message.role == "user":
+                last_question = message.content or ""
+            elif message.role == "assistant":
+                mapping[message.id] = last_question
+        return mapping
 
 
 def _manuals() -> list[dict[str, str | int]]:
@@ -132,7 +254,7 @@ def _section_view(manual: Manual, section: Section, depth: int = 0) -> dict[str,
         "id": section.id,
         "heading": section.heading,
         "title_line": section.title_line,
-        "body": render_markdown(section_body(section)),
+        "body": render_markdown(section_body(section, manual)),
         "depth": depth,
         "subtree": _children_view(manual, section, depth + 1),
     }
@@ -434,13 +556,64 @@ def _turn_event_to_sse(event: str, payload: str, *, show_tools: bool = True) -> 
         data = json.loads(payload)
         return chat_service.sse("token", render_markdown(f"\n\n[ошибка] {data['message']}"))
     if event == "redirect":
-        # Чат закрывается и появляется плашка — перерисуем страницу целиком.
+        # О переводе сообщаем событием, но перерисовкой занимается не оно: низ чата
+        # обновляется на sse:done запросом к /chats/<id>/footer (см. _chat_footer).
         data = json.loads(payload)
-        line = data.get("line") or ""
-        return chat_service.sse("redirect", line)
+        return chat_service.sse("redirect", data.get("line") or "")
     if event == "done":
-        return chat_service.sse("done", "")
+        # Пустой ответ (например, страница уже отрисована) — просто закрываем стрим.
+        # Иначе отдаём подпись времени генерации: она садится в span.who-time.
+        try:
+            data = json.loads(payload) if payload else {}
+        except json.JSONDecodeError:
+            data = {}
+        duration = data.get("duration_ms")
+        label = _duration_label(duration) if isinstance(duration, int) else ""
+        return chat_service.sse("done", label)
     return chat_service.sse(event, payload)
+
+
+def _chat_footer(request: Request, chat: ChatRecord, *, base: str, readonly: bool, hide_readonly_note: bool) -> HTMLResponse:
+    """Низ панели чата: форма отправки или плашка перевода.
+
+    Отдаётся отдельным запросом, потому что содержимое зависит от состояния чата,
+    а узнать о переводе можно только после генерации: стрим о переводе не сообщает.
+    Панель дёргает этот URL на sse:done (см. chat_panel.html) и подменяет себя —
+    так плашка появляется сразу, без перезагрузки страницы.
+    """
+    view = chat if isinstance(chat, ChatView) else ChatView(chat)
+    return templates.TemplateResponse(
+        request,
+        "chat_footer.html",
+        {
+            "chat": view,
+            "base": base,
+            "readonly": readonly,
+            "hide_readonly_note": hide_readonly_note,
+            "max_upload_mb": MAX_UPLOAD_MB,
+        },
+    )
+
+
+def _chat_feedback(request: Request, chat: ChatRecord, *, base: str, readonly: bool) -> HTMLResponse:
+    """Кнопки оценки под последним ответом ассистента — обновляемый фрагмент.
+
+    Отдельным запросом, потому что оценка меняется в момент завершения ответа:
+    base.html на sse:done перезапрашивает узлы с data-refresh-on-done (см. base.html).
+    Пустой ответ — кнопок нет: ответ ещё стримится, чат закрыт или это админка
+    (readonly).
+    """
+    if readonly:
+        return HTMLResponse("")
+    view = chat if isinstance(chat, ChatView) else ChatView(chat)
+    state = view.feedback_context(view.messages[-1]) if view.messages else {"rate": False, "reasons": False}
+    if not state["rate"]:
+        return HTMLResponse("")
+    return templates.TemplateResponse(
+        request,
+        "chat_feedback.html",
+        {"chat": view, "base": base, "feedback": state},
+    )
 
 
 # --------------------------------------------------------------------- routes
@@ -603,7 +776,20 @@ def _knowledge_manual_page(
 ui = APIRouter(prefix="/admin")
 
 # Заголовок группы для чатов, которые классификатор ещё не разобрал.
-UNCLASSIFIED_TOPIC = "Без темы"
+# Берём из stats, чтобы сайдбар админки и статистика не разошлись в названии группы.
+UNCLASSIFIED_TOPIC = stats.UNCLASSIFIED_TOPIC
+
+
+def _avg_turn(chats: list[ChatRecord]) -> float | None:
+    """Среднее время ответа по группе чатов.
+
+    У чата это время его первого ответа (см. ChatStorage.average_turn_seconds),
+    а у темы/подтемы — среднее по её чатам. Чаты без измеренных ответов
+    (avg_turn_seconds is None) в расчёт не идут — иначе «нет данных» разбавляло бы
+    среднее нулями.
+    """
+    values = [chat.avg_turn_seconds for chat in chats if chat.avg_turn_seconds is not None]
+    return sum(values) / len(values) if values else None
 
 
 def _topic_tree(records: list[ChatRecord]) -> list[dict[str, object]]:
@@ -611,12 +797,13 @@ def _topic_tree(records: list[ChatRecord]) -> list[dict[str, object]]:
 
     Чаты без темы попадают в отдельную группу в конце. Внутри подтемы — по времени
     последнего изменения (как их отдаёт list_chats). Пустые ветки не показываем.
+    Каждому узлу и чату считаем время ответа — сайдбар показывает его справа.
     """
     by_topic: dict[str, dict[str, list[ChatRecord]]] = {}
     for record in records:
         topic = (record.topic or "").strip() or UNCLASSIFIED_TOPIC
         if topic == UNCLASSIFIED_TOPIC:
-            subtopic = "—"
+            subtopic = stats.UNCLASSIFIED_SUBTOPIC
         else:
             subtopic = (record.subtopic or "").strip() or FALLBACK
         by_topic.setdefault(topic, {}).setdefault(subtopic, []).append(record)
@@ -634,12 +821,19 @@ def _topic_tree(records: list[ChatRecord]) -> list[dict[str, object]]:
         known_subtopics = _subtopic_order(topic)
         ordered_subs = [s for s in known_subtopics if s in subtopics]
         ordered_subs += sorted(s for s in subtopics if s not in known_subtopics)
+        topic_chats = [chat for sub in ordered_subs for chat in subtopics[sub]]
         tree.append(
             {
                 "topic": topic,
-                "count": sum(len(subtopics[s]) for s in ordered_subs),
+                "count": len(topic_chats),
+                "avg_turn_seconds": _avg_turn(topic_chats),
                 "subtopics": [
-                    {"subtopic": sub, "count": len(subtopics[sub]), "chats": subtopics[sub]}
+                    {
+                        "subtopic": sub,
+                        "count": len(subtopics[sub]),
+                        "avg_turn_seconds": _avg_turn(subtopics[sub]),
+                        "chats": subtopics[sub],
+                    }
                     for sub in ordered_subs
                 ],
             }
@@ -674,7 +868,9 @@ def _admin_page(request: Request, *, push_url: str | None = None) -> HTMLRespons
     if chat is not None:
         active_topic = (chat.topic or "").strip() or UNCLASSIFIED_TOPIC
         active_subtopic = (
-            "—" if active_topic == UNCLASSIFIED_TOPIC else ((chat.subtopic or "").strip() or FALLBACK)
+            stats.UNCLASSIFIED_SUBTOPIC
+            if active_topic == UNCLASSIFIED_TOPIC
+            else ((chat.subtopic or "").strip() or FALLBACK)
         )
 
     response = _render(
@@ -683,7 +879,9 @@ def _admin_page(request: Request, *, push_url: str | None = None) -> HTMLRespons
         chat=chat,
         active_id=_active_id(),
         base="/admin",
-        tab="admin",
+        # Просмотр чатов — продолжение статистики (ссылки на чаты ведут сюда),
+        # поэтому в шапке подсвечиваем таба «Статистика».
+        tab="stats",
         topic_tree=_topic_tree(chat_service.list_chats()),
         active_topic=active_topic,
         active_subtopic=active_subtopic,
@@ -725,6 +923,12 @@ async def admin_stream_message(request: Request, chat_id: str, message_id: str) 
     return _stream(chat_id, message_id)
 
 
+@ui.get("/chats/{chat_id}/footer", response_class=HTMLResponse, include_in_schema=False)
+async def admin_chat_footer(request: Request, chat_id: str) -> HTMLResponse:
+    """Низ панели чата для админки: форма отправки или плашка перевода."""
+    return _chat_footer(request, _require_chat(chat_id), base="/admin", readonly=True, hide_readonly_note=False)
+
+
 @ui.post("/chats/{chat_id}/upload", response_class=HTMLResponse, include_in_schema=False)
 async def admin_upload_file(request: Request, chat_id: str, file: UploadFile) -> HTMLResponse:
     """Загрузка вложения в любой чат из админки (то же, что в REST API)."""
@@ -755,6 +959,254 @@ async def admin_file_content(chat_id: str, file_id: str) -> Response:
 app.include_router(ui)
 
 
+# ------------------------------------------------- handrules (правила агента)
+#
+# Публичные страницы для правил-подсказок (см. handrules.py). Не под /admin:
+# правило заводят из админки по кнопке на ответе агента, но сами страницы —
+# обычные, без входа. Тот же CRUD доступен по REST — /ml-api/handrules.
+
+
+def _rule_page(request: Request, template: str, **ctx: object) -> HTMLResponse:
+    """Общий рендер страниц правил. Список чатов в сайдбаре здесь не нужен."""
+    return _render(request, template, chats=[], tab="handrules", **ctx)
+
+
+def _require_handrule(rule_id: str) -> handrules.HandRuleRecord:
+    rule = handrules.get(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Правило не найдено")
+    return rule
+
+
+@app.get("/handrules", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_list(request: Request) -> HTMLResponse:
+    """Список всех правил."""
+    return _rule_page(request, "handrules_list.html", rules=handrules.list_all())
+
+
+# /handrules/new объявлен раньше /handrules/{rule_id}: иначе «new» попал бы в id.
+@app.get("/handrules/new", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_new(request: Request, query: str = "") -> HTMLResponse:
+    """Форма создания правила.
+
+    `query` — вопрос, на который агент ответил не так: приходит из админки
+    с кнопки «Ассистент не должен так отвечать» и подставляется в поле
+    «На какие сообщения реагировать?».
+    """
+    return _rule_page(request, "handrules_new.html", query=query, instructions="")
+
+
+@app.post("/handrules", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_create(
+    request: Request,
+    user_message: str = Form(""),
+    instructions: str = Form(""),
+) -> Response:
+    """Создание правила из формы. Невалидное — возвращаем форму с текстом обратно."""
+    try:
+        rule = handrules.create(user_message, instructions)
+    except handrules.HandRuleError as exc:
+        return _rule_page(
+            request,
+            "handrules_new.html",
+            query=user_message,
+            instructions=instructions,
+            error=str(exc),
+        )
+    return RedirectResponse(f"/handrules/{rule.id}", status_code=303)
+
+
+@app.get("/handrules/{rule_id}", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_detail(request: Request, rule_id: str) -> HTMLResponse:
+    """Одно правило: правка и удаление."""
+    return _rule_page(request, "handrules_detail.html", rule=_require_handrule(rule_id))
+
+
+@app.post("/handrules/{rule_id}", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_update(
+    request: Request,
+    rule_id: str,
+    user_message: str = Form(""),
+    instructions: str = Form(""),
+) -> Response:
+    """Сохранение правок со страницы правила."""
+    _require_handrule(rule_id)
+    try:
+        handrules.update(rule_id, user_message, instructions)
+    except handrules.HandRuleError as exc:
+        rule = _require_handrule(rule_id)
+        rule.user_message = user_message
+        rule.instructions = instructions
+        return _rule_page(request, "handrules_detail.html", rule=rule, error=str(exc))
+    return RedirectResponse(f"/handrules/{rule_id}", status_code=303)
+
+
+@app.delete("/handrules/{rule_id}", response_class=HTMLResponse, include_in_schema=False)
+async def handrules_delete(rule_id: str) -> Response:
+    """Удаление правила. Возвращаем на список — карточки, которую рисовали, больше нет."""
+    handrules.delete(rule_id)
+    return RedirectResponse("/handrules", status_code=303)
+
+
+# ------------------------------------------------- статистика обращений (stats)
+#
+# Агрегация чатов по темам и подтемам (см. stats.py).
+#
+#   /stats             — таблица тем: обращений и среднее время ответа
+#   /stats/<topic>     — таблица подтем; каждая разворачивается в список чатов
+#
+# Сортировка — query-параметры sort (count | avg) и desc (true | false).
+# В /stats/<topic> сортировка независима на двух уровнях: подтемы между собой,
+# чаты — внутри своей подтемы.
+
+
+def _sort_args(sort: str | None, desc: bool | None) -> tuple[str, bool]:
+    """Нормализует сортировку из query-строки. Незнакомый ключ — по умолчанию count."""
+    key = sort if sort in stats.SORT_KEYS else stats.SORT_COUNT
+    return key, True if desc is None else desc
+
+
+def _stats_page(request: Request, template: str, **ctx: object) -> HTMLResponse:
+    """Рендер страницы статистики. Сайдбар с чатами здесь не нужен."""
+    return _render(request, template, chats=[], active_id=None, tab="stats", **ctx)
+
+
+def _open_args(open: list[str] | None) -> list[str]:
+    """Раскрытые подтемы из query. Пустые значения отбрасываем, дубли убираем.
+
+    Имён подтем достаточно: они стабильны и не зависят от порядка сортировки,
+    в отличие от индексов строк."""
+    seen: list[str] = []
+    for name in open or []:
+        clean = (name or "").strip()
+        if clean and clean not in seen:
+            seen.append(clean)
+    return seen
+
+
+def _query_url(base: str, **params: object) -> str:
+    """URL с query-параметрами. Списки разворачиваются в повторяющиеся ключи.
+
+    Пустые значения не попадают в строку, чтобы URL оставался читаемым.
+    """
+    pairs: list[tuple[str, str]] = []
+    for key, value in params.items():
+        values = value if isinstance(value, (list, tuple)) else [value]
+        for item in values:
+            if item is None or item == "":
+                continue
+            pairs.append((key, str(item)))
+    query = urlencode(pairs)
+    return f"{base}?{query}" if query else base
+
+
+@app.get("/stats", response_class=HTMLResponse, include_in_schema=False)
+async def stats_topics(request: Request, sort: str | None = None, desc: bool | None = None) -> HTMLResponse:
+    """Темы: количество обращений и среднее время ответа. Строка ведёт на /stats/<topic>."""
+    key, descending = _sort_args(sort, desc)
+    tree = stats.build_tree(stats.non_empty_chats())
+    rows = [
+        {
+            "name": node.name,
+            "count": node.count,
+            "avg_seconds": node.avg_seconds,
+            "href": f"/stats/{quote(node.name)}",
+        }
+        for node in stats.sort_nodes(tree, key, descending=descending)
+    ]
+    return _stats_page(
+        request, "stats_topics.html", rows=rows, sort=key, desc=descending, sort_base="/stats"
+    )
+
+
+@app.get("/stats/{topic}", response_class=HTMLResponse, include_in_schema=False)
+async def stats_subtopics(
+    request: Request,
+    topic: str,
+    sort: str | None = None,
+    desc: bool | None = None,
+    open: list[str] | None = Query(default=None),
+) -> HTMLResponse:
+    """Подтемы темы; каждая разворачивается в список своих чатов.
+
+    Чаты сортируются внутри своей подтемы — независимо от порядка подтем.
+    Раскрытые подтемы приходят в `open` (по имени), поэтому смена сортировки
+    их не сбрасывает: ссылки сортировки и тогглы пересобираются с тем же open.
+    """
+    key, descending = _sort_args(sort, desc)
+    tree = stats.build_tree(stats.non_empty_chats())
+    topic_node = stats.find_topic(tree, topic)
+    if topic_node is None:
+        raise HTTPException(status_code=404, detail="Тема не найдена")
+
+    open_names = _open_args(open)
+    base = f"/stats/{quote(topic_node.name)}"
+
+    def sort_href(next_key: str, next_desc: bool) -> str:
+        """Ссылка сортировки: меняет sort/desc, но сохраняет раскрытые подтемы."""
+        return _query_url(base, sort=next_key, desc=str(next_desc).lower(), open=open_names)
+
+    def toggle_query(name: str) -> str:
+        """Ссылка для клика по подтеме: её имя добавляется или убирается из open.
+
+        sort/desc тоже переносим — клик по подтеме не должен сбрасывать сортировку.
+        """
+        toggled = [n for n in open_names if n != name]
+        if name not in open_names:
+            toggled.append(name)
+        return _query_url(base, sort=key, desc=str(descending).lower(), open=toggled)
+
+    groups = [
+        {
+            "name": node.name,
+            "count": node.count,
+            "avg_seconds": node.avg_seconds,
+            "chats": stats.sort_chats(node.chats, key, descending=descending),
+        }
+        for node in stats.sort_nodes(topic_node.subtopics, key, descending=descending)
+    ]
+    return _stats_page(
+        request,
+        "stats_subtopics.html",
+        topic=topic_node,
+        groups=groups,
+        sort=key,
+        desc=descending,
+        sort_base=base,
+        open_names=set(open_names),
+        sort_link=sort_href,
+        toggle_query=toggle_query,
+    )
+
+
+@app.get("/stats/{topic}/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
+async def stats_chat(request: Request, topic: str, chat_id: str) -> HTMLResponse:
+    """Переписка одного чата темы, без сайдбара.
+
+    `topic` в URL нужен только для хлебных крошек и проверки, что чат относится
+    к открытой теме; сам чат ищется по id. Переписка только для чтения: форма
+    отправки не рендерится (readonly), но кнопка «Ассистент не должен так отвечать»
+    остаётся — правило заводится прямо со страницы ответа.
+    """
+    chat = chat_service.get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    # Тема в URL должна совпадать с темой чата: иначе ссылка ведёт не туда.
+    chat_topic = (chat.topic or "").strip() or stats.UNCLASSIFIED_TOPIC
+    if chat_topic != topic:
+        raise HTTPException(status_code=404, detail="Чат не относится к этой теме")
+
+    return _render(
+        request,
+        "stats_chat.html",
+        chats=[],
+        active_id=None,
+        tab="stats",
+        topic_name=topic,
+        chat=ChatView(chat, streaming_id=_streaming_message_id(chat.id)),
+    )
+
+
 # ------------------------------------------------------------------ / (публичная часть)
 
 
@@ -774,11 +1226,14 @@ async def _start_turn(
     role: str | None,
     template: str,
     username: str | None = None,
+    turn_hint: str | None = None,
 ) -> HTMLResponse:
     """Общий запуск хода для / и /admin.
 
     Роль передаётся в turns → chat.stream_answer и дописывается к вопросу.
     Никаких изменений системного промпта — он остаётся кешируемым.
+    turn_hint — служебная подсказка модели для этого хода (оценка ответа,
+    запрос оператора): дописывается к вопросу только для модели.
     """
     chat = chat_service.get_chat(chat_id)
     if chat is None:
@@ -815,6 +1270,7 @@ async def _start_turn(
         user_role=role,
         # Снимок сделан до очистки таблицы — фоновый ход строит по нему контекст модели.
         files=files,
+        turn_hint=turn_hint,
     )
 
     if username is None:
@@ -825,6 +1281,50 @@ async def _start_turn(
         chat=ChatView(_require_chat(chat_id), streaming_id=assistant_msg.id),
         push_url=f"{base}/chats/{chat_id}",
         template=template,
+    )
+
+
+async def _scripted_turn(
+    request: Request,
+    chat_id: str,
+    username: str,
+    user_text: str,
+    reply: str,
+    *,
+    rating: str,
+    reason: str | None = None,
+    base: str = "",
+) -> HTMLResponse:
+    """Ход без LLM: пишет пару сообщений и стримит захардкоженный ответ.
+
+    Так обрабатываются кнопки оценки: от пользователя уходит текст кнопки,
+    система отвечает заранее известным текстом (chat.stream_scripted) и сразу
+    сохраняет оценку чата. Кнопки под ответом обновятся сами на sse:done
+    (см. _chat_feedback).
+    """
+    chat = _require_chat(chat_id)
+    if chat.is_closed:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Чат закрыт: обращение переведено на линию поддержки {chat.redirect_line}",
+        )
+    # Оценку пишем до первого await: к моменту запуска хода состояние чата уже
+    # актуально (перерисовка фрагмента происходит после done). Двойной клик по кнопке
+    # гасит hx-disabled-elt на самой кнопке, пока идёт запрос.
+    get_storage().set_chat_rating(chat_id, rating, reason)
+    _user_msg, assistant_msg, _updated = await chat_service.prepare_turn(chat_id, user_text)
+    _set_active(chat_id, key=_user_active_key(username))
+    TURNS.start(
+        chat_id,
+        assistant_msg,
+        on_event=lambda event, payload: _turn_event_to_sse(event, payload, show_tools=False),
+        producer=lambda: chat_service.stream_scripted(chat_id, assistant_msg, reply),
+    )
+    return _user_page(
+        request,
+        username,
+        chat=ChatView(_require_chat(chat_id), streaming_id=assistant_msg.id),
+        push_url=f"{base}/chats/{chat_id}",
     )
 
 
@@ -1029,6 +1529,98 @@ async def user_stream_message(request: Request, chat_id: str, message_id: str) -
     username = _require_user(request)
     _user_chat(username, chat_id)
     return _stream(chat_id, message_id)
+
+
+@app.get("/chats/{chat_id}/footer", response_class=HTMLResponse, include_in_schema=False)
+async def user_chat_footer(request: Request, chat_id: str) -> HTMLResponse:
+    """Низ панели чата для публичной части: форма отправки или плашка перевода."""
+    username = _require_user(request)
+    return _chat_footer(request, _user_chat(username, chat_id), base="", readonly=False, hide_readonly_note=False)
+
+
+@app.get("/chats/{chat_id}/feedback", response_class=HTMLResponse, include_in_schema=False)
+async def user_chat_feedback(request: Request, chat_id: str) -> HTMLResponse:
+    """Кнопки оценки под последним ответом — фрагмент, который обновляется на sse:done."""
+    username = _require_user(request)
+    return _chat_feedback(request, _user_chat(username, chat_id), base="", readonly=False)
+
+
+@app.post("/chats/{chat_id}/feedback", response_class=HTMLResponse, include_in_schema=False)
+async def user_feedback(request: Request, chat_id: str, value: str = Form(...)) -> HTMLResponse:
+    """Кнопка оценки: «Спасибо за помощь» или «Ответ мне не подходит».
+
+    Обе кнопки — ход без LLM: от пользователя уходит текст кнопки, система
+    отвечает захардкоженным текстом, а в чат пишется оценка. Кнопки остаются
+    под ответом и после выбора: повторный клик перетирает прежнюю оценку
+    (оценка всё равно одна на чат). После negative появляются причины
+    и «Позови оператора» (см. ChatView.feedback_context).
+    """
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    if value == "positive":
+        return await _scripted_turn(
+            request,
+            chat_id,
+            username,
+            feedback.POSITIVE_LABEL,
+            feedback.POSITIVE_REPLY,
+            rating="positive",
+        )
+    if value == "negative":
+        return await _scripted_turn(
+            request,
+            chat_id,
+            username,
+            feedback.NEGATIVE_LABEL,
+            feedback.NEGATIVE_REPLY,
+            rating="negative",
+        )
+    raise HTTPException(status_code=400, detail="Неизвестная оценка ответа")
+
+
+@app.post("/chats/{chat_id}/feedback/reason", response_class=HTMLResponse, include_in_schema=False)
+async def user_feedback_reason(request: Request, chat_id: str, reason: str = Form(...)) -> HTMLResponse:
+    """Выбранная причина: обычный ход с LLM, которая перегенерирует ответ с замечанием.
+
+    Показывается только в состоянии «negative без причины», но повторный запрос
+    не блокируем: он просто перетирает причину и запускает новый ход.
+    """
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    chosen = " ".join(reason.split())
+    if not feedback.is_reason(chosen):
+        raise HTTPException(status_code=400, detail="Неизвестная причина")
+    get_storage().set_chat_rating(chat_id, "negative", chosen)
+    user = get_storage().get_user(username)
+    return await _start_turn(
+        request,
+        chat_id,
+        chosen,
+        base="",
+        role=None if user is None else user.role,
+        template="user_index.html",
+        username=username,
+        turn_hint=feedback.reason_hint(chosen),
+    )
+
+
+@app.post("/chats/{chat_id}/feedback/operator", response_class=HTMLResponse, include_in_schema=False)
+async def user_feedback_operator(request: Request, chat_id: str) -> HTMLResponse:
+    """«Позови оператора»: обычный ход с LLM, которая решает вопрос перевода на линию."""
+    username = _require_user(request)
+    _user_chat(username, chat_id)
+    get_storage().set_chat_rating(chat_id, "negative", feedback.OPERATOR_LABEL)
+    user = get_storage().get_user(username)
+    return await _start_turn(
+        request,
+        chat_id,
+        feedback.OPERATOR_LABEL,
+        base="",
+        role=None if user is None else user.role,
+        template="user_index.html",
+        username=username,
+        turn_hint=feedback.operator_hint(),
+    )
 
 
 @app.post("/chats/{chat_id}/upload", response_class=HTMLResponse, include_in_schema=False)

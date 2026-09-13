@@ -8,6 +8,7 @@ __pycache__/
 
 # артефакты индексации и загрузок HF
 chroma_db/
+chroma_handrules/
 storage/
 .cache/
 

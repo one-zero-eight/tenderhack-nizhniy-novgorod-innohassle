@@ -21,6 +21,9 @@ DEFAULT_DB_PATH = HERE / "chats.sqlite3"
 # сгенерированное моделью название (см. chat.prepare_turn).
 DEFAULT_CHAT_TITLE = "Новый чат"
 
+# Допустимые оценки чата (chats.rating). Одна оценка на чат, к сообщениям не привязана.
+RATINGS = ("positive", "negative")
+
 # Ограничение на длину имени пользователя (кука / параметр username в API).
 USERNAME_MAX_LEN = 64
 
@@ -43,6 +46,9 @@ CREATE TABLE IF NOT EXISTS chats (
     redirect_reason TEXT,
     topic         TEXT,
     subtopic      TEXT,
+    rating        TEXT,
+    rating_reason TEXT,
+    rated_at      TEXT,
     owner         TEXT,
     closed_at     TEXT,
     created_at    TEXT NOT NULL,
@@ -57,6 +63,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content     TEXT NOT NULL DEFAULT '',
     attachments TEXT,
+    duration_ms INTEGER,
     position    INTEGER NOT NULL,
     created_at  TEXT NOT NULL
 );
@@ -103,6 +110,19 @@ CREATE TABLE IF NOT EXISTS chat_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_files_chat ON chat_files (chat_id, created_at);
+
+-- Правила-подсказки для агента (handrules): пара «вопрос пользователя → как отвечать».
+-- Перед каждым ходом по вопросу пользователя ищутся самые близкие правила (см. handrules.py)
+-- и их instructions уезжают в системный промпт этого хода.
+CREATE TABLE IF NOT EXISTS handrules (
+    id            TEXT PRIMARY KEY,
+    user_message  TEXT NOT NULL,
+    instructions  TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_handrules_updated ON handrules (updated_at DESC);
 """
 
 
@@ -132,6 +152,9 @@ class MessageRecord:
     tools: list[ToolCallRecord] = field(default_factory=list)
     # Вложения, отправленные вместе с сообщением: оригиналы лежат в attachments/<id>.
     attachments: list[dict[str, Any]] = field(default_factory=list)
+    # Сколько агент генерировал этот ответ, в миллисекундах (только у assistant).
+    # Считается от старта хода до последнего токена, включая вызовы инструментов.
+    duration_ms: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -140,6 +163,7 @@ class MessageRecord:
             "content": self.content,
             "tools": [tool.to_dict() for tool in self.tools],
             "attachments": list(self.attachments),
+            "duration_ms": self.duration_ms,
         }
 
 
@@ -161,6 +185,30 @@ class UserRecord:
 
 
 @dataclass
+class HandRuleRecord:
+    """Правило-подсказка агента: на какой вопрос как отвечать.
+
+    user_message — пример вопроса пользователя (по нему идёт поиск),
+    instructions — что агенту делать/не делать в таком случае.
+    """
+
+    id: str
+    user_message: str
+    instructions: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_message": self.user_message,
+            "instructions": self.instructions,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+@dataclass
 class ChatRecord:
     id: str
     title: str
@@ -173,7 +221,20 @@ class ChatRecord:
     subtopic: str | None = None
     owner: str | None = None
     closed_at: datetime | None = None
+    # Оценка чата пользователем: одна на чат, к сообщениям не привязана.
+    # rating: None | 'positive' | 'negative'; rating_reason — выбранная причина
+    # (или 'Позови оператора' для этого сценария), только при negative.
+    rating: str | None = None
+    rating_reason: str | None = None
+    rated_at: datetime | None = None
     messages: list[MessageRecord] = field(default_factory=list)
+    # Время ответа агента в секундах: для чата — по его первому ответу,
+    # для темы/подтемы — среднее по чатам (см. ChatStorage.average_turn_seconds
+    # и stats._average). Заполняется списками чатов; None — не было измеренных ответов.
+    avg_turn_seconds: float | None = None
+    # Сколько сообщений в чате (см. ChatStorage.message_counts). Заполняется списками
+    # чатов; 0 — пустой чат (заготовка «Новый чат»), такие в статистику не идут.
+    message_count: int = 0
 
     @property
     def is_closed(self) -> bool:
@@ -188,10 +249,15 @@ class ChatRecord:
             "redirect_reason": self.redirect_reason,
             "topic": self.topic,
             "subtopic": self.subtopic,
+            "rating": self.rating,
+            "rating_reason": self.rating_reason,
+            "rated_at": self.rated_at.isoformat() if self.rated_at else None,
             "owner": self.owner,
             "closed_at": self.closed_at.isoformat() if self.closed_at else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "avg_turn_seconds": self.avg_turn_seconds,
+            "message_count": self.message_count,
         }
         if with_messages:
             payload["messages"] = [message.to_dict() for message in self.messages]
@@ -243,6 +309,16 @@ class ChatStorage:
         columns = {row[1] for row in self._conn.execute("PRAGMA table_info(messages)")}
         if "attachments" not in columns:
             self._conn.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
+        if "duration_ms" not in columns:
+            self._conn.execute("ALTER TABLE messages ADD COLUMN duration_ms INTEGER")
+
+        chat_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(chats)")}
+        if "rating" not in chat_columns:
+            self._conn.execute("ALTER TABLE chats ADD COLUMN rating TEXT")
+        if "rating_reason" not in chat_columns:
+            self._conn.execute("ALTER TABLE chats ADD COLUMN rating_reason TEXT")
+        if "rated_at" not in chat_columns:
+            self._conn.execute("ALTER TABLE chats ADD COLUMN rated_at TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -282,6 +358,9 @@ class ChatStorage:
             redirect_reason=row["redirect_reason"],
             topic=row["topic"],
             subtopic=row["subtopic"],
+            rating=row["rating"],
+            rating_reason=row["rating_reason"],
+            rated_at=datetime.fromisoformat(row["rated_at"]) if row["rated_at"] else None,
             owner=row["owner"],
             closed_at=datetime.fromisoformat(closed_at) if closed_at else None,
             created_at=datetime.fromisoformat(row["created_at"]),
@@ -304,7 +383,12 @@ class ChatStorage:
         return None if row is None else self._row_to_chat(row, with_messages=True)
 
     def list_chats(self, limit: int = 200, owner: str | None = None) -> list[ChatRecord]:
-        """Чаты по убыванию активности. owner=None — все (для /admin)."""
+        """Чаты по убыванию активности. owner=None — все (для /admin).
+
+        В каждый чат дописываются среднее время хода и число сообщений (два
+        запроса на весь список, а не N). Потребители полагаются на них: сайдбар
+        админки показывает время, статистика отсеивает пустые чаты.
+        """
         if owner is None:
             rows = self._conn.execute(
                 "SELECT * FROM chats ORDER BY updated_at DESC LIMIT ?", (limit,)
@@ -314,7 +398,45 @@ class ChatStorage:
                 "SELECT * FROM chats WHERE owner = ? ORDER BY updated_at DESC LIMIT ?",
                 (owner, limit),
             ).fetchall()
-        return [self._row_to_chat(row, with_messages=False) for row in rows]
+        records = [self._row_to_chat(row, with_messages=False) for row in rows]
+        averages = self.average_turn_seconds()
+        counts = self.message_counts()
+        for record in records:
+            record.avg_turn_seconds = averages.get(record.id)
+            record.message_count = counts.get(record.id, 0)
+        return records
+
+    def average_turn_seconds(self) -> dict[str, float]:
+        """Время ответа агента по каждому чату, в секундах — только по первому ответу.
+
+        Берём `duration_ms` самого раннего ответа ассистента (минимальная позиция
+        среди измеренных). Именно первый ответ показывает, как быстро поддержка
+        отреагировала на обращение; последующие ходы — это уже уточнения, и они
+        только размывали бы метрику. Чаты без измеренных ответов в словарь не попадают.
+        Один запрос на весь список — иначе сайдбар админки делал бы N запросов.
+        """
+        rows = self._conn.execute(
+            """SELECT m.chat_id AS chat_id, m.duration_ms AS first_ms
+               FROM messages m
+               JOIN (
+                   SELECT chat_id, MIN(position) AS first_pos
+                   FROM messages
+                   WHERE role = 'assistant' AND duration_ms IS NOT NULL
+                   GROUP BY chat_id
+               ) f ON f.chat_id = m.chat_id AND f.first_pos = m.position
+               WHERE m.role = 'assistant' AND m.duration_ms IS NOT NULL"""
+        ).fetchall()
+        return {row["chat_id"]: float(row["first_ms"]) / 1000.0 for row in rows}
+
+    def message_counts(self) -> dict[str, int]:
+        """Сколько сообщений в каждом чате. Один запрос на весь список.
+
+        Нужно статистике: чаты без сообщений (пустые заготовки) в неё не попадают.
+        """
+        rows = self._conn.execute(
+            "SELECT chat_id, COUNT(*) AS total FROM messages GROUP BY chat_id"
+        ).fetchall()
+        return {row["chat_id"]: int(row["total"]) for row in rows}
 
     # ------------------------------------------------------------------ users
 
@@ -372,6 +494,85 @@ class ChatStorage:
         self._conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
         self._conn.commit()
 
+    def set_chat_rating(self, chat_id: str, rating: str, reason: str | None = None) -> None:
+        """Оценка чата целиком: одна на чат, к сообщениям не привязана.
+
+        rating — 'positive' | 'negative'. reason сохраняется только при negative
+        (выбранная причина или «Позови оператора»). updated_at не трогаем: оценка
+        ставится вместе с сообщениями хода, а порядок чатов менять не должна.
+        """
+        if rating not in RATINGS:
+            raise ValueError(f"Неизвестная оценка: {rating}")
+        self._conn.execute(
+            "UPDATE chats SET rating = ?, rating_reason = ?, rated_at = ? WHERE id = ?",
+            (rating, reason, _now(), chat_id),
+        )
+        self._conn.commit()
+
+    # -------------------------------------------------------------- handrules
+
+    def _row_to_handrule(self, row: sqlite3.Row) -> HandRuleRecord:
+        return HandRuleRecord(
+            id=row["id"],
+            user_message=row["user_message"],
+            instructions=row["instructions"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def create_handrule(self, user_message: str, instructions: str) -> HandRuleRecord:
+        now = _now()
+        rule_id = _new_id()
+        self._conn.execute(
+            "INSERT INTO handrules (id, user_message, instructions, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (rule_id, user_message, instructions, now, now),
+        )
+        self._conn.commit()
+        return HandRuleRecord(
+            id=rule_id,
+            user_message=user_message,
+            instructions=instructions,
+            created_at=datetime.fromisoformat(now),
+            updated_at=datetime.fromisoformat(now),
+        )
+
+    def get_handrule(self, rule_id: str) -> HandRuleRecord | None:
+        row = self._conn.execute("SELECT * FROM handrules WHERE id = ?", (rule_id,)).fetchone()
+        return None if row is None else self._row_to_handrule(row)
+
+    def list_handrules(self, limit: int = 500) -> list[HandRuleRecord]:
+        """Правила по убыванию свежести: новые сверху."""
+        rows = self._conn.execute(
+            "SELECT * FROM handrules ORDER BY updated_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._row_to_handrule(row) for row in rows]
+
+    def update_handrule(
+        self, rule_id: str, user_message: str | None = None, instructions: str | None = None
+    ) -> HandRuleRecord | None:
+        """Частичное обновление: None у поля означает «не трогать».
+
+        Возвращает None, если правила с таким id нет (или нечего менять).
+        """
+        current = self.get_handrule(rule_id)
+        if current is None:
+            return None
+        message = current.user_message if user_message is None else user_message
+        answer = current.instructions if instructions is None else instructions
+        self._conn.execute(
+            "UPDATE handrules SET user_message = ?, instructions = ?, updated_at = ? WHERE id = ?",
+            (message, answer, _now(), rule_id),
+        )
+        self._conn.commit()
+        return self.get_handrule(rule_id)
+
+    def delete_handrule(self, rule_id: str) -> bool:
+        """Удаляет правило. False — если такого id не было."""
+        cursor = self._conn.execute("DELETE FROM handrules WHERE id = ?", (rule_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0
+
     def delete_chat(self, chat_id: str) -> None:
         self._conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         self._conn.commit()
@@ -388,6 +589,7 @@ class ChatStorage:
                 role=row["role"],
                 content=row["content"],
                 attachments=_load_attachments(row),
+                duration_ms=row["duration_ms"],
             )
             for row in rows
         ]
@@ -474,10 +676,18 @@ class ChatStorage:
             role=row["role"],
             content=row["content"],
             attachments=_load_attachments(row),
+            duration_ms=row["duration_ms"],
         )
 
     def update_message(self, message_id: str, content: str) -> None:
         self._conn.execute("UPDATE messages SET content = ? WHERE id = ?", (content, message_id))
+        self._conn.commit()
+
+    def set_message_duration(self, message_id: str, duration_ms: int) -> None:
+        """Время генерации ответа агента: весь ход, включая вызовы инструментов."""
+        self._conn.execute(
+            "UPDATE messages SET duration_ms = ? WHERE id = ?", (max(0, int(duration_ms)), message_id)
+        )
         self._conn.commit()
 
     def get_message(self, message_id: str) -> MessageRecord | None:
@@ -489,6 +699,7 @@ class ChatStorage:
             role=row["role"],
             content=row["content"],
             attachments=_load_attachments(row),
+            duration_ms=row["duration_ms"],
         )
         message.tools = self._list_tools([message.id]).get(message.id, [])
         return message

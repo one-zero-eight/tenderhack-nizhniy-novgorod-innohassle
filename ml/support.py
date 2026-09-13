@@ -32,7 +32,10 @@ class Redirect:
 
     @property
     def title(self) -> str:
-        return f"{self.line} — {LINE_NAMES.get(self.line, '')}"
+        # Линия без человеческого названия (старые чаты с L3) — только код,
+        # иначе получается висячее тире «L3 — ».
+        name = LINE_NAMES.get(self.line)
+        return f"{self.line} — {name}" if name else self.line
 
 
 def load_lines_manual() -> str:
@@ -43,11 +46,14 @@ def load_lines_manual() -> str:
 
 
 def normalize_line(line: str) -> str | None:
-    """Принимает 'l2', 'L2', '2', 'линия 2' и приводит к 'L2'."""
+    """Принимает 'l1', 'L1', '1', 'линия 1' и приводит к 'L1'.
+
+    L3 в справочнике больше нет (её обрабатывает техническое подразделение вне
+    Портала), поэтому '3' не принимается: иначе чат закрывался бы на линию,
+    которой нет ни в списке линий, ни в названиях.
+    """
     raw = "".join((line or "").split()).upper().removeprefix("ЛИНИЯ").removeprefix("LINE").removeprefix("L")
-    if raw in ("1", "2", "3"):
-        return f"L{raw}"
-    return None
+    return f"L{raw}" if raw in ("1", "2") else None
 
 
 def transfer_to_support(line: str, reason: str = "") -> str:

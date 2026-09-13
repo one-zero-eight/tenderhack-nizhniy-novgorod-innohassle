@@ -10,6 +10,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
+from time import monotonic
 from typing import Any
 
 from llama_index.core.agent.workflow import AgentStream, ToolCall, ToolCallResult
@@ -20,6 +21,7 @@ from llama_index.core.workflow import Context
 # from llama_index.core import Settings
 # from llama_index.core.base.llms.types import MessageRole
 import attachments as attachment_service
+import handrules
 from rag import build_agent, langfuse, propagate_attributes
 from storage import DEFAULT_CHAT_TITLE, ChatRecord, ChatStorage, MessageRecord, get_storage
 from support import SupportSession
@@ -36,6 +38,14 @@ ROLE_LABELS = {
 
 # Как часто сохранять накопленный ответ (в символах), чтобы не писать в SQLite на каждый токен.
 PERSIST_EVERY = 200
+
+# Захардкоженные ответы (оценка чата) отдаются не сразу, а потоком: сначала пауза,
+# потом слова с небольшой задержкой — так ответ выглядит живым, хотя LLM не вызывается.
+SCRIPT_FIRST_DELAY = 1.0
+SCRIPT_TOKEN_DELAY = 0.045
+
+# Слово вместе с пробелами после него — единица «стриминга» захардкоженного ответа.
+_SCRIPT_TOKEN_RE = re.compile(r"\S+\s*")
 
 
 def get_lock(chat_id: str) -> asyncio.Lock:
@@ -181,7 +191,11 @@ def delete_chat(chat_id: str, storage: ChatStorage | None = None) -> None:
 
 
 def list_chats(storage: ChatStorage | None = None, owner: str | None = None) -> list[ChatRecord]:
-    """Чаты. owner=None — все (для /admin), иначе — только чаты этого пользователя."""
+    """Чаты. owner=None — все (для /admin), иначе — только чаты этого пользователя.
+
+    Среднее время хода и число сообщений дописывает само хранилище
+    (см. ChatStorage.list_chats) — сайдбар админки и статистика берут их оттуда.
+    """
     return (storage or get_storage()).list_chats(owner=owner)
 
 
@@ -238,13 +252,18 @@ async def prepare_turn(
     return user_message, assistant_message, updated
 
 
-def _with_role(text: str, role: str | None) -> str:
-    """Дописывает роль пользователя к его сообщению.
+def _with_role(text: str, role: str | None, *, first_turn: bool) -> str:
+    """Дописывает роль пользователя к его сообщению — только на первом ходу чата.
 
     Роль идёт именно в user_msg, а не в системный промпт: системный промпт остаётся
     неизменным и кешируется провайдером, а роль может меняться в /profile между ходами.
+    Повторять метку в каждом сообщении не нужно: она остаётся в истории первого
+    вопроса, и модель видит её в контексте на всех последующих ходах. Это заодно
+    сохраняет префикс запроса неизменным и не мешает prefix-кешу провайдера.
     При role=None ничего не добавляется и агент уточняет сам, как раньше.
     """
+    if not first_turn:
+        return text
     label = ROLE_LABELS.get(role or "")
     if not label:
         return text
@@ -282,33 +301,55 @@ async def stream_answer(
     extra_events: bool = True,
     user_role: str | None = None,
     files: list[attachment_service.ChatFile] | None = None,
+    turn_hint: str | None = None,
 ) -> AsyncIterator[str]:
     """Стримит ответ агента SSE-событиями: start/token/tool_call/tool_result/done.
 
     В БД пишется сразу, поэтому повторный GET чата отдаёт уже сохранённый текст.
-    user_role ('supplier'/'customer'/None) дописывается к вопросу, см. _with_role.
+    Туда же ложится `duration_ms` — сколько заняла генерация ответа целиком
+    (модель + вызовы инструментов), см. storage.set_message_duration.
+    user_role ('supplier'/'customer'/None) дописывается к первому вопросу чата, см. _with_role.
     files — вложения, приложенные к этому ходу: картинки уходят как ImageBlock,
     документы — как markdown. Привязка к сообщению и очистка таблицы — в
     bind_attachments, вызывающем раньше (до рендера страницы).
+    turn_hint — служебная подсказка модели (оценка ответа, запрос оператора):
+    дописывается к вопросу только для этого хода и в истории чата не сохраняется.
     """
     store = storage or get_storage()
     lock = get_lock(chat_id)
-    user_text = _with_role(store.latest_user_text(chat_id, assistant_message.id), user_role)
-    user_msg = attachment_service.build_user_message(user_text, files or [])
+    raw_user_text = store.latest_user_text(chat_id, assistant_message.id)
     chat = store.get_chat(chat_id)
+    # Правила-подсказки под этот вопрос: топ-3 близких по fuse-поиску (см. handrules.py).
+    # Могут повторяться ход за ходом — это ожидаемо и не мешает.
+    rules_prompt = await handrules.prompt_for(raw_user_text)
     # Сессия поддержки ловит transfer_to_support: по ней потом закрываем чат.
     support_session = SupportSession()
-    turn_agent = build_agent(chat.system_prompt if chat else None, support_session=support_session)
+    turn_agent = build_agent(
+        chat.system_prompt if chat else None,
+        support_session=support_session,
+        handrules_prompt=rules_prompt,
+    )
 
     async with lock:
         # chat_history — всё до текущего вопроса; сам вопрос идёт в user_msg.
         history = _history(store, chat_id)
+        # Метка роли — только на первый ход чата: дальше она уже есть в истории
+        # и в каждом сообщении не нужна (см. _with_role).
+        user_text = _with_role(raw_user_text, user_role, first_turn=not history)
+        # Служебная подсказка хода — только для модели: в истории чата её нет.
+        if turn_hint:
+            user_text = f"{user_text}\n\n{turn_hint}"
+        user_msg = attachment_service.build_user_message(user_text, files or [])
         if history and history[-1].role == "user":
             history = history[:-1]
         ctx = Context(turn_agent)
         handler = turn_agent.run(user_msg=user_msg, chat_history=history, ctx=ctx)
         answer = ""
         persisted = ""
+        # Время генерации ответа: от старта хода до последнего токена. Вызовы
+        # инструментов входят в интервал — пауза на тулкол тоже время генерации.
+        started_at = monotonic()
+        duration_ms = 0
         try:
             async for event in handler.stream_events():
                 if isinstance(event, ToolCall):
@@ -339,6 +380,7 @@ async def stream_answer(
             await handler
         except asyncio.CancelledError:
             # Клиент отвалился (закрыл вкладку/таймаут) — сохраняем то, что успели.
+            # Время генерации запишет finally ниже.
             store.update_message(assistant_message.id, answer)
             store.touch_chat(chat_id)
             raise
@@ -348,6 +390,10 @@ async def stream_answer(
                 yield sse("error", {"message": str(exc)})
         finally:
             store.update_message(assistant_message.id, answer)
+            # Момент фиксируем до классификации темы и редиректа: это служебные шаги,
+            # в время генерации ответа они не входят.
+            duration_ms = round((monotonic() - started_at) * 1000)
+            store.set_message_duration(assistant_message.id, duration_ms)
             store.touch_chat(chat_id)
 
         # Тема и подтема обращения — один раз на чат, после первого ответа агента.
@@ -362,7 +408,53 @@ async def stream_answer(
                 yield sse("redirect", {"line": redirect.line, "reason": redirect.reason})
 
         if extra_events:
-            yield sse("done", {"message_id": assistant_message.id, "content": answer})
+            yield sse("done", {"message_id": assistant_message.id, "content": answer, "duration_ms": duration_ms})
+
+
+def _script_tokens(text: str) -> list[str]:
+    """Режет текст на «токены» для стриминга: слово вместе с пробелами после него."""
+    tokens = _SCRIPT_TOKEN_RE.findall(text or "")
+    return tokens or [text]
+
+
+async def stream_scripted(
+    chat_id: str,
+    assistant_message: MessageRecord,
+    text: str,
+    *,
+    storage: ChatStorage | None = None,
+    extra_events: bool = True,
+    first_delay: float = SCRIPT_FIRST_DELAY,
+    token_delay: float = SCRIPT_TOKEN_DELAY,
+) -> AsyncIterator[str]:
+    """Стримит захардкоженный ответ без вызова LLM (реакция на оценку чата).
+
+    Отдаёт те же SSE-события, что и stream_answer (token/done), поэтому клиент и
+    интерфейс не отличают такой ответ от ответа модели. Пауза перед началом и
+    задержка между словами делают отдачу похожей на генерацию.
+    """
+    store = storage or get_storage()
+    async with get_lock(chat_id):
+        started_at = monotonic()
+        if first_delay > 0:
+            await asyncio.sleep(first_delay)
+        answer = ""
+        try:
+            for token in _script_tokens(text):
+                answer += token
+                store.update_message(assistant_message.id, answer)
+                if extra_events:
+                    yield sse("token", {"delta": token, "content": answer})
+                if token_delay > 0:
+                    await asyncio.sleep(token_delay)
+        finally:
+            # При обрыве сохраняем то, что успели отдать, вместе со временем отдачи.
+            duration_ms = round((monotonic() - started_at) * 1000)
+            store.update_message(assistant_message.id, answer)
+            store.set_message_duration(assistant_message.id, duration_ms)
+            store.touch_chat(chat_id)
+        if extra_events:
+            yield sse("done", {"message_id": assistant_message.id, "content": answer, "duration_ms": duration_ms})
 
 
 async def run_turn(
@@ -404,7 +496,14 @@ async def run_turn(
             root.update(output=saved.content if saved else "")
 
     saved = store.get_message(message_id)
-    yield sse("done", {"message_id": message_id, "content": saved.content if saved else ""})
+    yield sse(
+        "done",
+        {
+            "message_id": message_id,
+            "content": saved.content if saved else "",
+            "duration_ms": saved.duration_ms if saved and saved.duration_ms is not None else 0,
+        },
+    )
 
 
 __all__ = [
@@ -423,4 +522,5 @@ __all__ = [
     "run_turn",
     "sse",
     "stream_answer",
+    "stream_scripted",
 ]

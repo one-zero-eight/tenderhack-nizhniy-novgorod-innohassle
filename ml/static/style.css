@@ -113,8 +113,10 @@ strong {
   text-transform: uppercase;
   text-decoration: none;
   color: var(--pale-black);
-  border-bottom: 3px solid transparent;
-  transition: color 0.12s ease, border-color 0.12s ease;
+  /* Подчёркивание рисуем тенью, а не border: border съедал бы 3px высоты,
+     из-за чего текст таба центрировался выше названия портала. */
+  box-shadow: inset 0 -3px 0 transparent;
+  transition: color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .tab:hover {
@@ -123,7 +125,7 @@ strong {
 
 .tab.active {
   color: var(--main-blue);
-  border-bottom-color: var(--red);
+  box-shadow: inset 0 -3px 0 var(--red);
 }
 
 /* =========================================================================
@@ -144,14 +146,6 @@ body {
   overflow: hidden;
 }
 
-/* Полоса-подложка под хлебными крошками / заголовком страницы. */
-.page-band {
-  flex: 0 0 auto;
-  background: var(--bg-band);
-  border-bottom: 1px solid var(--line);
-  padding: 0.7rem 1.75rem;
-}
-
 .page-title {
   margin: 0;
   font-size: 0.875rem;
@@ -170,6 +164,21 @@ body {
   font-size: 0.6875rem;
   font-weight: 600;
   color: var(--pale-black);
+}
+
+/* Крошки внутри колонки контента (stats, rules): тот же боковой отступ,
+   что у таблицы и формы, иначе они стоят левее содержимого. */
+.stats-page > .crumbs,
+.rules-page > .crumbs,
+.rule-page > .crumbs {
+  padding: 1rem 1.15rem 0.35rem;
+}
+
+/* Крошки внутри колонки контента (stats, rules): тот же боковой отступ,
+   что у таблицы и формы, иначе они стоят левее содержимого. */
+/* В базе знаний у .kb-wrap уже есть свои отступы — крошкам хватит только нижнего. */
+.kb-wrap > .crumbs {
+  padding: 0 0 0.85rem;
 }
 
 .crumbs a {
@@ -238,6 +247,9 @@ button,
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.2;
+  /* Кнопки бывают ссылками (например, «Новое правило»), а ссылку браузер
+     подчёркивает по умолчанию — сбрасываем. */
+  text-decoration: none;
 }
 
 .btn-primary:hover,
@@ -339,7 +351,7 @@ select:disabled {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 450px 1fr;
 }
 
 .sidebar {
@@ -406,6 +418,8 @@ select:disabled {
   text-align: left;
   padding: 0.55rem 0.75rem;
   font-size: 0.8125rem;
+  /* min-width: 0 обязателен: без него ячейка grid не сжимается под ellipsis. */
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -424,6 +438,24 @@ select:disabled {
 
 .chat-del:hover {
   color: var(--red);
+}
+
+/* Среднее время хода в сайдбаре админки: справа от названия, перед счётчиком.
+   Ширину задаёт grid `1fr auto` самого .chat-item и flex в summary тем. */
+.chat-avg,
+.topic-avg,
+.subtopic-avg {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--pale-black);
+  white-space: nowrap;
+}
+
+/* У чата метрика — часть ссылки, поэтому паддинг даёт сама ячейка. */
+.chat-items .chat-avg {
+  padding: 0.55rem 0.65rem 0.55rem 0;
 }
 
 #chat-panel {
@@ -466,6 +498,9 @@ select:disabled {
 }
 
 .msg .who {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -475,8 +510,17 @@ select:disabled {
 }
 
 .msg.user .who {
+  justify-content: flex-end;
   color: var(--pale-black);
   text-align: right;
+}
+
+/* Время генерации ответа — мета, а не часть подписи автора. */
+.msg .who-time {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pale-black);
 }
 
 .msg .body {
@@ -677,10 +721,9 @@ select:disabled {
 
 .composer {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-direction: column;
   gap: 0.65rem;
-  align-items: end;
   padding: 1rem 1.75rem 1.35rem;
   border-top: 1px solid var(--line);
   background: var(--white);
@@ -690,12 +733,34 @@ select:disabled {
   min-width: 0;
 }
 
+/* Textarea — во всю ширину панели, без колонки под кнопку «Отправить»:
+   кнопка уезжает вниз, в строку с инструментами. */
 .composer textarea {
+  display: block;
+  width: 100%;
   resize: none;
   background: var(--input-bg);
   border: 1px solid var(--input-bg);
   padding: 0.65rem 0.85rem;
   font-size: 0.875rem;
+}
+
+/* Нижняя строка композера: «Прикрепить файл» слева, «Отправить» справа. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Левая группа: кнопка вложения и подсказка. Может ужиматься,
+   чтобы «Отправить» всегда оставалась справа. */
+.composer-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .composer button {
@@ -834,13 +899,6 @@ a.attachment-name:hover {
   padding-right: 0.55rem;
 }
 
-.composer-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
 /* Кнопка «Прикрепить файл» — обводка, как у .btn-outline, но через label.
    Нативный input спрятан, клик по label открывает выбор файла. */
 .attach-btn {
@@ -886,6 +944,13 @@ a.attachment-name:hover {
    Плашка «переведено на линию поддержки»
    ========================================================================= */
 
+/* Низ чата: композер или плашка перевода. Не растёт — переписка выше
+   занимает всё свободное место. Узел — цель для SSE-события redirect. */
+.chat-foot {
+  flex: 0 0 auto;
+}
+
+/* Плашка перевода на линию — внизу чата, на месте формы отправки. */
 .redirect-banner {
   margin: 1rem 1.75rem 1.35rem;
   padding: 1rem 1.15rem;
@@ -898,18 +963,12 @@ a.attachment-name:hover {
   font-weight: 700;
   font-size: 0.875rem;
   color: var(--red);
-  margin-bottom: 0.35rem;
 }
 
 .redirect-reason {
   font-size: 0.8125rem;
   color: var(--black);
-  margin-bottom: 0.5rem;
-}
-
-.redirect-note {
-  font-size: 0.8125rem;
-  color: var(--pale-black);
+  margin-top: 0.35rem;
 }
 
 .empty {
@@ -939,18 +998,17 @@ a.attachment-name:hover {
   margin-bottom: 0.85rem;
 }
 
-.kb-grid {
+/* Список мануалов — одна широкая колонка: строка на мануал, а не сетка карточек.
+   Название слева, количество разделов справа. */
+.kb-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-  gap: 0.85rem;
 }
 
 .kb-card {
-  border: 1px solid var(--line);
   border-left: 3px solid var(--main-blue);
+  border-bottom: 1px solid var(--line);
   background: var(--white);
   transition: background-color 0.12s ease, border-left-color 0.12s ease;
 }
@@ -962,8 +1020,9 @@ a.attachment-name:hover {
 
 .kb-link {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
   padding: 0.95rem 1.1rem;
   text-decoration: none;
   color: inherit;
@@ -977,16 +1036,11 @@ a.attachment-name:hover {
 }
 
 .kb-meta {
+  flex: 0 0 auto;
   font-size: 0.6875rem;
   font-weight: 700;
   color: var(--main-blue);
-}
-
-.kb-slug {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.6875rem;
-  color: var(--pale-black);
-  word-break: break-all;
+  white-space: nowrap;
 }
 
 /* =========================================================================
@@ -1393,7 +1447,6 @@ a.attachment-name:hover {
     padding: 0 1.15rem;
   }
 
-  .page-band,
   #messages,
   .kb-wrap,
   .manual-body {
@@ -1404,4 +1457,475 @@ a.attachment-name:hover {
   .composer {
     padding: 0.85rem 1.15rem 1.1rem;
   }
+
+  /* На узком экране подсказка мешает кнопкам разойтись по краям. */
+  .composer-hint {
+    display: none;
+  }
+}
+
+/* =========================================================================
+   Правила агента (handrules): список /handrules, форма /handrules/new
+   и карточка правила /handrules/<id>
+
+   Контент этих страниц — центральная колонка ограниченной ширины, а не
+   на всю ширину окна: строки правил и поля не растягиваются по широкому
+   ========================================================================= */
+
+/* Центральная колонка: и полоса с кнопкой, и список/форма живут внутри неё. */
+.rules-page,
+.rule-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Ограничиваем ширину и центрируем одним блоком, а не каждым ребёнком:
+   так одинаково выравниваются и шапка, и «Правил пока нет», и список. */
+.rules-page > *,
+.rule-page > * {
+  width: 100%;
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Полоса с подсказкой и кнопкой «Новое правило» под крошками. */
+.rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 1.15rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.rules-head .rules-hint {
+  margin: 0;
+}
+
+.rules-hint {
+  color: var(--black);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* «Новое правило» — главное действие страницы. Кнопка не должна переноситься
+   на две строки: это подпись, а не абзац, поэтому запрещаем wrap и держим одну строку.
+   Чуть крупнее штатной кнопки: это единственное действие на экране. */
+.rules-new {
+  flex: 0 0 auto;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.75rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.rules-error {
+  margin: 0 0 0.85rem;
+  color: var(--red);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* Список правил: карточка-ссылка на всю ширину колонки, дата справа. */
+.rules-list {
+  padding: 0;
+  list-style: none;
+}
+
+.rule-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 1.15rem;
+  border-left: 3px solid var(--main-blue);
+  border-bottom: 1px solid var(--line);
+}
+
+.rule-item:hover {
+  background: var(--pale-blue);
+}
+
+.rule-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.rule-q {
+  display: block;
+  color: var(--black);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.rule-a {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--pale-black);
+  font-size: 0.8125rem;
+}
+
+.rule-date {
+  flex: 0 0 auto;
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Форма создания и правки. */
+/* Шапка страницы правила: крошки слева, дата создания справа. Один блок с теми же
+   боковыми отступами, что и форма, — дата не болтается отдельной строкой сверху. */
+.rule-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 1.15rem 0.35rem;
+}
+
+/* Крошки внутри .rule-head уже получили паддинг от шапки. */
+.rule-head .crumbs {
+  padding: 0;
+}
+
+.rule-created {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rule-form-page {
+  padding: 1rem 1.15rem 2rem;
+}
+
+/* Вводный текст над формой: что вообще делает правило. Обычный цвет текста,
+   а не приглушённый — это не подпись, а объяснение. */
+.rule-intro {
+  margin: 0 0 1.15rem;
+  color: var(--black);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.rule-form-page textarea {
+  margin-bottom: 0.85rem;
+  resize: vertical;
+}
+
+.rule-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.rule-del {
+  color: var(--red);
+}
+
+/* Кнопка «Ассистент должен отвечать не так» под ответом в админке.
+   Размер — штатный кнопочный (0.8125rem), но высота меньше: кнопка не главное
+   действие страницы, а пометка к конкретному ответу. */
+.msg-actions {
+  margin-top: 0.6rem;
+}
+
+.msg-actions .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  height: auto;
+  min-height: 2rem;
+  padding: 0.4rem 0.85rem;
+  text-decoration: none;
+}
+
+/* Оценка ответа: кнопки-«клавиатура» строкой под ответом ассистента.
+   Компактнее обычных кнопок и без закруглений, как остальная админка. */
+.msg-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* Пустой контейнер (оценка уже стоит или ответ ещё стримится) не занимает места. */
+.msg-feedback:empty {
+  display: none;
+}
+
+.fb-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--white);
+  color: var(--main-blue);
+  border: 1px solid var(--main-blue);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.fb-btn:hover {
+  background: var(--pale-blue);
+}
+
+.fb-btn:active {
+  background: var(--gray-blue);
+}
+
+/* «Позови оператора» — не оценка, а действие: выделяется красной обводкой. */
+.fb-btn.operator {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.fb-btn.operator:hover {
+  background: var(--red);
+  color: var(--white);
+}
+
+/* =========================================================================
+   Статистика обращений: /stats и /stats/<topic>
+   ========================================================================= */
+
+.stats-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Как у страниц правил: контент — центральная колонка ограниченной ширины. */
+.stats-page > * {
+  width: 100%;
+  max-width: 64rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Страница переписки — исключение: чат не ограничен 64rem, как таблица,
+   а сам центрирует панель (см. .stats-chat-panel) и скроллит внутри себя. */
+.stats-page > .stats-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+}
+
+/* На странице чата внешний скролл не нужен — скроллит переписка. */
+.stats-page:has(> .stats-chat) {
+  overflow: hidden;
+}
+
+.stats-head {
+  padding: 1rem 1.15rem 0.85rem;
+}
+
+.stats-hint {
+  margin: 0;
+  color: var(--black);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 0.7rem 1.15rem;
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.stats-table thead th {
+  border-bottom: 1px solid var(--line);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--pale-black);
+}
+
+.stats-table tbody tr {
+  border-bottom: 1px solid var(--line);
+}
+
+.stats-table tbody tr:hover {
+  background: var(--pale-blue);
+}
+
+/* Числовые колонки прижаты вправо: так столбцы цифр сравнимы по вертикали. */
+.stats-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-name {
+  color: var(--black);
+  text-decoration: none;
+}
+
+a.stats-name:hover {
+  color: var(--main-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.stats-date {
+  color: var(--pale-black);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Заголовок-сортировка: обычная ссылка, активный ключ подсвечен и показывает стрелку. */
+.stats-sort {
+  display: inline-flex;
+  /* center, а не baseline: у SVG нет текстовой базовой линии, и иконка съезжала бы. */
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--pale-black);
+  text-decoration: none;
+}
+
+.stats-sort:hover {
+  color: var(--main-blue);
+}
+
+.stats-sort.active {
+  color: var(--main-blue);
+}
+
+/* Стрелка сортировки — SVG: одинаковая толщина штриха и размер у всех состояний
+   (текстовые ↓↑↕ в Open Sans выглядят мелкими и разной толщины).
+   Иконка наследует цвет ссылки, поэтому активная колонка синяя, неактивная — серая. */
+.stats-arrow {
+  flex: 0 0 auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Оптический центр: без сдвига стрелка кажется выше строки текста. */
+  transform: translateY(0.09rem);
+}
+
+/* Неактивная колонка: обе стрелки приглушённее, чтобы не спорить с активной. */
+.stats-arrow.idle {
+  opacity: 0.55;
+}
+
+/* --- /stats/<topic>: чаты вложены в строку подтемы ------------------------ */
+
+/* Строка подтемы — ссылка-переключатель, поэтому и выглядит как обычный текст. */
+.stats-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--black);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.stats-toggle:hover {
+  color: var(--main-blue);
+}
+
+.stats-caret {
+  display: inline-block;
+  width: 0.45rem;
+  color: var(--pale-black);
+}
+
+/* Число чатов в подтеме — в скобках рядом с названием. Приглушённое и не жирное,
+   чтобы не спорить с самим названием. */
+.stats-count {
+  color: var(--pale-black);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* Треугольник рисуем текстом, чтобы не тащить иконки. */
+.stats-caret::before {
+  content: "▾";
+}
+
+.stats-topic-row.collapsed .stats-caret::before {
+  content: "▸";
+}
+
+/* Чат сдвинут вправо — видно, что он внутри подтемы. */
+.stats-subtopic-name {
+  display: inline-block;
+  padding-left: 1.5rem;
+  color: var(--pale-black);
+}
+
+a.stats-subtopic-name:hover {
+  color: var(--main-blue);
+}
+
+/* Разделитель между группами (подтемами): сама строка подтемы — граница группы. */
+.stats-group:not(:last-child) .stats-topic-row {
+  border-bottom: 1px solid var(--line);
+}
+
+/* =========================================================================
+   Просмотр одного чата из статистики: /stats/<topic>/<id>
+   ========================================================================= */
+
+/* Без сайдбара: переписка — единственное содержимое страницы, поэтому центр
+   колонки ограничен по ширине, чтобы строки не растягивались на весь монитор. */
+.stats-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.stats-chat-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 60rem;
+  height: 100%;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+/* =========================================================================
+   База знаний: страница мануала — крошки сверху, под ними две колонки
+   ========================================================================= */
+
+/* Колонка страницы: крошки во всю ширину, ниже — раскладка (оглавление + текст). */
+.manual-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Крошки над обеими колонками: те же боковые отступы, что у .manual-toc слева. */
+.manual-page > .crumbs {
+  flex: 0 0 auto;
+  padding: 1.15rem 1.25rem 0.6rem;
+  border-bottom: 1px solid var(--line);
 }
