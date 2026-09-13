@@ -150,6 +150,8 @@ class ChatService:
         subtopic: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
+        rating_lte: int | None = None,
+        rating_gte: int | None = None,
     ) -> ChatPage:
         filters = []
         if scope == "owner":
@@ -181,6 +183,13 @@ class ChatService:
             filters.append(Chat.created_at >= since)
         if until is not None:
             filters.append(Chat.created_at < until)
+        rating_filters = []
+        if rating_lte is not None:
+            rating_filters.append(Rating.stars <= rating_lte)
+        if rating_gte is not None:
+            rating_filters.append(Rating.stars >= rating_gte)
+        if rating_filters:
+            filters.append(Chat.id.in_(select(Rating.chat_id).where(*rating_filters)))
         order = (
             (Chat.handed_off_at.asc().nulls_last(), Chat.id)
             if scope in ("operator", "support")

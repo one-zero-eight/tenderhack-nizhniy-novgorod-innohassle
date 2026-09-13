@@ -593,3 +593,81 @@ async def test_chat_response_time_propagation(case):
     # 6. GET /admin/chats returns avg_turn_seconds
     admin_page = (await case.request("GET", "/admin/chats", login="admin")).json()
     assert admin_page["items"][0]["avg_turn_seconds"] == 1.2
+
+
+async def test_chat_rating_and_topic_filtering(case):
+    # Create 3 chats with different topics, subtopics, and ratings
+    chat1 = await case.chat()
+    case.ai.chats[chat1]["topic"] = "Закупки и котировочные сессии"
+    case.ai.chats[chat1]["subtopic"] = "Создание оферты"
+    await case.request("GET", f"/chats/{chat1}")  # syncs topic/subtopic
+    await case.close_chat(chat1, reason="resolved")
+    await case.request("PUT", f"/chats/{chat1}/rating", json={"stars": 5, "comment": "Отлично"})
+
+    chat2 = await case.chat()
+    case.ai.chats[chat2]["topic"] = "Закупки и котировочные сессии"
+    case.ai.chats[chat2]["subtopic"] = "Создание оферты"
+    await case.request("GET", f"/chats/{chat2}")  # syncs topic/subtopic
+    await case.close_chat(chat2, reason="resolved")
+    await case.request("PUT", f"/chats/{chat2}/rating", json={"stars": 2, "comment": "Плохо"})
+
+    chat3 = await case.chat()
+    case.ai.chats[chat3]["topic"] = "Техническая поддержка"
+    case.ai.chats[chat3]["subtopic"] = "Вход в систему"
+    await case.request("GET", f"/chats/{chat3}")  # syncs topic/subtopic
+    await case.close_chat(chat3, reason="resolved")
+    await case.request("PUT", f"/chats/{chat3}/rating", json={"stars": 3, "comment": "Средне"})
+
+    # 1. Filter by rating_lte
+    lte_res = (await case.request("GET", "/chats?rating_lte=2")).json()
+    assert lte_res["total"] == 1
+    assert lte_res["items"][0]["id"] == chat2
+    assert lte_res["items"][0]["rating"]["stars"] == 2
+
+    # 2. Filter by rating_gte
+    gte_res = (await case.request("GET", "/chats?rating_gte=4")).json()
+    assert gte_res["total"] == 1
+    assert gte_res["items"][0]["id"] == chat1
+    assert gte_res["items"][0]["rating"]["stars"] == 5
+
+    # 3. Filter by rating range (rating_gte and rating_lte)
+    range_res = (await case.request("GET", "/chats?rating_gte=2&rating_lte=4")).json()
+    assert range_res["total"] == 2
+    ids = {item["id"] for item in range_res["items"]}
+    assert ids == {chat2, chat3}
+
+    # 4. Filter by topic and rating_lte
+    topic_lte_res = (await case.request("GET", "/chats?topic=Закупки и котировочные сессии&rating_lte=2")).json()
+    assert topic_lte_res["total"] == 1
+    assert topic_lte_res["items"][0]["id"] == chat2
+
+    # 5. Filter by topic and rating_gte
+    topic_gte_res = (await case.request("GET", "/chats?topic=Закупки и котировочные сессии&rating_gte=4")).json()
+    assert topic_gte_res["total"] == 1
+    assert topic_gte_res["items"][0]["id"] == chat1
+
+    # 6. Filter by topic, subtopic and exact rating (rating_gte=5 and rating_lte=5)
+    sub_res = (
+        await case.request(
+            "GET",
+            "/chats?topic=Закупки и котировочные сессии&subtopic=Создание оферты&rating_gte=5&rating_lte=5",
+        )
+    ).json()
+    assert sub_res["total"] == 1
+    assert sub_res["items"][0]["id"] == chat1
+
+    # 7. Unmatched topic with rating
+    empty_res = (await case.request("GET", "/chats?topic=Техническая поддержка&rating_lte=2")).json()
+    assert empty_res["total"] == 0
+
+    # 8. Admin endpoint /admin/chats with topic, subtopic and rating filters
+    admin_res = (
+        await case.request(
+            "GET",
+            "/admin/chats?topic=Закупки и котировочные сессии&rating_lte=3",
+            login="admin",
+        )
+    ).json()
+    assert admin_res["total"] == 1
+    assert admin_res["items"][0]["id"] == chat2
+

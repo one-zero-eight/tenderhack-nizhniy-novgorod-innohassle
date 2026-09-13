@@ -21,6 +21,7 @@ from src.schemas.chat import (
 router = APIRouter(tags=["chats"])
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
+RatingQuery = Annotated[int | None, Query(ge=1, le=5)]
 
 SSE_MEDIA_TYPE = "text/event-stream"
 SSE_HEADERS = {
@@ -48,10 +49,21 @@ async def list_chats(
     status: ChatStatus | None = None,
     topic: str | None = None,
     subtopic: str | None = None,
+    rating_lte: RatingQuery = None,
+    rating_gte: RatingQuery = None,
     offset: Offset = 0,
     limit: Limit = 50,
 ) -> ChatPage:
-    return await service.list_chats(user, status=status, topic=topic, subtopic=subtopic, offset=offset, limit=limit)
+    return await service.list_chats(
+        user,
+        status=status,
+        topic=topic,
+        subtopic=subtopic,
+        rating_lte=rating_lte,
+        rating_gte=rating_gte,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/chats/{chat_id}", response_model=ChatOut)

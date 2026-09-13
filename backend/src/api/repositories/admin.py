@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import AwareDatetime
 
-from src.api.repositories.chats import Limit, Offset
+from src.api.repositories.chats import Limit, Offset, RatingQuery
 from src.api.repositories.dependencies import Admin, Chats, Storage
 from src.db.models import ChatStatus, SenderType
 from src.schemas.chat import ChatPage, RatingPage
@@ -29,6 +29,8 @@ async def chats(
     user_id: UUID | None = None,
     topic: str | None = None,
     subtopic: str | None = None,
+    rating_lte: RatingQuery = None,
+    rating_gte: RatingQuery = None,
     offset: Offset = 0,
     limit: Limit = 50,
 ) -> ChatPage:
@@ -43,6 +45,8 @@ async def chats(
         user_id=user_id,
         topic=topic,
         subtopic=subtopic,
+        rating_lte=rating_lte,
+        rating_gte=rating_gte,
         since=since,
         until=until,
         offset=offset,
